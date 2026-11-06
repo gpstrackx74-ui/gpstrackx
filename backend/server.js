@@ -20,7 +20,20 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static frontend files if built
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
+const fs = require('fs');
+const distPath = path.join(__dirname, '../frontend/dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+
+// Health Check for Cloud Platforms (Render, Railway, etc.)
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', service: 'GpsTrackX Backend API', timestamp: new Date().toISOString() });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy', uptime: process.uptime() });
+});
 
 // Auth Middleware
 function authenticateToken(req, res, next) {
@@ -2328,15 +2341,19 @@ setInterval(() => {
   }
 }, 15000); // update every 15 seconds
 
-// SPA Catch-all: send index.html for client-side routing
+// SPA Catch-all: send index.html if frontend dist exists
 app.use((req, res, next) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API route not found' });
   }
-  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  const indexPath = path.join(__dirname, '../frontend/dist/index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.status(200).json({ status: 'ok', service: 'GpsTrackX Backend API' });
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`[GpsTrackX Server] Running on http://localhost:${PORT}`);
+// Start Server - bind to 0.0.0.0 for Cloud containers (Render / Railway)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[GpsTrackX Server] Running on http://0.0.0.0:${PORT}`);
 });
