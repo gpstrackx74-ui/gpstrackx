@@ -1,4 +1,8 @@
-const API_BASE = (import.meta.env.VITE_API_URL ? String(import.meta.env.VITE_API_URL).replace(/\/$/, '') : '') + '/api';
+const API_BASE = (
+  import.meta.env.VITE_API_URL 
+    ? String(import.meta.env.VITE_API_URL).replace(/\/$/, '') 
+    : (import.meta.env.PROD ? 'https://gpstrackx.onrender.com' : '')
+) + '/api';
 
 export function getAuthToken(): string | null {
   return localStorage.getItem('gpstrackx_token');
