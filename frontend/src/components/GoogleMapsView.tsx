@@ -181,18 +181,6 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         google.maps.event.trigger(mapInstanceRef.current, 'resize');
       }
     }, 150);
-
-    const checkAuthTimer = setTimeout(() => {
-      if (
-        (window as any).__googleMapsAuthFailed ||
-        (containerRef.current && containerRef.current.innerText.includes('Oops! Something went wrong'))
-      ) {
-        (window as any).__googleMapsAuthFailed = true;
-        window.dispatchEvent(new CustomEvent('google-maps-auth-failed'));
-      }
-    }, 1200);
-
-    return () => clearTimeout(checkAuthTimer);
   }, []);
 
   const openPopup = (info: any, m: any) => {

@@ -117,22 +117,20 @@ const AmPmTimeInput: React.FC<{
           <button
             type="button"
             onClick={() => handlePeriodChange('AM')}
-            className={`px-2 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer ${
-              parsed.period === 'AM'
+            className={`px-2 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer ${parsed.period === 'AM'
                 ? 'bg-[#E60012] text-white shadow-2xs'
                 : 'text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             AM
           </button>
           <button
             type="button"
             onClick={() => handlePeriodChange('PM')}
-            className={`px-2 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer ${
-              parsed.period === 'PM'
+            className={`px-2 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer ${parsed.period === 'PM'
                 ? 'bg-[#E60012] text-white shadow-2xs'
                 : 'text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             PM
           </button>
@@ -291,7 +289,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
 
       // Pre-populate corridor if vehicle has assigned route or previous corridor exists
       if (corridors && corridors.length > 0) {
-        const matching = corridors.find((c: any) => 
+        const matching = corridors.find((c: any) =>
           (v.route_name && c.route_name && c.route_name.includes(v.route_name)) ||
           (c.route_name && c.route_name.includes(v.registration_no))
         ) || corridors[0];
@@ -311,8 +309,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
     if (!val || !tripModalVehicle) return;
     const cleanVal = String(val).trim();
     const sourceList = list && list.length > 0 ? list : savedCorridorsForTrip;
-    const found = sourceList.find((c: any) => 
-      String(c.id) === cleanVal || 
+    const found = sourceList.find((c: any) =>
+      String(c.id) === cleanVal ||
       c.route_name === val ||
       (c.route_name && c.route_name.replace(/\r?\n/g, ' ').trim() === cleanVal.replace(/\r?\n/g, ' ').trim())
     );
@@ -343,7 +341,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
         if (Array.isArray(wps) && wps.length >= 2) {
           poly = wps.map((w: any): [number, number] => [Number(w.lat), Number(w.lng)]).filter((pt: [number, number]) => !isNaN(pt[0]) && !isNaN(pt[1]));
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Fallback if polyline is empty
@@ -745,7 +743,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       const endLocName = endCoord.name || tripForm.end_location_name || 'Destination';
       const routeName = tripForm.route_name.trim() || `Trip #${tripNum}: ${startLocName} to ${endLocName}`;
 
-      const polyline = tripExcelPoints.length >= 2 
+      const polyline = tripExcelPoints.length >= 2
         ? tripExcelPoints.map(p => [p.lat, p.lng])
         : [[startCoord.lat, startCoord.lng], [endCoord.lat, endCoord.lng]];
 
@@ -1481,14 +1479,14 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
           </div>
         </div>
       )}
-    
+
       {/* Vehicle Trips & Multi-Route Allocation Modal (+) with Right-Side Interactive Map */}
       {tripModalVehicle && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 cursor-pointer"
           onClick={() => setTripModalVehicle(null)}
         >
-          <div 
+          <div
             className="bg-white rounded-3xl max-w-6xl w-full p-4 sm:p-6 shadow-2xl border border-slate-200 relative animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col cursor-default"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1528,11 +1526,11 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
             {/* Modal Body: 2-Column Responsive Layout (Left: Form Controls, Right: Embedded Interactive Map) */}
             <div className="flex-1 overflow-y-auto py-3">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                
+
                 {/* Left Column: Form Controls (lg:col-span-5) */}
                 <div className="lg:col-span-5 space-y-3.5">
                   <form onSubmit={handleSaveVehicleTrip} className="space-y-3.5 text-xs">
-                    
+
                     {/* Compact Excel Import Button + Saved Corridor Dropdown Row */}
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col gap-2">
                       <label className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-[#E60012] font-bold text-xs cursor-pointer shadow-2xs transition">
@@ -1779,11 +1777,11 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
 
       {/* Dedicated Vehicle Trip History Modal (Admin & Regular User) */}
       {historyModalVehicle && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 cursor-pointer"
           onClick={() => setHistoryModalVehicle(null)}
         >
-          <div 
+          <div
             className="bg-white rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 relative animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col cursor-default"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1856,13 +1854,12 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                     {dateTrips.map((trip: any, idx: number) => {
                       const isActive = trip.is_active === 1 || trip.is_active === true;
                       return (
-                        <div 
+                        <div
                           key={trip.id || idx}
-                          className={`p-4 rounded-2xl border transition-all ${
-                            isActive 
-                              ? 'bg-emerald-50/40 border-emerald-300 shadow-xs' 
+                          className={`p-4 rounded-2xl border transition-all ${isActive
+                              ? 'bg-emerald-50/40 border-emerald-300 shadow-xs'
                               : 'bg-white border-slate-200/90 hover:border-slate-300'
-                          }`}
+                            }`}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-2 border-b border-slate-100">
                             <div className="flex items-center gap-2">

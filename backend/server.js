@@ -1059,12 +1059,11 @@ app.put('/api/vehicles/:id', authenticateToken, requireAdmin, (req, res) => {
 app.delete('/api/vehicles/:id', authenticateToken, requireAdmin, async (req, res) => {
   const vehicleId = req.params.id;
   try {
-    const targetVeh = db.prepare('SELECT registration_no FROM vehicles WHERE id = ?').get(vehicleId);
     db.prepare('DELETE FROM fastag_transactions WHERE vehicle_id = ?').run(vehicleId);
     db.prepare('DELETE FROM routes WHERE vehicle_id = ?').run(vehicleId);
     db.prepare('DELETE FROM vehicle_allocations WHERE vehicle_id = ?').run(vehicleId);
     db.prepare('DELETE FROM vehicles WHERE id = ?').run(vehicleId);
-    await supabaseService.deleteVehicle(vehicleId, targetVeh?.registration_no);
+    await supabaseService.deleteVehicle(vehicleId);
     res.json({ message: 'Vehicle deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete vehicle: ' + err.message });
@@ -1109,7 +1108,7 @@ app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
   res.json(users);
 });
 
-app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
   const { name, email, password, phone, role, status, company_name } = req.body;
 
   if (!name || !name.trim()) {
@@ -1120,40 +1119,13 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
   }
 
   const cleanPhone = cleanPhoneNumber(phone || '');
-  const userEmail = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const userEmail = email && /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim())
     ? email.trim().toLowerCase()
     : (cleanPhone ? `${cleanPhone}@gpstrackx.in` : `user.${Date.now()}@gpstrackx.in`);
 
-  // 1. Check for existing user by email in local database
   const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(userEmail);
   if (existing) {
-    return res.status(400).json({ error: 'A user with this email address already exists.' });
-  }
-
-  // 2. Check for duplicate phone number in local database
-  if (cleanPhone) {
-    const existingPhone = db.prepare('SELECT id, name FROM users WHERE phone LIKE ?').get(`%${cleanPhone}%`);
-    if (existingPhone) {
-      return res.status(400).json({ error: `User with phone number ${cleanPhone} already exists (${existingPhone.name}).` });
-    }
-  }
-
-  // 3. Supabase Cloud Uniqueness Check (prevents resurrection and duplicate inserts)
-  if (supabaseService.isConnected) {
-    try {
-      const cloudEmailCheck = await supabaseService.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [userEmail]);
-      if (cloudEmailCheck && cloudEmailCheck.rows.length > 0) {
-        return res.status(400).json({ error: 'A user with this email address already exists in Cloud database.' });
-      }
-      if (cleanPhone) {
-        const cloudPhoneCheck = await supabaseService.query('SELECT id, name FROM users WHERE phone LIKE $1', [`%${cleanPhone}%`]);
-        if (cloudPhoneCheck && cloudPhoneCheck.rows.length > 0) {
-          return res.status(400).json({ error: `User with phone number ${cleanPhone} already exists in Cloud database.` });
-        }
-      }
-    } catch (e) {
-      console.warn('[User Creation Supabase Check Warning]:', e.message);
-    }
+    return res.status(400).json({ error: 'User with this email already exists' });
   }
 
   const colors = ['#EF4444', '#DC2626', '#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'];
@@ -1169,10 +1141,8 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 
     const newUser = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
     try {
-      await supabaseService.syncUser({ ...newUser, password: hash });
-    } catch (e) {
-      console.error('[User Sync to Supabase Error]:', e.message);
-    }
+      supabaseService.syncUser({ ...newUser, password: hash });
+    } catch (e) {}
     return res.status(201).json(newUser);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to create user: ' + err.message });
@@ -1343,11 +1313,10 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) =
     return res.status(400).json({ error: 'Cannot delete the currently signed-in admin account.' });
   }
   try {
-    const targetUser = db.prepare('SELECT email FROM users WHERE id = ?').get(userId);
     db.prepare('DELETE FROM user_logins WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM vehicle_allocations WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
-    await supabaseService.deleteUser(userId, targetUser?.email);
+    await supabaseService.deleteUser(userId);
     res.json({ message: 'User deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete user: ' + err.message });
@@ -1757,11 +1726,6 @@ app.post('/api/routes', authenticateToken, requireAdmin, (req, res) => {
 
         const assignedUserId = assigned_user_id ? parseInt(assigned_user_id) : targetVehicle.assigned_user_id;
         if (assignedUserId) {
-          if (targetVehicle.assigned_user_id !== assignedUserId) {
-            db.prepare('UPDATE vehicles SET assigned_user_id = ? WHERE id = ?').run(assignedUserId, vehicle_id);
-            targetVehicle.assigned_user_id = assignedUserId;
-            supabaseService.syncVehicle(targetVehicle);
-          }
           db.prepare(`
             INSERT INTO vehicle_allocations (vehicle_id, user_id, allocated_by, route_id, allocation_status, notes)
             VALUES (?, ?, ?, ?, 'ACTIVE', 'Admin allocated vehicle and route corridor')
@@ -2047,15 +2011,10 @@ app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
   let conditions = [];
   let params = [];
 
-  // RBAC: Non-admin users see transactions for vehicles/routes assigned to them
+  // RBAC: Non-admin users only see transactions for vehicles assigned to them
   if (!isAdmin) {
-    conditions.push(`(
-      ft.vehicle_id IN (SELECT id FROM vehicles WHERE assigned_user_id = ?)
-      OR ft.vehicle_id IN (SELECT vehicle_id FROM vehicle_allocations WHERE user_id = ?)
-      OR ft.route_id IN (SELECT route_id FROM vehicle_allocations WHERE user_id = ? AND route_id IS NOT NULL)
-      OR ft.route_id IN (SELECT r.id FROM routes r JOIN vehicles v ON r.vehicle_id = v.id WHERE v.assigned_user_id = ?)
-    )`);
-    params.push(req.user.id, req.user.id, req.user.id, req.user.id);
+    conditions.push('ft.vehicle_id IN (SELECT id FROM vehicles WHERE assigned_user_id = ?)');
+    params.push(req.user.id);
   }
 
   if (vehicle_id && vehicle_id !== 'all') {
@@ -2219,13 +2178,6 @@ app.post('/api/fastag/transactions', authenticateToken, (req, res) => {
     );
 
     const newTx = db.prepare('SELECT * FROM fastag_transactions WHERE id = ?').get(result.lastInsertRowid);
-    if (newTx) {
-      try {
-        await supabaseService.syncFastagTransaction(newTx);
-      } catch (e) {
-        console.error('[FASTag Sync to Supabase Error]:', e.message);
-      }
-    }
     res.status(201).json({
       message: 'FASTag toll transaction & tax invoice created successfully.',
       transaction: newTx

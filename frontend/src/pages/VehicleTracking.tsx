@@ -404,7 +404,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div>
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-black text-slate-900 tracking-tight font-mono">
                   {vehicle.registration_no}
                 </h2>
@@ -417,19 +417,35 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   {isMoving && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>}
                   {vehicle.status?.toUpperCase()}
                 </span>
-                <span className="text-xs font-bold text-slate-500">
-                  {vehicle.name_model}
-                </span>
+
+                {/* Instant Vehicle Switcher dropdown if user has multiple accessible vehicles */}
+                {vehicleList.length > 1 && onSwitchVehicle && (
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Switch:</span>
+                    <select
+                      value={vehicle.id}
+                      onChange={(e) => onSwitchVehicle(Number(e.target.value))}
+                      className="bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-mono font-bold text-slate-800 shadow-2xs focus:outline-none focus:border-slate-800 transition cursor-pointer"
+                    >
+                      {vehicleList.map(v => (
+                        <option key={v.id} value={v.id}>
+                          {v.registration_no} • {v.name_model} {v.route_name ? `(${v.route_name})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
+              <p className="text-xs text-slate-500 mt-0.5">{vehicle.name_model} • Real-time GPS Telematics</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2">
             {isAdmin && onPlanRoute && (
               <button
                 type="button"
                 onClick={() => onPlanRoute(vehicle.id)}
-                className="px-4 py-2 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer whitespace-nowrap"
+                className="px-3.5 py-2 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
               >
                 Modify Route on Map
               </button>
@@ -535,159 +551,174 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
         {/* Thin divider with light red 10% opacity */}
         <div className="border-t border-[#E60012]/10" />
 
-        {/* Section 3: Landscape Information Panel (Horizontal Arrangement) */}
-        <div className="p-5 sm:p-6 space-y-5">
-          {/* Top Landscape Grid: 4 Horizontal Multi-Metric Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
-            {/* Card 1: Vehicle Profile & Telemetry */}
-            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
-              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-white text-slate-900 border border-slate-200 flex items-center justify-center shadow-xs">
-                    <Truck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-mono font-black text-slate-900 text-sm">{vehicle.registration_no}</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">{vehicle.name_model} • {vehicle.vehicle_type}</p>
-                  </div>
+        {/* Section 3: Main Grid: Left Vehicle Details & Right Map */}
+        <div className="p-5 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Column: Vehicle Card & Specs (4 Cols) */}
+          <div className="lg:col-span-4 space-y-5">
+            {/* Vehicle Profile & Specifications */}
+            <div className="rounded-2xl p-4 sm:p-5 bg-slate-50/50 border border-slate-200/80">
+              <div className="flex items-center gap-3 pb-4 border-b border-slate-200/70">
+                <div className="w-12 h-12 rounded-xl bg-white text-slate-900 border border-slate-200 flex items-center justify-center shadow-xs">
+                  <Truck className="w-6 h-6" />
                 </div>
-                <div className="text-right">
-                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
+                <div>
+                  <h3 className="font-mono font-black text-slate-900 text-base">{vehicle.registration_no}</h3>
+                  <p className="text-xs text-slate-500 font-medium">{vehicle.name_model}</p>
+                </div>
+              </div>
+
+              {/* Speed Gauge */}
+              <div className="my-4 p-4 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between shadow-xs">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Velocity</span>
+                  <div className="text-3xl font-black text-slate-900 tracking-tight font-mono mt-0.5">
                     {vehicle.current_speed || 0}
-                    <span className="text-[10px] font-semibold text-slate-500 ml-0.5">KM/H</span>
+                    <span className="text-xs font-semibold text-slate-500 ml-1">KM/H</span>
                   </div>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Live Speed</span>
+                  <p className="text-[10px] text-slate-400 mt-1">Limit: {vehicle.max_speed_limit} km/h</p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-900">
+                  <Gauge className="w-6 h-6" />
                 </div>
               </div>
-              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Assigned User</span>
-                  <span className="font-bold text-slate-800 truncate block">{vehicle.owner_name || 'Unassigned'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Driver Phone</span>
-                  <span className="font-mono text-slate-800 truncate block">{vehicle.owner_phone || '+91 98765 43210'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">GPS Device ID</span>
-                  <span className="font-mono text-slate-800 truncate block">{vehicle.device_id || 'GPS-AUTO'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Fuel Type</span>
-                  <span className="font-bold text-slate-800 truncate block">{vehicle.fuel_type || 'Diesel'}</span>
-                </div>
-              </div>
-            </div>
 
-            {/* Card 2: Active Route Corridor & Schedule */}
-            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
-              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
-                <div className="min-w-0 pr-2">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Active Corridor</span>
-                  <h4 className="font-bold text-slate-900 text-xs truncate" title={activeRoute?.route_name || 'Corridor'}>
-                    {activeRoute?.route_name || 'Direct Route Corridor'}
-                  </h4>
+              {/* Specifications list */}
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-400 font-medium">Assigned User:</span>
+                  <span className="font-bold text-slate-800">{vehicle.owner_name || 'Unassigned'}</span>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
-                    {activeRoute?.total_distance_km || 0}
-                    <span className="text-[10px] font-semibold text-slate-500 ml-0.5">KM</span>
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Dist</span>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-400 font-medium">Driver Contact:</span>
+                  <span className="font-mono text-slate-800">{vehicle.owner_phone || '+91 98765 43210'}</span>
                 </div>
-              </div>
-              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Scheduled Dates</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
-                    {activeRoute?.trip_date || 'Today'}{activeRoute?.end_trip_date && activeRoute.end_trip_date !== activeRoute.trip_date ? ` → ${activeRoute.end_trip_date}` : ''}
-                  </span>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-400 font-medium">Vehicle Type:</span>
+                  <span className="font-bold text-slate-800">{vehicle.vehicle_type}</span>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Trip Window</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
-                    {activeRoute?.start_trip_time || '08:00 AM'} → {activeRoute?.end_trip_time || '06:00 PM'}
-                  </span>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-400 font-medium">GPS Device ID:</span>
+                  <span className="font-mono text-slate-800">{vehicle.device_id}</span>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Origin</span>
-                  <span className="font-semibold text-slate-700 truncate block text-[11px]">{activeRoute?.start_location_name || 'Start'}</span>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-400 font-medium">IMEI Number:</span>
+                  <span className="font-mono text-slate-800">{vehicle.imei_number}</span>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Destination</span>
-                  <span className="font-semibold text-slate-700 truncate block text-[11px]">{activeRoute?.end_location_name || 'Destination'}</span>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-400 font-medium">Chassis Number:</span>
+                  <span className="font-mono text-slate-800">{vehicle.chassis_number || 'N/A'}</span>
                 </div>
-              </div>
-            </div>
-
-            {/* Card 3: Route Stoppages & Transit Halts */}
-            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
-                <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                  <span>Route Stoppages</span>
-                </span>
-                <span className="text-[10px] font-mono font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
-                  {stoppages.length} Halts
-                </span>
-              </div>
-              <div className="pt-2 space-y-1.5 max-h-28 overflow-y-auto pr-1">
-                {stoppagesWithTimings.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic pt-2">No scheduled stoppages on this route.</p>
-                ) : (
-                  stoppagesWithTimings.map((s, idx) => (
-                    <div key={idx} className="p-1.5 rounded-lg bg-white border border-slate-200/70 text-[11px] flex items-center justify-between gap-1 shadow-2xs">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <span className="w-4 h-4 rounded-full bg-slate-900 text-white font-bold text-[8px] flex items-center justify-center shrink-0">
-                          {idx + 1}
-                        </span>
-                        <span className="font-bold text-slate-800 truncate text-[10px]">
-                          {s.name || `Halt #${idx + 1}`}
-                        </span>
-                      </div>
-                      <span className="text-[9px] font-mono font-bold text-slate-600 bg-slate-50 px-1.5 py-0.2 rounded border border-slate-200 shrink-0">
-                        {(s as any).arrival_time || '09:00 AM'}
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-400 font-medium">Fuel Type:</span>
+                  <span className="font-bold text-slate-800">{vehicle.fuel_type}</span>
+                </div>
+                {activeRoute && (
+                  <>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-400 font-medium">Scheduled Date:</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {activeRoute.trip_date || 'Today'}{activeRoute.end_trip_date && activeRoute.end_trip_date !== activeRoute.trip_date ? ` → ${activeRoute.end_trip_date}` : ''}
                       </span>
                     </div>
-                  ))
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-slate-400 font-medium">Trip Window:</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {activeRoute.start_trip_time || '08:00'} → {activeRoute.end_trip_time || '18:00'}
+                      </span>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
 
-            {/* Card 4: Toll Plazas & Electronic FASTag */}
-            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
-                <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  <span>FASTag Toll Plazas</span>
-                </span>
-                <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  {routeTolls.length} Plazas
-                </span>
+            {/* Stoppages & Toll Gate Summary */}
+            {activeRoute && (
+              <div className="rounded-2xl p-4 sm:p-5 bg-slate-50/50 border border-slate-200/80 space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2.5">
+                    <h4 className="text-xs font-extrabold uppercase tracking-wide text-slate-900">
+                      Route Stoppages
+                    </h4>
+                    <span className="text-[10px] font-mono font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">
+                      {stoppages.length} Halts
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-0.5">
+                    {stoppagesWithTimings.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No scheduled stoppages on this route.</p>
+                    ) : (
+                      stoppagesWithTimings.map((s, idx) => {
+                        const durationMins = s.stop_duration_mins || s.duration || 20;
+                        const arrStr = (s as any).arrival_time || '09:00 AM';
+                        const depStr = (s as any).departure_time || '09:20 AM';
+                        const cleanName = (s.name || `Stoppage #${idx + 1}`)
+                          .replace(/Highway Dhaba & Rest Point|Fuel Station & Inspection Bay|Driver Rest Area|Logistics Checkpoint|Restaurant|Dhaba/gi, 'Transit Halt').replace(/\r?\n/g, ' ')
+                          .trim();
+
+                        return (
+                          <div key={idx} className="p-2.5 rounded-xl bg-white border border-slate-200/70 space-y-1.5 text-xs shadow-2xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="w-5 h-5 rounded-full bg-slate-900 text-white font-bold text-[9px] flex items-center justify-center shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <span className="font-bold text-slate-900 truncate">
+                                  {cleanName}
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-bold text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
+                                {durationMins}m Halt
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-1 border-t border-slate-100">
+                              <span>Arrival: <strong className="text-slate-800 font-sans">{arrStr}</strong></span>
+                              <span>Departure: <strong className="text-slate-800 font-sans">{depStr}</strong></span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-200/70">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <h4 className="text-xs font-extrabold uppercase tracking-wide text-slate-900">
+                      Toll Plazas & Charges
+                    </h4>
+                    <span className="text-[10px] font-mono font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">
+                      {routeTolls.length} Plazas
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
+                    {routeTolls.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No toll plazas on this road corridor.</p>
+                    ) : (
+                      routeTolls.map((t, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200/70 text-xs shadow-2xs">
+                          <div className="truncate mr-2">
+                            <p className="font-bold text-slate-800 text-xs truncate">{t.name}</p>
+                            <span className="text-[10px] text-slate-400">
+                              {t.is_manual ? 'Manual Rate' : 'Electronic FASTag'}
+                            </span>
+                          </div>
+                          {t.charges > 0 && (
+                            <span className="font-mono font-bold text-slate-900 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 text-xs shrink-0">
+                              ₹{t.charges}
+                            </span>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="pt-2 space-y-1.5 max-h-28 overflow-y-auto pr-1">
-                {routeTolls.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic pt-2">No toll plazas on this road corridor.</p>
-                ) : (
-                  routeTolls.map((t, idx) => (
-                    <div key={idx} className="p-1.5 rounded-lg bg-white border border-slate-200/70 text-[11px] flex items-center justify-between gap-1 shadow-2xs">
-                      <span className="font-bold text-slate-800 truncate text-[10px]">
-                        {idx + 1}. {t.name}
-                      </span>
-                      {t.charges > 0 && (
-                        <span className="font-mono font-bold text-slate-900 bg-slate-50 px-1.5 py-0.2 rounded border border-slate-200 text-[10px] shrink-0">
-                          ₹{t.charges}
-                        </span>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* Full-Width Route Map Section */}
-          <div className="flex flex-col space-y-3">
+          {/* Right Column: Route Map (On-Road Tracking) (8 Cols) */}
+          <div className="lg:col-span-8 flex flex-col">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-3 border-b border-slate-100">
               <div>
                 <div className="flex items-center gap-2">
