@@ -1766,12 +1766,12 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             </div>
           </div>
 
-          {/* Verified Highway FASTag Tolls (Google Maps/NHAI Corridor Detection & Custom Override) */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
-            <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          {/* Highway FASTag Tolls */}
+          <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span>Highway FASTag Tolls & Custom Pricing</span>
+                <span>Highway FASTag Tolls</span>
               </span>
               <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 font-mono">
                 {selectedAxleConfig.shortLabel}
@@ -1779,46 +1779,39 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             </div>
 
             {currentTolls.length > 0 ? (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/70 text-xs">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50/70 border border-amber-200/70 text-xs">
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider">Active Road Tolls</span>
-                    <p className="font-extrabold text-slate-900">{currentTolls.length} Gate{currentTolls.length > 1 ? 's' : ''} on Corridor</p>
-                    <span className="text-[10px] text-slate-500 font-medium">NHAI: {selectedAxleConfig.label}</span>
+                    <span className="text-[9px] uppercase font-bold text-amber-800 tracking-wider">Tolls</span>
+                    <p className="font-extrabold text-slate-900 text-xs">{currentTolls.length} Gate{currentTolls.length > 1 ? 's' : ''}</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Total Toll Amount</span>
-                    <p className="font-black text-emerald-700 font-mono text-base">₹{totalTruckToll}</p>
-                    <span className="text-[9px] text-slate-400">Editable Below</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total</span>
+                    <p className="font-black text-emerald-700 font-mono text-sm">₹{totalTruckToll}</p>
                   </div>
                 </div>
 
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                   {currentTolls.map((toll, idx) => {
                     const isOverridden = customTollOverrides[toll.name] !== undefined;
                     return (
-                      <div key={idx} className="p-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-[11px] gap-2">
+                      <div key={idx} className="p-1.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between text-[11px] gap-2">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <span className="font-bold text-slate-800 truncate">{idx + 1}. {toll.name}</span>
                             {isOverridden && (
-                              <span className="px-1.5 py-0.5 rounded-md bg-red-50 text-red-700 border border-red-200 font-bold text-[9px] uppercase tracking-wider shrink-0">
-                                Custom Price
-                              </span>
-                            )}
-                            {toll.is_manual && !isOverridden && (
-                              <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[9px] uppercase tracking-wider shrink-0">
-                                Added Toll
+                              <span className="px-1 py-0.2 rounded bg-red-50 text-red-700 border border-red-200 font-bold text-[8px] uppercase tracking-wider shrink-0">
+                                Custom
                               </span>
                             )}
                           </div>
-                          <p className="text-[10px] text-slate-400 font-mono truncate">
+                          <p className="text-[9px] text-slate-400 font-mono truncate">
                             {Number(toll.lat).toFixed(4)}, {Number(toll.lng).toFixed(4)}
                           </p>
                         </div>
 
                         {/* Editable Custom Toll Price Input */}
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0">
                           <span className="text-xs font-bold text-slate-400">₹</span>
                           <input
                             type="number"
@@ -1828,17 +1821,17 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                               const val = parseFloat(e.target.value);
                               handleUpdateTollPrice(toll.name, isNaN(val) ? 0 : val);
                             }}
-                            className="w-18 px-2 py-1 rounded-lg border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800 text-right shadow-2xs"
-                            title="Edit Custom Toll Fee for this Plaza"
+                            className="w-16 px-1.5 py-0.5 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800 text-right"
+                            title="Edit Custom Toll Fee"
                           />
                           {isOverridden && (
                             <button
                               type="button"
                               onClick={() => handleResetTollPrice(toll.name)}
-                              className="text-[10px] text-red-600 hover:text-red-700 font-bold px-1 py-0.5 rounded hover:bg-red-50 cursor-pointer"
-                              title="Reset to NHAI auto-calculated tariff"
+                              className="text-[9px] text-red-600 hover:text-red-700 font-bold px-1 py-0.5 rounded hover:bg-red-50 cursor-pointer"
+                              title="Reset"
                             >
-                              Reset
+                              ↺
                             </button>
                           )}
                           {toll.is_manual && (
@@ -1848,7 +1841,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                               className="text-slate-400 hover:text-red-600 p-0.5"
                               title="Remove Custom Toll"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3 h-3" />
                             </button>
                           )}
                         </div>
@@ -1859,158 +1852,147 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
                 {/* Button / Form to Add Custom Extra Toll Barrier */}
                 {!showAddCustomToll ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
-                      className={`flex-1 py-1.5 px-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${clickMode === 'toll'
-                          ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300 shadow-xs'
+                      className={`flex-1 py-1 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer ${clickMode === 'toll'
+                          ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
                           : 'border-dashed border-slate-300 hover:border-slate-400 text-slate-700 bg-slate-50 hover:bg-slate-100'
                         }`}
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{clickMode === 'toll' ? '📍 Click Route / Map to Place Toll' : '+ Add Custom Toll (Click Route/Map)'}</span>
+                      <Plus className="w-3 h-3" />
+                      <span>{clickMode === 'toll' ? 'Click Map to Place' : '+ Add Toll (Map)'}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowAddCustomToll(true)}
-                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium"
-                      title="Manual Form Entry"
+                      className="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium bg-white cursor-pointer"
+                      title="Manual Entry"
                     >
                       Manual
                     </button>
                   </div>
                 ) : (
-                  <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2">
+                  <div className="p-2 rounded-lg border border-slate-200 bg-slate-50/80 space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700">Add Custom Toll Gate</span>
+                      <span className="font-bold text-slate-700 text-[11px]">Add Toll Gate</span>
                       <button
                         type="button"
                         onClick={() => setShowAddCustomToll(false)}
-                        className="text-slate-400 hover:text-slate-600 text-[10px]"
+                        className="text-slate-400 hover:text-slate-600 text-[10px] cursor-pointer"
                       >
                         Cancel
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                       <input
                         type="text"
                         value={newCustomTollName}
                         onChange={(e) => setNewCustomTollName(e.target.value)}
-                        placeholder="Toll / Barrier Name..."
-                        className="sm:col-span-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
+                        placeholder="Toll name..."
+                        className="sm:col-span-2 px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
                       />
                       <input
                         type="number"
                         min="0"
                         value={newCustomTollPrice}
                         onChange={(e) => setNewCustomTollPrice(e.target.value)}
-                        placeholder="Fee (₹)..."
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
+                        placeholder="₹..."
+                        className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
                       />
                     </div>
                     <button
                       type="button"
                       onClick={handleAddCustomToll}
                       disabled={!newCustomTollName.trim()}
-                      className="w-full py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer disabled:opacity-40"
+                      className="w-full py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition cursor-pointer disabled:opacity-40"
                     >
-                      Save Custom Toll to Route
+                      Add Toll
                     </button>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-center space-y-2">
-                <p className="text-xs font-bold text-slate-700">No Toll Plazas on this Route</p>
-                <div className="flex items-center justify-center gap-2">
+              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-slate-500">No Tolls on Route</span>
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border text-[11px] font-bold cursor-pointer transition shadow-2xs ${clickMode === 'toll'
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition ${clickMode === 'toll'
                         ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
                         : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                       }`}
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{clickMode === 'toll' ? '📍 Click Route / Map to Place Toll' : '+ Add Custom Toll (Click Route/Map)'}</span>
+                    <Plus className="w-3 h-3" />
+                    <span>{clickMode === 'toll' ? 'Click Map' : '+ Add Toll'}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowAddCustomToll(true)}
-                    className="px-2 py-1.5 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium"
+                    className="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium bg-white cursor-pointer"
                   >
                     Manual
                   </button>
                 </div>
-                {showAddCustomToll && (
-                  <div className="p-2.5 rounded-xl border border-slate-200 bg-white text-left space-y-2 mt-2">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <input
-                        type="text"
-                        value={newCustomTollName}
-                        onChange={(e) => setNewCustomTollName(e.target.value)}
-                        placeholder="Toll / Barrier Name..."
-                        className="sm:col-span-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        value={newCustomTollPrice}
-                        onChange={(e) => setNewCustomTollPrice(e.target.value)}
-                        placeholder="Fee (₹)..."
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
-                      />
-                    </div>
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowAddCustomToll(false)}
-                        className="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleAddCustomToll}
-                        disabled={!newCustomTollName.trim()}
-                        className="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold text-xs disabled:opacity-40"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  </div>
-                )}
+              </div>
+            )}
+            {currentTolls.length === 0 && showAddCustomToll && (
+              <div className="p-2 rounded-lg border border-slate-200 bg-white space-y-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  <input
+                    type="text"
+                    value={newCustomTollName}
+                    onChange={(e) => setNewCustomTollName(e.target.value)}
+                    placeholder="Toll name..."
+                    className="sm:col-span-2 px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    value={newCustomTollPrice}
+                    onChange={(e) => setNewCustomTollPrice(e.target.value)}
+                    placeholder="₹..."
+                    className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCustomToll(false)}
+                    className="px-2 py-0.5 rounded text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddCustomToll}
+                    disabled={!newCustomTollName.trim()}
+                    className="px-2.5 py-0.5 rounded bg-slate-900 text-white font-bold text-xs disabled:opacity-40 cursor-pointer"
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
-          <div className="border-t border-[#E60012]/10" />
-
-          {/* Stoppages & Travel Time Controls */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Stoppages & Schedule
-              </span>
-              <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded-full">
-                {stoppages.length} Scheduled Stops
-              </span>
-            </div>
-
-            {/* Stoppages Input */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
+          {/* Stoppages & Route Metrics Card */}
+          <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs space-y-2.5">
+            {/* Stoppages */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
                 <label className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span>
-                  <span>Stoppages / Rest Points</span>
+                  <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                  <span>Stoppages</span>
                 </label>
-                <span className="text-[10px] font-mono text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded-full">
-                  {stoppages.length} Placed
+                <span className="text-[10px] font-mono text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded-full">
+                  {stoppages.length} Stops
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <input
                   type="number"
                   min="0"
@@ -2026,8 +2008,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       handleSetStopsCount(0);
                     }
                   }}
-                  placeholder="Number of stops..."
-                  className="flex-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
+                  placeholder="0"
+                  className="flex-1 h-7.5 px-2.5 rounded-lg border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
                 />
                 <button
                   type="button"
@@ -2036,7 +2018,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     setStopsInput(next.toString());
                     handleSetStopsCount(next);
                   }}
-                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition cursor-pointer"
+                  className="w-7.5 h-7.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition cursor-pointer"
                   title="Decrease Stops"
                 >
                   <Minus className="w-3.5 h-3.5" />
@@ -2048,7 +2030,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     setStopsInput(next.toString());
                     handleSetStopsCount(next);
                   }}
-                  className="w-8 h-8 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center transition shadow-xs cursor-pointer"
+                  className="w-7.5 h-7.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center transition shadow-xs cursor-pointer"
                   title="Increase Stops"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -2059,24 +2041,24 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               <button
                 type="button"
                 onClick={() => setClickMode(clickMode === 'stop' ? 'none' : 'stop')}
-                className={`w-full py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer mt-1.5 shadow-2xs ${clickMode === 'stop'
+                className={`w-full py-1.5 px-2.5 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs ${clickMode === 'stop'
                     ? 'bg-amber-600 text-white border-amber-600'
-                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200/80'
                   }`}
               >
-                <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                <MapPin className="w-3 h-3 text-amber-600" />
                 <span>
-                  {clickMode === 'stop' ? 'Active: Click on Map/Polyline to Drop Stops' : '+ Click on Map Route Polyline to Add Stops'}
+                  {clickMode === 'stop' ? 'Click Map to Drop Stops' : '+ Click Map to Add Stops'}
                 </span>
               </button>
             </div>
 
-            {/* Custom Route Distance (Set Kilometers) */}
-            <div className="space-y-1 pt-2 border-t border-slate-100">
+            {/* Custom Route Distance */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between text-xs">
                 <label className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-600"></span>
-                  <span>Route Distance (Set Kilometers)</span>
+                  <span className="w-2 h-2 rounded-full bg-red-600"></span>
+                  <span>Route Distance</span>
                 </label>
                 {customDistanceKm !== null && customDistanceKm !== activeRoute?.distanceKm && (
                   <button
@@ -2084,12 +2066,12 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     onClick={() => setCustomDistanceKm(null)}
                     className="text-[10px] font-bold text-red-600 hover:underline flex items-center gap-0.5 cursor-pointer"
                   >
-                    <span>↺ Reset to Map ({activeRoute?.distanceKm || 0} KM)</span>
+                    <span>↺ Reset ({activeRoute?.distanceKm || 0} KM)</span>
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <div className="relative flex-1">
                   <input
                     type="number"
@@ -2101,10 +2083,10 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       const val = parseFloat(e.target.value);
                       setCustomDistanceKm(isNaN(val) ? 0 : Math.max(0, Math.round(val * 10) / 10));
                     }}
-                    placeholder="Enter route KM..."
-                    className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800 pr-10"
+                    placeholder="Distance..."
+                    className="w-full h-7.5 px-2.5 rounded-lg border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800 pr-9"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 font-mono">
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400 font-mono">
                     KM
                   </span>
                 </div>
@@ -2115,7 +2097,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     const current = effectiveDistanceKm;
                     setCustomDistanceKm(Math.max(1, Math.round((current - 5) * 10) / 10));
                   }}
-                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                  className="w-7.5 h-7.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center transition cursor-pointer"
                   title="Minus 5 KM"
                 >
                   -5
@@ -2126,33 +2108,30 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     const current = effectiveDistanceKm;
                     setCustomDistanceKm(Math.round((current + 5) * 10) / 10);
                   }}
-                  className="w-8 h-8 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center transition shadow-xs cursor-pointer"
+                  className="w-7.5 h-7.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center transition shadow-xs cursor-pointer"
                   title="Add 5 KM"
                 >
                   +5
                 </button>
               </div>
-              <p className="text-[10px] text-slate-400">
-                Default: {activeRoute?.distanceKm || 0} KM. You can override or manually set the official route distance here.
-              </p>
             </div>
 
-            {/* Route Travel Duration (Hours & Minutes Manual Coverage Time Input) */}
-            <div className="space-y-1.5 pt-2.5 border-t border-slate-100">
+            {/* Route Travel Duration */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between text-xs">
                 <label className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-slate-700" />
-                  <span>Route Travel Duration (Coverage Time)</span>
+                  <Clock className="w-3 h-3 text-slate-600" />
+                  <span>Travel Duration</span>
                 </label>
                 <span className="text-[10px] font-mono text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded-full">
-                  {travelHours}h {travelMinutes}m ({travelHours * 60 + travelMinutes} min)
+                  {travelHours}h {travelMinutes}m
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
                 {/* Hours Box */}
-                <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-500 pl-1 shrink-0">Hours:</span>
+                <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 pl-0.5 shrink-0">Hrs:</span>
                   <input
                     type="number"
                     min="0"
@@ -2162,14 +2141,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       const val = parseInt(e.target.value);
                       setTravelHours(isNaN(val) ? 0 : Math.max(0, val));
                     }}
-                    placeholder="Hr"
-                    className="w-full bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-800"
+                    placeholder="0"
+                    className="w-full bg-white px-2 py-0.5 rounded border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-800"
                   />
                   <div className="flex flex-col gap-0.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => setTravelHours(prev => prev + 1)}
-                      className="w-5 h-3.5 bg-white hover:bg-slate-200 rounded text-[9px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
+                      className="w-4.5 h-3 bg-white hover:bg-slate-200 rounded text-[8px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
                       title="Add 1 Hour"
                     >
                       ▲
@@ -2177,7 +2156,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     <button
                       type="button"
                       onClick={() => setTravelHours(prev => Math.max(0, prev - 1))}
-                      className="w-5 h-3.5 bg-white hover:bg-slate-200 rounded text-[9px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
+                      className="w-4.5 h-3 bg-white hover:bg-slate-200 rounded text-[8px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
                       title="Subtract 1 Hour"
                     >
                       ▼
@@ -2186,8 +2165,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 </div>
 
                 {/* Minutes Box */}
-                <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-500 pl-1 shrink-0">Mins:</span>
+                <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 pl-0.5 shrink-0">Min:</span>
                   <input
                     type="number"
                     min="0"
@@ -2197,14 +2176,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       const val = parseInt(e.target.value);
                       setTravelMinutes(isNaN(val) ? 0 : Math.min(59, Math.max(0, val)));
                     }}
-                    placeholder="Min"
-                    className="w-full bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-800"
+                    placeholder="0"
+                    className="w-full bg-white px-2 py-0.5 rounded border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-800"
                   />
                   <div className="flex flex-col gap-0.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => setTravelMinutes(prev => (prev + 5) % 60)}
-                      className="w-5 h-3.5 bg-white hover:bg-slate-200 rounded text-[9px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
+                      className="w-4.5 h-3 bg-white hover:bg-slate-200 rounded text-[8px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
                       title="Add 5 Minutes"
                     >
                       ▲
@@ -2212,7 +2191,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     <button
                       type="button"
                       onClick={() => setTravelMinutes(prev => (prev - 5 < 0 ? 55 : prev - 5))}
-                      className="w-5 h-3.5 bg-white hover:bg-slate-200 rounded text-[9px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
+                      className="w-4.5 h-3 bg-white hover:bg-slate-200 rounded text-[8px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
                       title="Subtract 5 Minutes"
                     >
                       ▼

@@ -272,21 +272,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             loop
             muted
             playsInline
-            className="w-full h-full object-cover opacity-45 scale-105"
+            className="w-full h-full object-cover opacity-85 scale-105"
             poster="https://images.unsplash.com/photo-1519003722824-194d4455a60c?auto=format&fit=crop&w=1920&q=80"
           >
             <source src="/hero-video.mp4" type="video/mp4" />
             <source src="/videos/hero-bg.mp4" type="video/mp4" />
           </video>
-          {/* High-Contrast Gradient Overlay for Crisp Text Readability */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#101828]/95 via-[#101828]/85 to-[#101828]/55" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#101828] via-transparent to-transparent opacity-80" />
+          {/* Lightened, High-Clarity Overlay to make background video vivid & clearly visible */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#101828]/75 via-[#101828]/40 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/50 via-transparent to-transparent opacity-40" />
         </div>
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 w-full">
           <div className="max-w-3xl">
             {/* Word-by-Word Reveal Headline */}
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-[1.08] sm:leading-[1.08]">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-[1.08] sm:leading-[1.08] drop-shadow-md">
               {/* Line 1 */}
               <div className="block overflow-hidden pb-1">
                 {headlineLine1.map((item, idx) => (
@@ -320,7 +320,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
 
             {/* Supporting Description */}
             <p
-              className={`mt-6 text-base sm:text-lg text-white/80 leading-relaxed max-w-2xl transition-all duration-800 ease-out ${
+              className={`mt-6 text-base sm:text-lg text-white font-medium drop-shadow-sm leading-relaxed max-w-2xl transition-all duration-800 ease-out ${
                 animStage >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
               }`}
             >
