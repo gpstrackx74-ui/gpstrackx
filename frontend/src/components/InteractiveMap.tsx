@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { GoogleMapsView } from './GoogleMapsView';
 import { LeafletRouteMap } from './LeafletRouteMap';
 import { ErrorBoundary } from './ErrorBoundary';
 import { AlternativeRoute, Stoppage, TollGate } from '../types';
@@ -17,7 +18,7 @@ const EMPTY_PARKING: ParkingPoint[] = [];
 const EMPTY_TOLLS: TollGate[] = [];
 const EMPTY_WAYPOINTS: Array<{ lat: number; lng: number; name?: string }> = [];
 
-export interface InteractiveMapProps {
+interface InteractiveMapProps {
   center?: [number, number];
   zoom?: number;
   routes?: AlternativeRoute[];
@@ -39,7 +40,22 @@ export interface InteractiveMapProps {
 }
 
 export const InteractiveMap: React.FC<InteractiveMapProps> = (props) => {
-  // High-performance Leaflet engine: 0ms initialization, zero API keys, no Google Maps billing errors
+  const [googleAvailable, setGoogleAvailable] = useState<boolean>(() => {
+    return typeof (window as any).google?.maps !== 'undefined';
+  });
+
+  useEffect(() => {
+    if (googleAvailable) return;
+    const interval = setInterval(() => {
+      if (typeof (window as any).google?.maps !== 'undefined') {
+        setGoogleAvailable(true);
+        clearInterval(interval);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [googleAvailable]);
+
+  // Use stable static arrays for any omitted array props to avoid recreation on parent re-renders
   const safeProps = {
     ...props,
     routes: props.routes || EMPTY_ROUTES,
@@ -49,6 +65,18 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = (props) => {
     customWaypoints: props.customWaypoints || EMPTY_WAYPOINTS,
   };
 
+  if (googleAvailable) {
+    return (
+      <ErrorBoundary fallback={<LeafletRouteMap {...safeProps} />}>
+        <GoogleMapsView
+          {...safeProps}
+          center={props.center ? { lat: Number(props.center[0]), lng: Number(props.center[1]) } : undefined}
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  // Graceful fallback to Leaflet if Google Maps script fails to load
   return (
     <ErrorBoundary>
       <LeafletRouteMap {...safeProps} />

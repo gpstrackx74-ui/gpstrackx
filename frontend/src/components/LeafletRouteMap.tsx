@@ -3,38 +3,26 @@ import L from 'leaflet';
 import { AlternativeRoute, Stoppage, TollGate } from '../types';
 import { Layers, Maximize2, Minimize2 } from 'lucide-react';
 
-interface ParkingPoint {
-  id?: number;
-  name: string;
-  lat: number;
-  lng: number;
-  address?: string;
-}
-
 interface LeafletRouteMapProps {
   center?: [number, number];
   zoom?: number;
   routes?: AlternativeRoute[];
   selectedRouteId?: string;
   onSelectRoute?: (routeId: string) => void;
-  startPoint?: { lat: number; lng: number; name?: string; address?: string } | null;
-  endPoint?: { lat: number; lng: number; name?: string; address?: string } | null;
+  startPoint?: { lat: number; lng: number; name?: string } | null;
+  endPoint?: { lat: number; lng: number; name?: string } | null;
   stoppages?: Stoppage[];
-  parkingPoints?: ParkingPoint[];
   tollGates?: TollGate[];
   vehiclePosition?: { lat: number; lng: number; speed?: number; status?: string; plate?: string } | null;
-  onMapClick?: (lat: number, lng: number, address?: string, mode?: string) => void;
+  onMapClick?: (lat: number, lng: number) => void;
   clickMode?: 'start' | 'end' | 'stop' | 'parking' | 'toll' | 'manual-route' | 'none';
   customWaypoints?: Array<{ lat: number; lng: number; name?: string }>;
   isManualDrawing?: boolean;
-  isDraggableRoute?: boolean;
-  onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
 
 const EMPTY_ROUTES: AlternativeRoute[] = [];
 const EMPTY_STOPPAGES: Stoppage[] = [];
-const EMPTY_PARKING: ParkingPoint[] = [];
 const EMPTY_TOLLS: TollGate[] = [];
 const EMPTY_WAYPOINTS: any[] = [];
 
@@ -47,15 +35,12 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   startPoint,
   endPoint,
   stoppages = EMPTY_STOPPAGES,
-  parkingPoints = EMPTY_PARKING,
   tollGates = EMPTY_TOLLS,
   vehiclePosition,
   onMapClick,
   clickMode = 'none',
   customWaypoints = EMPTY_WAYPOINTS,
   isManualDrawing = false,
-  isDraggableRoute = false,
-  onRouteChange,
   height = '500px'
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -113,27 +98,17 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
 
     mapRef.current = map;
 
-    const t1 = setTimeout(() => map?.invalidateSize(), 50);
-    const t2 = setTimeout(() => map?.invalidateSize(), 200);
+    setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    }, 150);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
       map.remove();
       mapRef.current = null;
     };
   }, []);
-
-  // Ensure map tiles adjust immediately to container resizing / tab / fullscreen changes
-  useEffect(() => {
-    if (!mapRef.current) return;
-    const t1 = setTimeout(() => mapRef.current?.invalidateSize(), 60);
-    const t2 = setTimeout(() => mapRef.current?.invalidateSize(), 300);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [isFullscreen, height]);
 
   // Dedicated Vehicle Marker Effect: Updates smoothly WITHOUT rebuilding route polyline or static layers
   useEffect(() => {
