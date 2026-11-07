@@ -1050,10 +1050,14 @@ app.put('/api/vehicles/:id', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // Delete Vehicle (Admin Only)
-app.delete('/api/vehicles/:id', authenticateToken, requireAdmin, (req, res) => {
+app.delete('/api/vehicles/:id', authenticateToken, requireAdmin, async (req, res) => {
   const vehicleId = req.params.id;
   try {
+    db.prepare('DELETE FROM fastag_transactions WHERE vehicle_id = ?').run(vehicleId);
+    db.prepare('DELETE FROM routes WHERE vehicle_id = ?').run(vehicleId);
+    db.prepare('DELETE FROM vehicle_allocations WHERE vehicle_id = ?').run(vehicleId);
     db.prepare('DELETE FROM vehicles WHERE id = ?').run(vehicleId);
+    await supabaseService.deleteVehicle(vehicleId);
     res.json({ message: 'Vehicle deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete vehicle: ' + err.message });
@@ -1297,13 +1301,16 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, (req, res) => {
   }
 });
 
-app.delete('/api/users/:id', authenticateToken, requireAdmin, (req, res) => {
+app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const userId = req.params.id;
   if (parseInt(userId) === req.user.id) {
     return res.status(400).json({ error: 'Cannot delete the currently signed-in admin account.' });
   }
   try {
+    db.prepare('DELETE FROM user_logins WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM vehicle_allocations WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+    await supabaseService.deleteUser(userId);
     res.json({ message: 'User deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete user: ' + err.message });
@@ -1744,10 +1751,13 @@ app.post('/api/routes', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // Delete Route (Admin Only)
-app.delete('/api/routes/:id', authenticateToken, requireAdmin, (req, res) => {
+app.delete('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) => {
   const routeId = req.params.id;
   try {
+    db.prepare('DELETE FROM stoppages WHERE route_id = ?').run(routeId);
+    db.prepare('DELETE FROM manual_toll_gates WHERE route_id = ?').run(routeId);
     db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
+    await supabaseService.deleteRoute(routeId);
     res.json({ message: 'Route deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete route: ' + err.message });
@@ -2162,9 +2172,13 @@ app.post('/api/fastag/transactions', authenticateToken, (req, res) => {
 });
 
 // 4. Delete FASTag Transaction (Admin Only)
-app.delete('/api/fastag/transactions/:id', authenticateToken, requireAdmin, (req, res) => {
+app.delete('/api/fastag/transactions/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    const tx = db.prepare('SELECT transaction_id FROM fastag_transactions WHERE id = ?').get(req.params.id);
     db.prepare('DELETE FROM fastag_transactions WHERE id = ?').run(req.params.id);
+    if (tx?.transaction_id) {
+      await supabaseService.query('DELETE FROM fastag_transactions WHERE transaction_id = $1', [tx.transaction_id]);
+    }
     res.json({ message: 'FASTag transaction deleted successfully.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete transaction: ' + err.message });
@@ -2354,6 +2368,12 @@ app.use((req, res, next) => {
 });
 
 // Start Server - bind to 0.0.0.0 for Cloud containers (Render / Railway)
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`[GpsTrackX Server] Running on http://0.0.0.0:${PORT}`);
+  // Hydrate persistent cloud data from Supabase into SQLite on boot
+  try {
+    await supabaseService.syncFromSupabaseToSqlite(db);
+  } catch (err) {
+    console.error('[Startup Hydration Warning]:', err.message);
+  }
 });
