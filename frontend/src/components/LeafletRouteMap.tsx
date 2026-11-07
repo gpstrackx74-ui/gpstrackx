@@ -58,9 +58,9 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     const rIds = (routes || []).map(r => r ? `${r.id}_${r.coordinates?.length || 0}` : '').join('|');
     const sKey = startPoint && startPoint.lat ? `${Number(startPoint.lat).toFixed(4)},${Number(startPoint.lng).toFixed(4)}` : 'none';
     const eKey = endPoint && endPoint.lat ? `${Number(endPoint.lat).toFixed(4)},${Number(endPoint.lng).toFixed(4)}` : 'none';
-    const stopKey = (stoppages || []).map(s => s && s.lat ? `${s.id || s.name || ''}_${Number(s.lat).toFixed(4)}_${Number(s.lng).toFixed(4)}` : '').join('|');
-    const tollKey = (tollGates || []).map(t => t && t.lat ? `${t.id || t.name || ''}_${Number(t.lat).toFixed(4)}_${Number(t.lng).toFixed(4)}_${t.charges || ''}` : '').join('|');
-    const wayKey = (customWaypoints || []).map(w => w && w.lat ? `${Number(w.lat).toFixed(4)}_${Number(w.lng).toFixed(4)}` : '').join('|');
+    const stopKey = stoppages.length > 0 ? `${stoppages.length}_${Number(stoppages[0]?.lat || 0).toFixed(4)}_${Number(stoppages[stoppages.length - 1]?.lat || 0).toFixed(4)}` : '0';
+    const tollKey = tollGates.length > 0 ? `${tollGates.length}_${Number(tollGates[0]?.lat || 0).toFixed(4)}_${tollGates[0]?.charges || ''}` : '0';
+    const wayKey = customWaypoints.length > 0 ? `${customWaypoints.length}_${Number(customWaypoints[0]?.lat || 0).toFixed(4)}` : '0';
     return `${selectedRouteId || ''}::${rIds}::${sKey}::${eKey}::${stopKey}::${tollKey}::${wayKey}::${isManualDrawing}`;
   }, [routes, selectedRouteId, startPoint, endPoint, stoppages, tollGates, customWaypoints, isManualDrawing]);
 
@@ -326,8 +326,9 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       `);
     }
 
-    // 4. Stoppage Markers (Orange numbered pins)
-    stoppages.forEach((stop, idx) => {
+    // 4. Stoppage Markers (Orange numbered pins - capped to max 30 for 0% latency)
+    const activeStops = stoppages.length > 30 ? stoppages.slice(0, 30) : stoppages;
+    activeStops.forEach((stop, idx) => {
       if (!stop.lat || !stop.lng) return;
       const p = L.latLng(stop.lat, stop.lng);
       boundsPoints.push(p);
