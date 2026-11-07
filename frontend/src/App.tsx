@@ -99,6 +99,11 @@ const AppContent: React.FC = () => {
           title: 'Track Vehicles',
           subtitle: 'Have an in-depth look at all the metrics within your dashboard'
         };
+      case 'history':
+        return {
+          title: 'Trip History',
+          subtitle: 'Date-wise vehicle journey logs, historical route records and travel stats'
+        };
       case 'vehicles':
         return {
           title: 'Vehicle Management',
@@ -177,6 +182,15 @@ const AppContent: React.FC = () => {
             <Dashboard 
               onNavigateTab={(tab) => setCurrentTab(tab)} 
               onViewVehicle={handleViewVehicle}
+              initialUserTab="vehicle"
+            />
+          )}
+
+          {currentTab === 'history' && (
+            <Dashboard 
+              onNavigateTab={(tab) => setCurrentTab(tab)} 
+              onViewVehicle={handleViewVehicle}
+              initialUserTab="history"
             />
           )}
 

@@ -33,21 +33,27 @@ interface GoogleMapsViewProps {
   height?: string;
 }
 
+const EMPTY_ROUTES: AlternativeRoute[] = [];
+const EMPTY_STOPPAGES: Stoppage[] = [];
+const EMPTY_PARKING: any[] = [];
+const EMPTY_TOLLS: TollGate[] = [];
+const EMPTY_WAYPOINTS: any[] = [];
+
 export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   center = { lat: 21.8974, lng: 82.8000 }, // Regional view of Chhattisgarh & Central India
   zoom = 7, // Comfortable overview, not over-zoomed
-  routes = [],
+  routes = EMPTY_ROUTES,
   selectedRouteId,
   onSelectRoute,
   startPoint,
   endPoint,
-  stoppages = [],
-  parkingPoints = [],
-  tollGates = [],
+  stoppages = EMPTY_STOPPAGES,
+  parkingPoints = EMPTY_PARKING,
+  tollGates = EMPTY_TOLLS,
   vehiclePosition,
   onMapClick,
   clickMode = 'none',
-  customWaypoints = [],
+  customWaypoints = EMPTY_WAYPOINTS,
   isManualDrawing = false,
   isDraggableRoute = false,
   onRouteChange,
@@ -65,6 +71,20 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   const geocoderRef = useRef<any>(null);
   const activeInfoWindowRef = useRef<any>(null);
   const lastFittedKeyRef = useRef<string>('');
+
+  // Memoized stable key for static route geometry, stoppages, and toll gates
+  // During live vehicle playback, only vehiclePosition updates so overlayKey stays constant.
+  // This guarantees renderOverlays() and clearOverlays() NEVER execute during playback, eliminating all polyline/toll vibration!
+  const overlayKey = React.useMemo(() => {
+    const rIds = (routes || []).map(r => `${r.id}_${r.coordinates?.length || 0}`).join('|');
+    const sKey = startPoint ? `${Number(startPoint.lat).toFixed(4)},${Number(startPoint.lng).toFixed(4)}` : 'none';
+    const eKey = endPoint ? `${Number(endPoint.lat).toFixed(4)},${Number(endPoint.lng).toFixed(4)}` : 'none';
+    const stopKey = (stoppages || []).map(s => `${s.id || s.name || ''}_${Number(s.lat).toFixed(4)}_${Number(s.lng).toFixed(4)}`).join('|');
+    const tollKey = (tollGates || []).map(t => `${t.id || t.name || ''}_${Number(t.lat).toFixed(4)}_${Number(t.lng).toFixed(4)}`).join('|');
+    const parkKey = (parkingPoints || []).map(p => `${p.id || p.name || ''}_${Number(p.lat).toFixed(4)}_${Number(p.lng).toFixed(4)}`).join('|');
+    const wayKey = (customWaypoints || []).map(w => `${Number(w.lat).toFixed(4)}_${Number(w.lng).toFixed(4)}`).join('|');
+    return `${selectedRouteId || ''}::${rIds}::${sKey}::${eKey}::${stopKey}::${tollKey}::${parkKey}::${wayKey}::${isManualDrawing}`;
+  }, [routes, selectedRouteId, startPoint, endPoint, stoppages, tollGates, parkingPoints, customWaypoints, isManualDrawing]);
 
   // Keep live refs to avoid React stale closure bugs on map clicks!
   const onMapClickRef = useRef(onMapClick);
@@ -734,9 +754,10 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   };
 
   // Static Overlays Effect: Only re-renders when route path, endpoints, or points change!
+  // Uses stable overlayKey so vehicle movement ticks never trigger polyline/marker clearing!
   useEffect(() => {
     renderOverlays();
-  }, [routes, selectedRouteId, startPoint, endPoint, stoppages, parkingPoints, tollGates, customWaypoints, isManualDrawing]);
+  }, [overlayKey]);
 
   // Dedicated Vehicle Marker Effect: Updates vehicle position smoothly WITHOUT recreating polylines or static markers!
   useEffect(() => {

@@ -21,20 +21,25 @@ interface LeafletRouteMapProps {
   height?: string;
 }
 
+const EMPTY_ROUTES: AlternativeRoute[] = [];
+const EMPTY_STOPPAGES: Stoppage[] = [];
+const EMPTY_TOLLS: TollGate[] = [];
+const EMPTY_WAYPOINTS: any[] = [];
+
 export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   center = [19.0760, 72.8777],
   zoom = 7,
-  routes = [],
+  routes = EMPTY_ROUTES,
   selectedRouteId,
   onSelectRoute,
   startPoint,
   endPoint,
-  stoppages = [],
-  tollGates = [],
+  stoppages = EMPTY_STOPPAGES,
+  tollGates = EMPTY_TOLLS,
   vehiclePosition,
   onMapClick,
   clickMode = 'none',
-  customWaypoints = [],
+  customWaypoints = EMPTY_WAYPOINTS,
   isManualDrawing = false,
   height = '500px'
 }) => {
@@ -42,8 +47,22 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   const mapRef = useRef<L.Map | null>(null);
   const layersRef = useRef<{ [key: string]: L.Layer }>({});
   const vehicleMarkerRef = useRef<L.Marker | null>(null);
+  const lastFittedBoundsKeyRef = useRef<string>('');
   const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Memoized stable key for static route geometry, stoppages, and toll gates
+  // During live vehicle playback, only vehiclePosition updates so overlayKey stays constant.
+  // This guarantees clearLayers() and fitBounds() NEVER execute during playback, eliminating all vibration/jitter!
+  const overlayKey = React.useMemo(() => {
+    const rIds = (routes || []).map(r => `${r.id}_${r.coordinates?.length || 0}`).join('|');
+    const sKey = startPoint ? `${Number(startPoint.lat).toFixed(4)},${Number(startPoint.lng).toFixed(4)}` : 'none';
+    const eKey = endPoint ? `${Number(endPoint.lat).toFixed(4)},${Number(endPoint.lng).toFixed(4)}` : 'none';
+    const stopKey = (stoppages || []).map(s => `${s.id || s.name || ''}_${Number(s.lat).toFixed(4)}_${Number(s.lng).toFixed(4)}`).join('|');
+    const tollKey = (tollGates || []).map(t => `${t.id || t.name || ''}_${Number(t.lat).toFixed(4)}_${Number(t.lng).toFixed(4)}_${t.charges || ''}`).join('|');
+    const wayKey = (customWaypoints || []).map(w => `${Number(w.lat).toFixed(4)}_${Number(w.lng).toFixed(4)}`).join('|');
+    return `${selectedRouteId || ''}::${rIds}::${sKey}::${eKey}::${stopKey}::${tollKey}::${wayKey}::${isManualDrawing}`;
+  }, [routes, selectedRouteId, startPoint, endPoint, stoppages, tollGates, customWaypoints, isManualDrawing]);
 
   // Initialize Map
   useEffect(() => {
@@ -423,12 +442,14 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       }
     }
 
-    // Auto fit bounds if points exist
-    if (boundsPoints.length > 0) {
+    // Auto fit bounds ONLY when route or endpoints change, never during vehicle playback ticks
+    const fitKey = `${Number(startPoint?.lat || 0).toFixed(3)}_${Number(startPoint?.lng || 0).toFixed(3)}_${Number(endPoint?.lat || 0).toFixed(3)}_${Number(endPoint?.lng || 0).toFixed(3)}_${selectedRouteId || ''}_${routes.length}`;
+    if (boundsPoints.length > 0 && fitKey !== lastFittedBoundsKeyRef.current) {
+      lastFittedBoundsKeyRef.current = fitKey;
       const bounds = L.latLngBounds(boundsPoints);
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
     }
-  }, [routes, selectedRouteId, startPoint, endPoint, stoppages, tollGates, customWaypoints, isManualDrawing]);
+  }, [overlayKey]);
 
   return (
     <div className={`relative w-full rounded-2xl overflow-hidden border border-slate-200/90 shadow-sm bg-white ${isFullscreen ? 'fixed inset-4 z-50 h-auto' : ''}`}>

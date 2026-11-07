@@ -82,9 +82,14 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   useEffect(() => {
     if (!vehicleId) return;
     fetchVehicleDetails(vehicleId);
-    const interval = setInterval(() => fetchVehicleDetails(vehicleId), 10000); // Poll live telemetry
+    const interval = setInterval(() => {
+      // Pause background network fetch while user is actively running route playback
+      if (!isPlaying) {
+        fetchVehicleDetails(vehicleId);
+      }
+    }, 10000);
     return () => clearInterval(interval);
-  }, [vehicleId]);
+  }, [vehicleId, isPlaying]);
 
   // Parse route coordinates safely with useMemo
   const parsedCoordinates = React.useMemo<[number, number][]>(() => {

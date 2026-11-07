@@ -19,15 +19,27 @@ import {
 interface DashboardProps {
   onNavigateTab: (tab: string) => void;
   onViewVehicle: (vehicleId: number) => void;
+  initialUserTab?: 'vehicle' | 'history';
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ onNavigateTab, onViewVehicle }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ 
+  onNavigateTab, 
+  onViewVehicle,
+  initialUserTab = 'vehicle'
+}) => {
   const { isAdmin } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [userActiveTab, setUserActiveTab] = useState<'vehicle' | 'history'>(initialUserTab);
+
+  useEffect(() => {
+    if (initialUserTab) {
+      setUserActiveTab(initialUserTab);
+    }
+  }, [initialUserTab]);
 
   // Vehicle Trip History States (Date-Wise)
   const [historyModalVehicle, setHistoryModalVehicle] = useState<Vehicle | null>(null);
@@ -195,13 +207,63 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateTab, onViewVehic
         {/* Thin divider with light red 10% opacity */}
         <div className="border-t border-[#E60012]/10" />
 
-        {/* Section 2: Fleet Vehicles Section */}
-        {/* Section Controls Bar */}
-        <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/40">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">
-              Vehicle Fleet & Allocations
-            </h2>
+        {/* User Dashboard Tab Switcher: [ Assigned Vehicle ] and [ Trip History ] */}
+        {!isAdmin && (
+          <div className="px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-white">
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200/80">
+              <button
+                type="button"
+                onClick={() => setUserActiveTab('vehicle')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
+                  userActiveTab === 'vehicle'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Truck className={`w-3.5 h-3.5 ${userActiveTab === 'vehicle' ? 'text-[#E60012]' : 'text-slate-400'}`} />
+                <span>Assigned Vehicle</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 font-bold">
+                  {vehicles.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setUserActiveTab('history')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
+                  userActiveTab === 'history'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <History className={`w-3.5 h-3.5 ${userActiveTab === 'history' ? 'text-[#E60012]' : 'text-slate-400'}`} />
+                <span>Trip History</span>
+                {userVehicleTrips.length > 0 && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#E60012] text-white font-bold">
+                    {userVehicleTrips.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-semibold text-slate-600">
+                {userActiveTab === 'vehicle' ? 'Live Telemetry Active' : 'Date-Wise Recorded Journeys'}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Section 2: Fleet Vehicles Section (Visible for Admin OR when user is on 'vehicle' tab) */}
+        {(isAdmin || userActiveTab === 'vehicle') && (
+          <>
+            {/* Section Controls Bar */}
+            <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/40">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                  {isAdmin ? 'Vehicle Fleet & Allocations' : 'My Assigned Vehicle'}
+                </h2>
             <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full font-bold">
               {filteredVehicles.length} Units
             </span>
@@ -361,7 +423,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateTab, onViewVehic
                           {/* Date-wise History Button (Admin & User) */}
                           <button
                             type="button"
-                            onClick={() => handleOpenHistoryModal(v)}
+                            onClick={() => {
+                              if (!isAdmin) {
+                                setUserActiveTab('history');
+                              } else {
+                                handleOpenHistoryModal(v);
+                              }
+                            }}
                             className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer border border-slate-200"
                             title="View Date-wise Trip History & Recorded Logs"
                           >
@@ -389,11 +457,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateTab, onViewVehic
             </tbody>
           </table>
         </div>
+        </>
+        )}
 
-        {/* Date-Wise Vehicle Journey Logs & Trip History Section (For Regular User View) */}
-        {!isAdmin && vehicles.length > 0 && (
+        {/* Date-Wise Vehicle Journey Logs & Trip History Section (For Regular User View - visible ONLY when on 'history' tab) */}
+        {!isAdmin && userActiveTab === 'history' && vehicles.length > 0 && (
           <div>
-            <div className="border-t border-[#E60012]/10" />
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
@@ -409,14 +478,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateTab, onViewVehic
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleOpenHistoryModal(vehicles[0])}
-                  className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Full History Modal</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setUserActiveTab('vehicle')}
+                    className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    title="Switch to My Assigned Vehicle"
+                  >
+                    <Truck className="w-3.5 h-3.5 text-slate-500" />
+                    <span>View Assigned Vehicle</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenHistoryModal(vehicles[0])}
+                    className="px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-slate-300" />
+                    <span>Full Modal</span>
+                  </button>
+                </div>
               </div>
 
               {userVehicleTrips.length === 0 ? (

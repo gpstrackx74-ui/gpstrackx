@@ -13,7 +13,8 @@ import {
   UserCheck,
   X,
   Receipt,
-  MapPin
+  MapPin,
+  History
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -38,6 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
     { id: 'vehicles', label: 'Vehicles', icon: Truck, adminOnly: false },
+    { id: 'history', label: 'Trip History', icon: History, adminOnly: false },
     { id: 'vehicle-tracking', label: 'Live User View', icon: MapPin, adminOnly: true },
     { 
       id: 'routes', 

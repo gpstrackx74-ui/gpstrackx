@@ -12,6 +12,12 @@ interface ParkingPoint {
   address?: string;
 }
 
+const EMPTY_ROUTES: AlternativeRoute[] = [];
+const EMPTY_STOPPAGES: Stoppage[] = [];
+const EMPTY_PARKING: ParkingPoint[] = [];
+const EMPTY_TOLLS: TollGate[] = [];
+const EMPTY_WAYPOINTS: Array<{ lat: number; lng: number; name?: string }> = [];
+
 interface InteractiveMapProps {
   center?: [number, number];
   zoom?: number;
@@ -49,11 +55,21 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = (props) => {
     return () => clearInterval(interval);
   }, [googleAvailable]);
 
+  // Use stable static arrays for any omitted array props to avoid recreation on parent re-renders
+  const safeProps = {
+    ...props,
+    routes: props.routes || EMPTY_ROUTES,
+    stoppages: props.stoppages || EMPTY_STOPPAGES,
+    parkingPoints: props.parkingPoints || EMPTY_PARKING,
+    tollGates: props.tollGates || EMPTY_TOLLS,
+    customWaypoints: props.customWaypoints || EMPTY_WAYPOINTS,
+  };
+
   if (googleAvailable) {
     return (
-      <ErrorBoundary fallback={<LeafletRouteMap {...props} />}>
+      <ErrorBoundary fallback={<LeafletRouteMap {...safeProps} />}>
         <GoogleMapsView
-          {...props}
+          {...safeProps}
           center={props.center ? { lat: Number(props.center[0]), lng: Number(props.center[1]) } : undefined}
         />
       </ErrorBoundary>
@@ -63,7 +79,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = (props) => {
   // Graceful fallback to Leaflet if Google Maps script fails to load
   return (
     <ErrorBoundary>
-      <LeafletRouteMap {...props} />
+      <LeafletRouteMap {...safeProps} />
     </ErrorBoundary>
   );
 };
