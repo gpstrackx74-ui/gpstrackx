@@ -491,9 +491,62 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           const autoCorridorName = `${summaryMeta.vehicleReg ? summaryMeta.vehicleReg + ': ' : ''}${start.name.split(',')[0]} to ${end.name.split(',')[0]}`;
           setCorridorNameInput(autoCorridorName);
 
-          // Calculate genuine curved highway driving route with automatic FASTag toll detection!
-          await handleCalculateRoutes(start, end, autoStops);
+          // Calculate genuine curved highway driving route (Single Excel Route ONLY - No alternate routes!)
+          let highwayCoords: [number, number][] = displayPolyline;
+          let highwayDist = finalDistKm;
+          let highwayMins = totalMins;
+
+          // Try Google Maps driving route for real highway road curve
+          const googleRoutes = await calculateWithGoogleMaps(start, end, autoStops);
+          if (googleRoutes && googleRoutes.length > 0) {
+            highwayCoords = googleRoutes[0].coordinates;
+            highwayDist = summaryMeta.distanceKm > 0 ? summaryMeta.distanceKm : googleRoutes[0].distanceKm;
+            highwayMins = summaryMeta.runningTime ? totalMins : (googleRoutes[0].timeMinutes || totalMins);
+          } else {
+            try {
+              const res = await api.calculateRoutes({
+                origin: start,
+                destination: end,
+                waypoints: autoStops,
+                manualTolls: manualTolls
+              });
+              if (res.routes && res.routes.length > 0 && res.routes[0].coordinates?.length > 1) {
+                highwayCoords = res.routes[0].coordinates;
+                highwayDist = summaryMeta.distanceKm > 0 ? summaryMeta.distanceKm : (res.routes[0].distanceKm || highwayDist);
+                highwayMins = summaryMeta.runningTime ? totalMins : (res.routes[0].timeMinutes || highwayMins);
+              }
+            } catch (e) {}
+          }
+
+          // Detect all FASTag tolls on this route corridor
+          const detectedTolls = detectRealTollsOnRoute(highwayCoords, 1.2, selectedAxle);
+          const realTolls = detectedTolls.map(t => ({
+            ...t,
+            charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
+          }));
+
+          // EXACTLY ONE SINGLE EXCEL ROUTE - NO ALTERNATIVE ROUTES!
+          const singleExcelRoute: AlternativeRoute = {
+            id: 'excel-exact-gps-route',
+            name: autoCorridorName,
+            distanceKm: highwayDist,
+            timeMinutes: highwayMins,
+            tollGatesCount: realTolls.length,
+            stopsCount: autoStops.length,
+            summary: `Excel Highway Route (${validPoints.length} Points, ${realTolls.length} Tolls)`,
+            color: '#E60012',
+            coordinates: highwayCoords,
+            tollGates: realTolls
+          };
+
+          setRoutes([singleExcelRoute]);
+          setSelectedRouteId('excel-exact-gps-route');
           setIsExcelRouteActive(true);
+          setCustomDistanceKm(highwayDist);
+          setTravelHours(Math.floor(highwayMins / 60));
+          setTravelMinutes(highwayMins % 60);
+          setModifiedPolyline(highwayCoords);
+          setIsDraggableRoute(true);
         } catch (err: any) {
           alert('Failed to read Excel file: ' + err.message);
         } finally {
