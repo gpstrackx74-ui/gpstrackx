@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
-import { DashboardStats, Vehicle } from '../types';
+import { DashboardStats, Vehicle, AlternativeRoute } from '../types';
+import { InteractiveMap } from '../components/InteractiveMap';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { 
   Truck, 
   Activity, 
@@ -149,6 +151,84 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return matchesSearch && matchesStatus;
   });
 
+  // Memoize routes for dashboard live map preview
+  const dashboardRoutes: AlternativeRoute[] = useMemo(() => {
+    return vehicles
+      .filter(v => (v as any).overview_polyline)
+      .map(v => {
+        let coords: [number, number][] = [];
+        const raw = (v as any).overview_polyline;
+        try {
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          if (Array.isArray(parsed)) {
+            coords = parsed.map((p: any): [number, number] => Array.isArray(p) ? [Number(p[0]), Number(p[1])] : [Number(p.lat), Number(p.lng)])
+              .filter((c: [number, number]): boolean => !isNaN(c[0]) && !isNaN(c[1]));
+          }
+        } catch (e) {
+          coords = [];
+        }
+        if (coords.length < 2 && (v as any).start_lat && (v as any).end_lat) {
+          coords = [
+            [Number((v as any).start_lat), Number((v as any).start_lng)],
+            [Number((v as any).end_lat), Number((v as any).end_lng)]
+          ];
+        }
+        return {
+          id: `route-${v.id}`,
+          name: (v.route_name || `${v.registration_no} Corridor`).replace(/\r?\n/g, ' '),
+          distanceKm: Number((v as any).total_distance_km || 0),
+          timeMinutes: Number((v as any).estimated_travel_time_min || 0),
+          tollGatesCount: 0,
+          stopsCount: 0,
+          summary: v.route_name || 'Active Highway Corridor',
+          color: (v as any).route_color || '#E60012',
+          coordinates: coords
+        };
+      })
+      .filter(r => r.coordinates.length >= 2);
+  }, [vehicles]);
+
+  const userVehiclePosition = useMemo(() => {
+    if (vehicles.length === 0) return null;
+    const v = vehicles[0];
+    if (!v.current_lat || !v.current_lng) return null;
+    return {
+      lat: Number(v.current_lat),
+      lng: Number(v.current_lng),
+      speed: v.current_speed || 0,
+      status: v.status || 'active',
+      plate: v.registration_no
+    };
+  }, [vehicles]);
+
+  const userStartPoint = useMemo(() => {
+    if (vehicles.length === 0 || !(vehicles[0] as any).start_lat) return null;
+    return {
+      lat: Number((vehicles[0] as any).start_lat),
+      lng: Number((vehicles[0] as any).start_lng),
+      name: ((vehicles[0] as any).start_location_name || 'Start Point').replace(/\r?\n/g, ' ')
+    };
+  }, [vehicles]);
+
+  const userEndPoint = useMemo(() => {
+    if (vehicles.length === 0 || !(vehicles[0] as any).end_lat) return null;
+    return {
+      lat: Number((vehicles[0] as any).end_lat),
+      lng: Number((vehicles[0] as any).end_lng),
+      name: ((vehicles[0] as any).end_location_name || 'Destination').replace(/\r?\n/g, ' ')
+    };
+  }, [vehicles]);
+
+  const mapCenter: [number, number] = useMemo(() => {
+    if (vehicles.length > 0 && vehicles[0].current_lat && Number(vehicles[0].current_lat) !== 0) {
+      return [Number(vehicles[0].current_lat), Number(vehicles[0].current_lng)];
+    }
+    if (dashboardRoutes.length > 0 && dashboardRoutes[0].coordinates.length > 0) {
+      return dashboardRoutes[0].coordinates[0];
+    }
+    return [21.8974, 82.8000];
+  }, [vehicles, dashboardRoutes]);
+
   return (
     <div className="p-4 sm:p-6 lg:p-7 max-w-7xl mx-auto space-y-5 sm:space-y-6">
       {/* ONE LARGE UNIFIED MAIN CONTAINER (ALL-IN-ONE ENTERPRISE LAYOUT) */}
@@ -258,6 +338,63 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {/* Section 2: Fleet Vehicles Section (Visible for Admin OR when user is on 'vehicle' tab) */}
         {(isAdmin || userActiveTab === 'vehicle') && (
           <>
+            {/* Live Interactive Road Map (Fleet Overview for Admin & Live Vehicle View for User) */}
+            <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/20 space-y-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-[#E60012]/10 text-[#E60012] flex items-center justify-center font-bold">
+                    <MapPin className="w-4 h-4 text-[#E60012]" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                      <span>{isAdmin ? 'Live Fleet Road Map & Active Corridors' : `${vehicles[0]?.registration_no || 'Vehicle'} • Live Road Telemetry`}</span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {isAdmin 
+                        ? `${moving} in transit • ${active} available • ${dashboardRoutes.length} active road corridors`
+                        : `${vehicles[0]?.name_model || 'Fleet Vehicle'} • Speed: ${vehicles[0]?.current_speed || 0} km/h • Status: ${vehicles[0]?.status?.toUpperCase() || 'LIVE'}`
+                      }
+                    </p>
+                  </div>
+                </div>
+
+                {vehicles.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onViewVehicle(vehicles[0].id)}
+                    className="px-3.5 py-1.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-extrabold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                    title="Open Full Screen Tracking & Route Playback"
+                  >
+                    <Compass className="w-3.5 h-3.5 text-red-200" />
+                    <span>Open Live Telemetry & Playback</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Map Canvas */}
+              <div className="rounded-2xl overflow-hidden border border-slate-200/90 shadow-2xs">
+                <ErrorBoundary title="Dashboard Fleet Map">
+                  <InteractiveMap
+                    height="380px"
+                    center={mapCenter}
+                    zoom={isAdmin ? 7 : 8}
+                    routes={dashboardRoutes}
+                    selectedRouteId={dashboardRoutes[0]?.id || ''}
+                    vehiclePosition={!isAdmin ? userVehiclePosition : (vehicles[0]?.current_lat ? {
+                      lat: Number(vehicles[0].current_lat),
+                      lng: Number(vehicles[0].current_lng),
+                      speed: vehicles[0].current_speed || 0,
+                      status: vehicles[0].status || 'active',
+                      plate: vehicles[0].registration_no
+                    } : null)}
+                    startPoint={userStartPoint}
+                    endPoint={userEndPoint}
+                  />
+                </ErrorBoundary>
+              </div>
+            </div>
+
             {/* Section Controls Bar */}
             <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/40">
               <div className="flex items-center gap-2">

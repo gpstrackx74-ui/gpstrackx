@@ -39,7 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
     { id: 'vehicles', label: 'Vehicles', icon: Truck, adminOnly: false },
-    { id: 'history', label: 'Trip History', icon: History, adminOnly: false },
+    { id: 'history', label: 'Trip History', icon: History, adminOnly: false, userOnly: true },
     { id: 'vehicle-tracking', label: 'Live User View', icon: MapPin, adminOnly: true },
     { 
       id: 'routes', 
@@ -140,6 +140,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
           {navItems.map((item) => {
             if (item.adminOnly && !isAdmin) return null;
+            if ((item as any).userOnly && isAdmin) return null;
             const isActive = currentTab === item.id;
             const Icon = item.icon;
 

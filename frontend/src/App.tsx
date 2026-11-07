@@ -186,7 +186,7 @@ const AppContent: React.FC = () => {
             />
           )}
 
-          {currentTab === 'history' && (
+          {currentTab === 'history' && !isAdmin && (
             <Dashboard 
               onNavigateTab={(tab) => setCurrentTab(tab)} 
               onViewVehicle={handleViewVehicle}

@@ -76,15 +76,22 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   // During live vehicle playback, only vehiclePosition updates so overlayKey stays constant.
   // This guarantees renderOverlays() and clearOverlays() NEVER execute during playback, eliminating all polyline/toll vibration!
   const overlayKey = React.useMemo(() => {
-    const rIds = (routes || []).map(r => `${r.id}_${r.coordinates?.length || 0}`).join('|');
-    const sKey = startPoint ? `${Number(startPoint.lat).toFixed(4)},${Number(startPoint.lng).toFixed(4)}` : 'none';
-    const eKey = endPoint ? `${Number(endPoint.lat).toFixed(4)},${Number(endPoint.lng).toFixed(4)}` : 'none';
-    const stopKey = (stoppages || []).map(s => `${s.id || s.name || ''}_${Number(s.lat).toFixed(4)}_${Number(s.lng).toFixed(4)}`).join('|');
-    const tollKey = (tollGates || []).map(t => `${t.id || t.name || ''}_${Number(t.lat).toFixed(4)}_${Number(t.lng).toFixed(4)}`).join('|');
-    const parkKey = (parkingPoints || []).map(p => `${p.id || p.name || ''}_${Number(p.lat).toFixed(4)}_${Number(p.lng).toFixed(4)}`).join('|');
-    const wayKey = (customWaypoints || []).map(w => `${Number(w.lat).toFixed(4)}_${Number(w.lng).toFixed(4)}`).join('|');
+    const rIds = (routes || []).map(r => r ? `${r.id}_${r.coordinates?.length || 0}` : '').join('|');
+    const sKey = startPoint && startPoint.lat ? `${Number(startPoint.lat).toFixed(4)},${Number(startPoint.lng).toFixed(4)}` : 'none';
+    const eKey = endPoint && endPoint.lat ? `${Number(endPoint.lat).toFixed(4)},${Number(endPoint.lng).toFixed(4)}` : 'none';
+    const stopKey = (stoppages || []).map(s => s && s.lat ? `${s.id || s.name || ''}_${Number(s.lat).toFixed(4)}_${Number(s.lng).toFixed(4)}` : '').join('|');
+    const tollKey = (tollGates || []).map(t => t && t.lat ? `${t.id || t.name || ''}_${Number(t.lat).toFixed(4)}_${Number(t.lng).toFixed(4)}_${t.charges || ''}` : '').join('|');
+    const parkKey = (parkingPoints || []).map(p => p && p.lat ? `${p.id || p.name || ''}_${Number(p.lat).toFixed(4)}_${Number(p.lng).toFixed(4)}` : '').join('|');
+    const wayKey = (customWaypoints || []).map(w => w && w.lat ? `${Number(w.lat).toFixed(4)}_${Number(w.lng).toFixed(4)}` : '').join('|');
     return `${selectedRouteId || ''}::${rIds}::${sKey}::${eKey}::${stopKey}::${tollKey}::${parkKey}::${wayKey}::${isManualDrawing}`;
   }, [routes, selectedRouteId, startPoint, endPoint, stoppages, tollGates, parkingPoints, customWaypoints, isManualDrawing]);
+
+  // Keep center synchronized whenever target vehicle center coordinates change
+  useEffect(() => {
+    if (mapInstanceRef.current && center && center.lat && center.lng) {
+      mapInstanceRef.current.panTo(center);
+    }
+  }, [center?.lat, center?.lng]);
 
   // Keep live refs to avoid React stale closure bugs on map clicks!
   const onMapClickRef = useRef(onMapClick);
@@ -168,6 +175,12 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
 
     mapInstanceRef.current = map;
     renderOverlays();
+
+    setTimeout(() => {
+      if (mapInstanceRef.current && (window as any).google?.maps) {
+        google.maps.event.trigger(mapInstanceRef.current, 'resize');
+      }
+    }, 150);
   }, []);
 
   const openPopup = (info: any, m: any) => {

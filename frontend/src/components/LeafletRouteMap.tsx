@@ -55,14 +55,21 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   // During live vehicle playback, only vehiclePosition updates so overlayKey stays constant.
   // This guarantees clearLayers() and fitBounds() NEVER execute during playback, eliminating all vibration/jitter!
   const overlayKey = React.useMemo(() => {
-    const rIds = (routes || []).map(r => `${r.id}_${r.coordinates?.length || 0}`).join('|');
-    const sKey = startPoint ? `${Number(startPoint.lat).toFixed(4)},${Number(startPoint.lng).toFixed(4)}` : 'none';
-    const eKey = endPoint ? `${Number(endPoint.lat).toFixed(4)},${Number(endPoint.lng).toFixed(4)}` : 'none';
-    const stopKey = (stoppages || []).map(s => `${s.id || s.name || ''}_${Number(s.lat).toFixed(4)}_${Number(s.lng).toFixed(4)}`).join('|');
-    const tollKey = (tollGates || []).map(t => `${t.id || t.name || ''}_${Number(t.lat).toFixed(4)}_${Number(t.lng).toFixed(4)}_${t.charges || ''}`).join('|');
-    const wayKey = (customWaypoints || []).map(w => `${Number(w.lat).toFixed(4)}_${Number(w.lng).toFixed(4)}`).join('|');
+    const rIds = (routes || []).map(r => r ? `${r.id}_${r.coordinates?.length || 0}` : '').join('|');
+    const sKey = startPoint && startPoint.lat ? `${Number(startPoint.lat).toFixed(4)},${Number(startPoint.lng).toFixed(4)}` : 'none';
+    const eKey = endPoint && endPoint.lat ? `${Number(endPoint.lat).toFixed(4)},${Number(endPoint.lng).toFixed(4)}` : 'none';
+    const stopKey = (stoppages || []).map(s => s && s.lat ? `${s.id || s.name || ''}_${Number(s.lat).toFixed(4)}_${Number(s.lng).toFixed(4)}` : '').join('|');
+    const tollKey = (tollGates || []).map(t => t && t.lat ? `${t.id || t.name || ''}_${Number(t.lat).toFixed(4)}_${Number(t.lng).toFixed(4)}_${t.charges || ''}` : '').join('|');
+    const wayKey = (customWaypoints || []).map(w => w && w.lat ? `${Number(w.lat).toFixed(4)}_${Number(w.lng).toFixed(4)}` : '').join('|');
     return `${selectedRouteId || ''}::${rIds}::${sKey}::${eKey}::${stopKey}::${tollKey}::${wayKey}::${isManualDrawing}`;
   }, [routes, selectedRouteId, startPoint, endPoint, stoppages, tollGates, customWaypoints, isManualDrawing]);
+
+  // Keep center synchronized whenever target vehicle center coordinates change
+  useEffect(() => {
+    if (mapRef.current && center && center[0] && center[1]) {
+      mapRef.current.panTo(L.latLng(center[0], center[1]));
+    }
+  }, [center?.[0], center?.[1]]);
 
   // Initialize Map
   useEffect(() => {
@@ -90,6 +97,12 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     });
 
     mapRef.current = map;
+
+    setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    }, 150);
 
     return () => {
       map.remove();
