@@ -188,9 +188,48 @@ export const Dashboard: React.FC<DashboardProps> = ({
       .filter(r => r.coordinates.length >= 2);
   }, [vehicles]);
 
+  const [animIndex, setAnimIndex] = useState(0);
+
+  // Animate moving vehicles smoothly along route coordinates
+  useEffect(() => {
+    const hasMoving = vehicles.some(v => v.status === 'moving');
+    if (!hasMoving) return;
+
+    const interval = setInterval(() => {
+      setAnimIndex(prev => prev + 1);
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [vehicles]);
+
   const userVehiclePosition = useMemo(() => {
     if (vehicles.length === 0) return null;
     const v = vehicles[0];
+    const coords = dashboardRoutes[0]?.coordinates || [];
+
+    if (coords.length > 0) {
+      if (v.status === 'moving') {
+        const pt = coords[animIndex % coords.length];
+        return {
+          lat: pt[0],
+          lng: pt[1],
+          speed: v.current_speed && v.current_speed > 0 ? v.current_speed : 48,
+          status: 'moving',
+          plate: v.registration_no
+        };
+      } else {
+        // Vehicle is NOT moving: position truck at the END POINT of the route
+        const endPt = coords[coords.length - 1];
+        return {
+          lat: endPt[0],
+          lng: endPt[1],
+          speed: 0,
+          status: v.status || 'stopped',
+          plate: v.registration_no
+        };
+      }
+    }
+
     if (!v.current_lat || !v.current_lng) return null;
     return {
       lat: Number(v.current_lat),
@@ -199,7 +238,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       status: v.status || 'active',
       plate: v.registration_no
     };
-  }, [vehicles]);
+  }, [vehicles, dashboardRoutes, animIndex]);
 
   const userStartPoint = useMemo(() => {
     if (vehicles.length === 0 || !(vehicles[0] as any).start_lat) return null;
@@ -381,13 +420,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     zoom={isAdmin ? 7 : 8}
                     routes={dashboardRoutes}
                     selectedRouteId={dashboardRoutes[0]?.id || ''}
-                    vehiclePosition={!isAdmin ? userVehiclePosition : (vehicles[0]?.current_lat ? {
-                      lat: Number(vehicles[0].current_lat),
-                      lng: Number(vehicles[0].current_lng),
-                      speed: vehicles[0].current_speed || 0,
-                      status: vehicles[0].status || 'active',
-                      plate: vehicles[0].registration_no
-                    } : null)}
+                    vehiclePosition={userVehiclePosition}
                     startPoint={userStartPoint}
                     endPoint={userEndPoint}
                   />

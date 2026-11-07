@@ -159,6 +159,19 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
     return manualTolls;
   }, [activeRoute?.toll_gates_json, manualTolls]);
 
+  // Auto play/move when vehicle status is 'moving', park at END POINT when status is NOT 'moving'
+  useEffect(() => {
+    if (!vehicle) return;
+    if (vehicle.status === 'moving') {
+      setIsPlaying(true);
+    } else {
+      setIsPlaying(false);
+      if (smoothPlaybackCoordinates.length > 0) {
+        setPlaybackIndex(smoothPlaybackCoordinates.length - 1);
+      }
+    }
+  }, [vehicle?.id, vehicle?.status, smoothPlaybackCoordinates.length]);
+
   // Playback timer ticker - smoothly and calmly moves vehicle along smoothPlaybackCoordinates
   useEffect(() => {
     if (!isPlaying || smoothPlaybackCoordinates.length <= 1) return;
@@ -168,15 +181,19 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
         const step = Math.max(1, Math.round(playbackSpeed));
         const next = prev + step;
         if (next >= smoothPlaybackCoordinates.length - 1) {
+          // If vehicle is actively set to moving, loop continuously along the route
+          if (vehicle?.status === 'moving') {
+            return 0;
+          }
           setIsPlaying(false);
           return smoothPlaybackCoordinates.length - 1;
         }
         return next;
       });
-    }, 110);
+    }, 160);
 
     return () => clearInterval(interval);
-  }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length]);
+  }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length, vehicle?.status]);
 
   const handleResetPlayback = () => {
     setIsPlaying(false);
@@ -230,25 +247,29 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   // Determine current simulated position with rock-solid coordinates
   const currentPlaybackPoint: [number, number] | null = React.useMemo(() => {
     if (smoothPlaybackCoordinates.length > 0) {
+      // If vehicle status is NOT moving and not actively replaying, park truck at the END POINT of the route
+      if (vehicle?.status !== 'moving' && !isPlaying) {
+        return smoothPlaybackCoordinates[smoothPlaybackCoordinates.length - 1];
+      }
       return smoothPlaybackCoordinates[Math.min(playbackIndex, smoothPlaybackCoordinates.length - 1)];
     }
     if (vehicle?.current_lat && vehicle?.current_lng) {
       return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
     }
     return null;
-  }, [smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng]);
+  }, [smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, vehicle?.status, isPlaying]);
 
   const playbackProgressPercent = smoothPlaybackCoordinates.length > 1
     ? Math.min(100, Math.round((playbackIndex / (smoothPlaybackCoordinates.length - 1)) * 100))
-    : 0;
+    : (vehicle?.status !== 'moving' ? 100 : 0);
 
   const simulatedDistanceCoveredKm = activeRoute?.total_distance_km
     ? ((playbackProgressPercent / 100) * Number(activeRoute.total_distance_km)).toFixed(1)
     : '0';
 
-  const simulatedSpeed = isPlaying
-    ? 52
-    : (playbackIndex > 0 && playbackIndex === smoothPlaybackCoordinates.length - 1 ? 0 : vehicle?.current_speed || 0);
+  const simulatedSpeed = (vehicle?.status === 'moving' || isPlaying)
+    ? (vehicle?.current_speed && vehicle.current_speed > 0 ? vehicle.current_speed : 48)
+    : 0;
 
   const simulatedVehiclePosition = React.useMemo(() => {
     if (!currentPlaybackPoint || !vehicle) return null;
@@ -256,10 +277,71 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       lat: currentPlaybackPoint[0],
       lng: currentPlaybackPoint[1],
       speed: simulatedSpeed,
-      status: isPlaying ? 'moving' : (playbackIndex === 0 ? vehicle.status : 'stopped'),
+      status: (vehicle.status === 'moving' || isPlaying) ? 'moving' : 'stopped',
       plate: vehicle.registration_no
     };
-  }, [currentPlaybackPoint, vehicle, simulatedSpeed, isPlaying, playbackIndex]);
+  }, [currentPlaybackPoint, vehicle, simulatedSpeed, isPlaying]);
+
+  // Stoppages with calculated arrival and departure times based on route duration
+  const stoppagesWithTimings = React.useMemo(() => {
+    if (!stoppages || stoppages.length === 0) return [];
+
+    const parseTimeToMins = (tStr?: string, defaultMin = 8 * 60): number => {
+      if (!tStr) return defaultMin;
+      const clean = tStr.trim().toLowerCase();
+      const isPM = clean.includes('pm');
+      const isAM = clean.includes('am');
+      const match = clean.replace(/[^0-9:]/g, '').split(':');
+      if (match.length >= 2) {
+        let h = parseInt(match[0], 10);
+        const m = parseInt(match[1], 10) || 0;
+        if (isPM && h < 12) h += 12;
+        if (isAM && h === 12) h = 0;
+        if (!isNaN(h)) return h * 60 + m;
+      }
+      return defaultMin;
+    };
+
+    const routeStartMins = parseTimeToMins(activeRoute?.start_trip_time, 8 * 60);
+    const routeDurationMins = (() => {
+      if (activeRoute?.estimated_travel_time_min && Number(activeRoute.estimated_travel_time_min) > 0) {
+        return Number(activeRoute.estimated_travel_time_min);
+      }
+      if (activeRoute?.start_trip_time && activeRoute?.end_trip_time) {
+        const sMin = parseTimeToMins(activeRoute.start_trip_time);
+        const eMin = parseTimeToMins(activeRoute.end_trip_time);
+        if (eMin > sMin) return eMin - sMin;
+      }
+      if (activeRoute?.total_distance_km && Number(activeRoute.total_distance_km) > 0) {
+        return Math.max(60, Math.round((Number(activeRoute.total_distance_km) / 50) * 60));
+      }
+      return 180;
+    })();
+
+    const formatTime = (totalMinutes: number) => {
+      const h = Math.floor(totalMinutes / 60) % 24;
+      const m = Math.floor(totalMinutes % 60);
+      const hr = (h % 12) || 12;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      return `${String(hr).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+    };
+
+    const nStops = stoppages.length;
+    return stoppages.map((s, idx) => {
+      const fraction = (idx + 1) / (nStops + 1);
+      const arrTotal = Math.round(routeStartMins + fraction * routeDurationMins);
+      const durationMins = s.stop_duration_mins || s.duration || Math.min(25, Math.max(10, Math.round(routeDurationMins / (nStops * 4))));
+      const depTotal = arrTotal + durationMins;
+
+      return {
+        ...s,
+        duration: durationMins,
+        stop_duration_mins: durationMins,
+        arrival_time: formatTime(arrTotal),
+        departure_time: formatTime(depTotal)
+      };
+    });
+  }, [stoppages, activeRoute?.start_trip_time, activeRoute?.end_trip_time, activeRoute?.estimated_travel_time_min, activeRoute?.total_distance_km]);
 
   // Safe early returns AFTER all hooks are registered
   if (loading && !vehicle) {
@@ -525,10 +607,6 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   <span className="text-slate-400 font-medium">Fuel Type:</span>
                   <span className="font-bold text-slate-800">{vehicle.fuel_type}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                  <span className="text-slate-400 font-medium">Odometer:</span>
-                  <span className="font-mono font-bold text-slate-900">{Number(vehicle.odometer_km || 0).toLocaleString()} KM</span>
-                </div>
                 {activeRoute && (
                   <>
                     <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
@@ -559,26 +637,13 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                     </span>
                   </div>
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-0.5">
-                    {stoppages.length === 0 ? (
+                    {stoppagesWithTimings.length === 0 ? (
                       <p className="text-xs text-slate-400 italic">No scheduled stoppages on this route.</p>
                     ) : (
-                      stoppages.map((s, idx) => {
-                        const durationMins = s.stop_duration_mins || s.duration || 25;
-                        const baseMinutes = idx * 90 + 60;
-                        const startHour = 8;
-                        const arrTotal = startHour * 60 + baseMinutes;
-                        const depTotal = arrTotal + durationMins;
-
-                        const formatTime = (total: number) => {
-                          const h = Math.floor(total / 60) % 24;
-                          const m = total % 60;
-                          const hr = (h % 12) || 12;
-                          const ampm = h >= 12 ? 'PM' : 'AM';
-                          return `${String(hr).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
-                        };
-
-                        const arrStr = formatTime(arrTotal);
-                        const depStr = formatTime(depTotal);
+                      stoppagesWithTimings.map((s, idx) => {
+                        const durationMins = s.stop_duration_mins || s.duration || 20;
+                        const arrStr = (s as any).arrival_time || '09:00 AM';
+                        const depStr = (s as any).departure_time || '09:20 AM';
                         const cleanName = (s.name || `Stoppage #${idx + 1}`)
                           .replace(/Highway Dhaba & Rest Point|Fuel Station & Inspection Bay|Driver Rest Area|Logistics Checkpoint|Restaurant|Dhaba/gi, 'Transit Halt').replace(/\r?\n/g, ' ')
                           .trim();
@@ -749,14 +814,6 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                     onChange={(e) => setPlaybackIndex(Number(e.target.value))}
                     className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#E60012]"
                   />
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                    <span className="truncate max-w-[45%] text-left font-medium">
-                      🟢 {(activeRoute.start_location_name || '').replace(/\r?\n/g, ' ')}
-                    </span>
-                    <span className="truncate max-w-[45%] text-right font-medium">
-                      🔴 {(activeRoute.end_location_name || '').replace(/\r?\n/g, ' ')}
-                    </span>
-                  </div>
                 </div>
 
                 {/* Playback Controls & Speed Buttons */}
@@ -818,7 +875,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   vehiclePosition={simulatedVehiclePosition}
                   startPoint={memoizedStart}
                   endPoint={memoizedEnd}
-                  stoppages={stoppages}
+                  stoppages={stoppagesWithTimings}
                   tollGates={routeTolls}
                 />
               </ErrorBoundary>

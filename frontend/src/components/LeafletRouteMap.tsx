@@ -348,7 +348,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       const baseMins = (idx * 45 + 30) % 60;
       const displayHour = (baseHour % 12) || 12;
       const ampm = baseHour >= 12 ? 'PM' : 'AM';
-      const scheduledTimeStr = `${String(displayHour).padStart(2, '0')}:${String(baseMins).padStart(2, '0')} ${ampm}`;
+      const scheduledTimeStr = (stop as any).arrival_time || `${String(displayHour).padStart(2, '0')}:${String(baseMins).padStart(2, '0')} ${ampm}`;
 
       const marker = L.marker(p, { icon: stopIcon, title: `Stoppage #${idx + 1}` }).addTo(group);
       marker.bindPopup(`
