@@ -1,4 +1,17 @@
-const API_BASE = (import.meta.env.VITE_API_URL ? String(import.meta.env.VITE_API_URL).replace(/\/$/, '') : '') + '/api';
+const resolveApiBase = (): string => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.trim().replace(/\/$/, '') + '/api';
+  }
+  // Local development
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return 'http://localhost:5000/api';
+  }
+  // Production fallback: directly hit Render backend
+  return 'https://gpstrackx.onrender.com/api';
+};
+
+const API_BASE = resolveApiBase();
 
 export function getAuthToken(): string | null {
   return localStorage.getItem('gpstrackx_token');
@@ -12,35 +25,112 @@ export function removeAuthToken() {
   localStorage.removeItem('gpstrackx_token');
 }
 
+// In-Memory Client Cache for ultra-fast (0ms) page switches & tab navigation
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+
+const apiCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<any>>();
+const CACHE_TTL_MS = 45 * 1000; // 45 seconds TTL
+
+export function clearApiCache() {
+  apiCache.clear();
+}
+
 export async function apiRequest<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
+  const method = (options.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+
+  // Cache key based on endpoint and auth token
+  const cacheKey = `${token ? 'auth' : 'anon'}::${endpoint}`;
+
+  // If this is a mutation (POST, PUT, DELETE), clear the cache so fresh data is fetched
+  if (!isGet) {
+    clearApiCache();
+  } else {
+    // Check if we have fresh cached data
+    const cached = apiCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+      // Background revalidation if older than 8 seconds
+      if (now - cached.timestamp > 8000 && !inFlightRequests.has(cacheKey)) {
+        // Asynchronously refresh in background
+        const bgHeaders: HeadersInit = {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(options.headers || {})
+        };
+        fetch(`${API_BASE}${endpoint}`, { ...options, headers: bgHeaders })
+          .then(res => res.ok ? res.json() : null)
+          .then(freshData => {
+            if (freshData) {
+              apiCache.set(cacheKey, { data: freshData, timestamp: Date.now() });
+            }
+          })
+          .catch(() => {});
+      }
+      return cached.data as T;
+    }
+
+    // De-duplicate in-flight requests for the exact same endpoint
+    if (inFlightRequests.has(cacheKey)) {
+      return inFlightRequests.get(cacheKey) as Promise<T>;
+    }
+  }
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {})
   };
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers
-  });
+  const executeFetch = async (): Promise<T> => {
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers
+      });
 
-  if (response.status === 401) {
-    removeAuthToken();
-    window.dispatchEvent(new Event('gpstrackx_unauthorized'));
-    throw new Error('Unauthorized');
+      if (response.status === 401) {
+        removeAuthToken();
+        clearApiCache();
+        window.dispatchEvent(new Event('gpstrackx_unauthorized'));
+        throw new Error('Unauthorized');
+      }
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || `Request failed with status ${response.status}`);
+      }
+
+      if (isGet && data) {
+        apiCache.set(cacheKey, { data, timestamp: Date.now() });
+      }
+
+      return data as T;
+    } finally {
+      if (isGet) {
+        inFlightRequests.delete(cacheKey);
+      }
+    }
+  };
+
+  if (isGet) {
+    const promise = executeFetch();
+    inFlightRequests.set(cacheKey, promise);
+    return promise;
   }
 
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(data?.error || `Request failed with status ${response.status}`);
-  }
-
-  return data;
+  return executeFetch();
 }
 
 export const api = {
+  clearCache: clearApiCache,
+
   // Auth
   register: (data: { name: string; email?: string; password: string; confirmPassword?: string; phone: string; company_name?: string; otp?: string; role?: string }) =>
     apiRequest<{ message: string; token: string; user: any }>('/auth/register', {
@@ -178,4 +268,3 @@ export const api = {
       body: JSON.stringify({ ...data, vehicle_id: vehicleId })
     })
 };
-
