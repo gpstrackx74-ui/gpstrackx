@@ -39,20 +39,41 @@ interface InteractiveMapProps {
   height?: string;
 }
 
+// Global auth failure handler for Google Maps
+if (typeof window !== 'undefined') {
+  const prevAuth = (window as any).gm_authFailure;
+  (window as any).gm_authFailure = () => {
+    (window as any).__googleMapsAuthFailed = true;
+    window.dispatchEvent(new CustomEvent('google-maps-auth-failed'));
+    if (typeof prevAuth === 'function') prevAuth();
+  };
+}
+
 export const InteractiveMap: React.FC<InteractiveMapProps> = (props) => {
   const [googleAvailable, setGoogleAvailable] = useState<boolean>(() => {
-    return typeof (window as any).google?.maps !== 'undefined';
+    return typeof (window as any).google?.maps !== 'undefined' && !(window as any).__googleMapsAuthFailed;
   });
 
   useEffect(() => {
+    const handleAuthFail = () => setGoogleAvailable(false);
+    window.addEventListener('google-maps-auth-failed', handleAuthFail);
+    if ((window as any).__googleMapsAuthFailed) {
+      setGoogleAvailable(false);
+      return;
+    }
+
     if (googleAvailable) return;
     const interval = setInterval(() => {
-      if (typeof (window as any).google?.maps !== 'undefined') {
+      if (typeof (window as any).google?.maps !== 'undefined' && !(window as any).__googleMapsAuthFailed) {
         setGoogleAvailable(true);
         clearInterval(interval);
       }
     }, 200);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('google-maps-auth-failed', handleAuthFail);
+    };
   }, [googleAvailable]);
 
   // Use stable static arrays for any omitted array props to avoid recreation on parent re-renders

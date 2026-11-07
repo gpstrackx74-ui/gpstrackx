@@ -31,6 +31,117 @@ interface VehiclesProps {
 // Indian vehicle registration standard format validation
 const INDIAN_VEHICLE_REGEX = /^[A-Z]{2}[ -]?[0-9]{1,2}[ -]?[A-Z]{0,3}[ -]?[0-9]{4}$/;
 
+// Helper to reliably parse time into 12-hour components (hh, mm, AM/PM)
+const parseTimeComponents = (timeStr?: string) => {
+  if (!timeStr) return { hour: '08', minute: '00', period: 'AM' as const };
+  const clean = timeStr.trim();
+  const isPM = clean.toUpperCase().includes('PM');
+  const isAM = clean.toUpperCase().includes('AM');
+  const parts = clean.replace(/[^0-9:]/g, '').split(':');
+  let h = parseInt(parts[0]) || 8;
+  const m = parts[1] ? String(parseInt(parts[1]) || 0).padStart(2, '0') : '00';
+  let period: 'AM' | 'PM' = 'AM';
+
+  if (isPM) {
+    period = 'PM';
+    if (h > 12) h -= 12;
+  } else if (isAM) {
+    period = 'AM';
+    if (h === 0) h = 12;
+  } else {
+    // 24-hour format fallback
+    if (h >= 12) {
+      period = 'PM';
+      if (h > 12) h -= 12;
+    } else {
+      period = 'AM';
+      if (h === 0) h = 12;
+    }
+  }
+  return {
+    hour: String(h).padStart(2, '0'),
+    minute: m,
+    period
+  };
+};
+
+// Reusable Production-grade 12-Hour AM/PM Time Picker Component
+const AmPmTimeInput: React.FC<{
+  label: string;
+  value: string;
+  onChange: (val: string) => void;
+}> = ({ label, value, onChange }) => {
+  const parsed = parseTimeComponents(value);
+
+  const handleHourChange = (newHour: string) => {
+    onChange(`${newHour.padStart(2, '0')}:${parsed.minute} ${parsed.period}`);
+  };
+
+  const handleMinuteChange = (newMinute: string) => {
+    onChange(`${parsed.hour}:${newMinute.padStart(2, '0')} ${parsed.period}`);
+  };
+
+  const handlePeriodChange = (newPeriod: 'AM' | 'PM') => {
+    onChange(`${parsed.hour}:${parsed.minute} ${newPeriod}`);
+  };
+
+  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+  const minutes = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+
+  return (
+    <div>
+      <label className="block text-slate-600 font-bold mb-1">
+        {label}
+      </label>
+      <div className="flex items-center gap-1.5 p-1 rounded-xl border border-slate-200 bg-white shadow-2xs">
+        <select
+          value={parsed.hour}
+          onChange={(e) => handleHourChange(e.target.value)}
+          className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer px-1 py-1"
+        >
+          {hours.map(h => (
+            <option key={h} value={h}>{h}</option>
+          ))}
+        </select>
+        <span className="font-mono font-bold text-slate-400">:</span>
+        <select
+          value={parsed.minute}
+          onChange={(e) => handleMinuteChange(e.target.value)}
+          className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer px-1 py-1"
+        >
+          {minutes.map(m => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+        <div className="flex items-center bg-slate-100 rounded-lg p-0.5 ml-auto border border-slate-200">
+          <button
+            type="button"
+            onClick={() => handlePeriodChange('AM')}
+            className={`px-2 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer ${
+              parsed.period === 'AM'
+                ? 'bg-[#E60012] text-white shadow-2xs'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            AM
+          </button>
+          <button
+            type="button"
+            onClick={() => handlePeriodChange('PM')}
+            className={`px-2 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer ${
+              parsed.period === 'PM'
+                ? 'bg-[#E60012] text-white shadow-2xs'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            PM
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteForVehicle }) => {
   const { isAdmin } = useAuth();
 
@@ -63,8 +174,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const [tripForm, setTripForm] = useState({
     route_name: '',
     trip_date: new Date().toISOString().split('T')[0],
-    start_trip_time: '08:00',
-    end_trip_time: '18:00',
+    start_trip_time: '08:00 AM',
+    end_trip_time: '06:00 PM',
     start_location_name: '',
     end_location_name: '',
     total_distance_km: '',
@@ -84,8 +195,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   // Quick Route Parameters Inline Edit State
   const [quickEditVehicleId, setQuickEditVehicleId] = useState<number | null>(null);
   const [quickEditForm, setQuickEditForm] = useState({
-    start_trip_time: '08:00',
-    end_trip_time: '18:00',
+    start_trip_time: '08:00 AM',
+    end_trip_time: '06:00 PM',
     total_toll_fee: '340',
     stoppages_count: '2'
   });
@@ -1516,30 +1627,16 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                             required
                           />
                         </div>
-                        <div>
-                          <label className="block text-slate-600 font-bold mb-1">
-                            Start Time
-                          </label>
-                          <input
-                            type="time"
-                            value={tripForm.start_trip_time}
-                            onChange={(e) => setTripForm({ ...tripForm, start_trip_time: e.target.value })}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 font-medium text-xs focus:outline-none focus:border-red-500"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-slate-600 font-bold mb-1">
-                            End Time
-                          </label>
-                          <input
-                            type="time"
-                            value={tripForm.end_trip_time}
-                            onChange={(e) => setTripForm({ ...tripForm, end_trip_time: e.target.value })}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 font-medium text-xs focus:outline-none focus:border-red-500"
-                            required
-                          />
-                        </div>
+                        <AmPmTimeInput
+                          label="Start Time"
+                          value={tripForm.start_trip_time}
+                          onChange={(val) => setTripForm({ ...tripForm, start_trip_time: val })}
+                        />
+                        <AmPmTimeInput
+                          label="End Time"
+                          value={tripForm.end_trip_time}
+                          onChange={(val) => setTripForm({ ...tripForm, end_trip_time: val })}
+                        />
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">

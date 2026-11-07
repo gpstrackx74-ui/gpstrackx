@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { Vehicle, FastagTransaction, FastagStats } from '../types';
 import {
   Receipt,
@@ -26,6 +27,7 @@ import {
 } from 'lucide-react';
 
 export const FastagBilling: React.FC = () => {
+  const { isAdmin } = useAuth();
   const [transactions, setTransactions] = useState<FastagTransaction[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [stats, setStats] = useState<FastagStats>({
@@ -257,14 +259,16 @@ export const FastagBilling: React.FC = () => {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#0F172A]' : ''}`} />
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs flex items-center gap-2 transition shadow-xs cursor-pointer"
-            >
-              <Plus className="w-4 h-4 text-emerald-200" />
-              <span>+ Add FASTag Toll Bill</span>
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs flex items-center gap-2 transition shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-emerald-200" />
+                <span>+ Add FASTag Toll Bill</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -439,7 +443,7 @@ export const FastagBilling: React.FC = () => {
               <Receipt className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">No FASTag toll transactions found.</p>
               <p className="text-[11px] text-slate-400">
-                Plan a route with tolls in Route Planner or click "+ Add FASTag Toll Bill" above.
+                {isAdmin ? 'Plan a route with tolls in Route Planner or click "+ Add FASTag Toll Bill" above.' : 'No toll transactions recorded on your assigned vehicle corridors yet.'}
               </p>
             </div>
           ) : (
