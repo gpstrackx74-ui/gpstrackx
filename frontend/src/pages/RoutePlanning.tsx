@@ -115,6 +115,10 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
+  const [endTripDate, setEndTripDate] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
   const [startTripTime, setStartTripTime] = useState<string>('08:00');
   const [endTripTime, setEndTripTime] = useState<string>('18:00');
 
@@ -208,7 +212,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     const reader = new FileReader();
     reader.onload = (evt) => {
       // Non-blocking microtask execution so UI remains 100% fluid
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
           const data = new Uint8Array(evt.target?.result as ArrayBuffer);
           const workbook = XLSX.read(data, { type: 'array' });
@@ -420,10 +424,31 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
           setStartPoint(start);
           setEndPoint(end);
-          // GPS track points belong to the route path, NOT scheduled stoppages!
-          // Reset stoppages to 0 for instant 0ms latency; user can add halts via + counter if needed.
-          setStoppages([]);
-          setStopsInput('0');
+
+          // Automatically place 2 realistic transit halts along the route corridor
+          const autoStops: Stoppage[] = [
+            {
+              sequence_order: 1,
+              name: `${start.name.split(',')[0]} Transit Halt & Fuel Bay`,
+              address: `Midway Highway Rest Bay`,
+              lat: parseFloat((start.lat + (end.lat - start.lat) * 0.35).toFixed(6)),
+              lng: parseFloat((start.lng + (end.lng - start.lng) * 0.35).toFixed(6)),
+              duration: 20,
+              stop_duration_mins: 20
+            },
+            {
+              sequence_order: 2,
+              name: `Industrial Express Rest Point & Dhaba`,
+              address: `Commercial Highway Logistics Rest Area`,
+              lat: parseFloat((start.lat + (end.lat - start.lat) * 0.70).toFixed(6)),
+              lng: parseFloat((start.lng + (end.lng - start.lng) * 0.70).toFixed(6)),
+              duration: 20,
+              stop_duration_mins: 20
+            }
+          ];
+
+          setStoppages(autoStops);
+          setStopsInput('2');
           setImportedWaypointsCount(validPoints.length);
           setIsDraggableRoute(true);
 
@@ -431,6 +456,26 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             setCustomDistanceKm(summaryMeta.distanceKm);
           } else {
             setCustomDistanceKm(null);
+          }
+
+          // Parse start and end dates from summary if available
+          if (summaryMeta.startDate) {
+            try {
+              const d = new Date(summaryMeta.startDate);
+              if (!isNaN(d.getTime())) {
+                const iso = d.toISOString().split('T')[0];
+                setTripDate(iso);
+              }
+            } catch (e) {}
+          }
+          if (summaryMeta.endDate) {
+            try {
+              const d = new Date(summaryMeta.endDate);
+              if (!isNaN(d.getTime())) {
+                const iso = d.toISOString().split('T')[0];
+                setEndTripDate(iso);
+              }
+            } catch (e) {}
           }
 
           // Auto-match vehicle if registration plate was parsed in Summary sheet!
@@ -446,27 +491,9 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           const autoCorridorName = `${summaryMeta.vehicleReg ? summaryMeta.vehicleReg + ': ' : ''}${start.name.split(',')[0]} to ${end.name.split(',')[0]}`;
           setCorridorNameInput(autoCorridorName);
 
-          const exactRoute: AlternativeRoute = {
-            id: 'excel-exact-gps-route',
-            name: autoCorridorName,
-            distanceKm: finalDistKm,
-            timeMinutes: totalMins,
-            tollGatesCount: 0,
-            stopsCount: 0,
-            summary: `Exact Excel GPS Track (${validPoints.length} points)`,
-            color: '#E60012',
-            coordinates: displayPolyline,
-            tollGates: []
-          };
-
-          setRoutes([exactRoute]);
-          setSelectedRouteId('excel-exact-gps-route');
+          // Calculate genuine curved highway driving route with automatic FASTag toll detection!
+          await handleCalculateRoutes(start, end, autoStops);
           setIsExcelRouteActive(true);
-          setCustomDistanceKm(finalDistKm);
-          setTravelHours(Math.floor(totalMins / 60));
-          setTravelMinutes(totalMins % 60);
-          setModifiedPolyline(displayPolyline);
-          setIsDraggableRoute(true);
         } catch (err: any) {
           alert('Failed to read Excel file: ' + err.message);
         } finally {
@@ -1355,6 +1382,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         toll_gates: allTolls,
         alternative_routes: sanitizedAltRoutes,
         trip_date: tripDate,
+        end_trip_date: endTripDate,
         start_trip_time: startTripTime,
         end_trip_time: endTripTime
       });
@@ -1405,29 +1433,52 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             </div>
           </div>
 
-          {/* 3-Column Inputs */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            {/* 1. Trip Date */}
+          {/* 4-Column Inputs: Start Date, End Date, Start Time, End Time */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {/* 1. Trip Start Date (From) */}
             <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Scheduled Trip Date
+                  Start Date (From)
                 </label>
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
               </div>
               <input
                 type="date"
                 value={tripDate}
-                onChange={(e) => setTripDate(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTripDate(val);
+                  if (endTripDate < val) {
+                    setEndTripDate(val);
+                  }
+                }}
                 className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition"
               />
             </div>
 
-            {/* 2. Start Trip Time */}
+            {/* 2. Trip End Date (To Date) */}
             <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Start Trip Time (Dispatch)
+                  End Date (To Date)
+                </label>
+                <Calendar className="w-3.5 h-3.5 text-[#0F172A]" />
+              </div>
+              <input
+                type="date"
+                min={tripDate}
+                value={endTripDate || tripDate}
+                onChange={(e) => setEndTripDate(e.target.value)}
+                className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition"
+              />
+            </div>
+
+            {/* 3. Start Trip Time */}
+            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Start Time (Dispatch)
                 </label>
                 <Clock className="w-3.5 h-3.5 text-[#0F172A]" />
               </div>
@@ -1439,11 +1490,11 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               />
             </div>
 
-            {/* 3. End Trip Time */}
+            {/* 4. End Trip Time */}
             <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  End Trip Time (Estimated Arrival)
+                  End Time (Arrival)
                 </label>
                 <Clock className="w-3.5 h-3.5 text-slate-500" />
               </div>
@@ -2413,7 +2464,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       </span>
                       <span className="text-slate-300 mx-1.5">•</span>
                       <span className="font-mono text-slate-600">
-                        {tripDate} ({startTripTime} - {endTripTime})
+                        {tripDate}{endTripDate && endTripDate !== tripDate ? ` → ${endTripDate}` : ''} ({startTripTime} - {endTripTime})
                       </span>
                     </p>
                   </div>

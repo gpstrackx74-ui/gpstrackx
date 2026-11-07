@@ -197,7 +197,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const interval = setInterval(() => {
       setAnimIndex(prev => prev + 1);
-    }, 250);
+    }, 1500);
 
     return () => clearInterval(interval);
   }, [vehicles]);

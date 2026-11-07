@@ -176,9 +176,14 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   useEffect(() => {
     if (!isPlaying || smoothPlaybackCoordinates.length <= 1) return;
 
+    // Very slow, calm real-time movement (1200ms per step) when vehicle is in moving status
+    const intervalMs = vehicle?.status === 'moving'
+      ? Math.max(300, Math.round(1200 / playbackSpeed))
+      : Math.max(100, Math.round(250 / playbackSpeed));
+
     const interval = setInterval(() => {
       setPlaybackIndex(prev => {
-        const step = Math.max(1, Math.round(playbackSpeed));
+        const step = 1;
         const next = prev + step;
         if (next >= smoothPlaybackCoordinates.length - 1) {
           // If vehicle is actively set to moving, loop continuously along the route
@@ -190,7 +195,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
         }
         return next;
       });
-    }, 160);
+    }, intervalMs);
 
     return () => clearInterval(interval);
   }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length, vehicle?.status]);
@@ -611,7 +616,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   <>
                     <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
                       <span className="text-slate-400 font-medium">Scheduled Date:</span>
-                      <span className="font-mono font-bold text-slate-800">{activeRoute.trip_date || 'Today'}</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {activeRoute.trip_date || 'Today'}{activeRoute.end_trip_date && activeRoute.end_trip_date !== activeRoute.trip_date ? ` → ${activeRoute.end_trip_date}` : ''}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between py-1">
                       <span className="text-slate-400 font-medium">Trip Window:</span>
@@ -796,7 +803,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                     {activeRoute.trip_date && (
                       <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-600 font-mono bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs">
                         <Calendar className="w-3.5 h-3.5 text-red-500" />
-                        <span className="font-bold">{activeRoute.trip_date}</span>
+                        <span className="font-bold">{activeRoute.trip_date}{activeRoute.end_trip_date && activeRoute.end_trip_date !== activeRoute.trip_date ? ` → ${activeRoute.end_trip_date}` : ''}</span>
                         <span className="text-slate-300">|</span>
                         <span>{activeRoute.start_trip_time || '08:00'} - {activeRoute.end_trip_time || '18:00'}</span>
                       </div>

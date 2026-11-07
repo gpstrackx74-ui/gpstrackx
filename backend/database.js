@@ -96,6 +96,7 @@ function initializeDatabase() {
       toll_gates_json TEXT DEFAULT '[]',
       alternative_routes_json TEXT DEFAULT '[]',
       trip_date TEXT,
+      end_trip_date TEXT,
       start_trip_time TEXT,
       end_trip_time TEXT,
       is_active INTEGER DEFAULT 1,
@@ -144,6 +145,9 @@ function initializeDatabase() {
     }
     if (!routeCols.includes('end_trip_time')) {
       db.exec('ALTER TABLE routes ADD COLUMN end_trip_time TEXT');
+    }
+    if (!routeCols.includes('end_trip_date')) {
+      db.exec('ALTER TABLE routes ADD COLUMN end_trip_date TEXT');
     }
   } catch (e) {}
 

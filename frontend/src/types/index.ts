@@ -104,6 +104,7 @@ export interface RouteDetail {
   toll_gates_json: string;
   alternative_routes_json: string;
   trip_date?: string;
+  end_trip_date?: string;
   start_trip_time?: string;
   end_trip_time?: string;
   is_active: number;

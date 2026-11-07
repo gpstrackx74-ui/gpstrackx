@@ -1565,6 +1565,7 @@ app.post('/api/routes', authenticateToken, requireAdmin, (req, res) => {
     toll_gates,
     alternative_routes,
     trip_date,
+    end_trip_date,
     start_trip_time,
     end_trip_time
   } = req.body;
@@ -1597,8 +1598,8 @@ app.post('/api/routes', authenticateToken, requireAdmin, (req, res) => {
         vehicle_id, route_name, start_location_name, start_address, start_lat, start_lng,
         end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
         overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
-        trip_date, start_trip_time, end_trip_time, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        trip_date, end_trip_date, start_trip_time, end_trip_time, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     `);
 
     const result = insertRouteStmt.run(
@@ -1620,6 +1621,7 @@ app.post('/api/routes', authenticateToken, requireAdmin, (req, res) => {
       tollGatesJson,
       altRoutesJson,
       trip_date || new Date().toISOString().split('T')[0],
+      end_trip_date || trip_date || new Date().toISOString().split('T')[0],
       start_trip_time || '08:00 AM',
       end_trip_time || '06:00 PM'
     );
@@ -1915,6 +1917,7 @@ app.get('/api/allocations', authenticateToken, (req, res) => {
       r.total_distance_km,
       r.estimated_travel_time_min,
       r.trip_date,
+      r.end_trip_date,
       r.start_trip_time,
       r.end_trip_time,
       r.is_active as route_is_active,
@@ -1965,6 +1968,7 @@ app.get('/api/allocations/my', authenticateToken, (req, res) => {
       r.waypoints_json,
       r.toll_gates_json,
       r.trip_date,
+      r.end_trip_date,
       r.start_trip_time,
       r.end_trip_time
     FROM vehicle_allocations va
