@@ -20,6 +20,7 @@ const AppContent: React.FC = () => {
   const [previousTab, setPreviousTab] = useState<'dashboard' | 'vehicles'>('dashboard');
   const [routePlanVehicleId, setRoutePlanVehicleId] = useState<number | null>(null);
   const [userVehicles, setUserVehicles] = useState<any[]>([]);
+  const [adminMapViewVehicleId, setAdminMapViewVehicleId] = useState<number | null>(null);
 
   // Automatically fetch accessible vehicles so Map View & Route Telemetry always have a target vehicle
   useEffect(() => {
@@ -88,9 +89,13 @@ const AppContent: React.FC = () => {
         onNavigateTab={(tab, vehicleId) => {
           if (tab === 'routes' && vehicleId) {
             handlePlanRouteForVehicle(vehicleId);
+          } else if (tab === 'vehicle-tracking') {
+            setAdminMapViewVehicleId(vehicleId || null);
+            setCurrentTab('vehicle-tracking');
           } else if (vehicleId) {
             handleViewVehicle(vehicleId);
           } else {
+            setAdminMapViewVehicleId(null);
             setCurrentTab(tab);
           }
         }}
@@ -137,14 +142,33 @@ const AppContent: React.FC = () => {
         )}
 
         {currentTab === 'vehicle-tracking' && (
-          <ErrorBoundary title="Vehicle Live Map View">
-            <VehicleTracking
-              vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
-              onBack={() => setCurrentTab(previousTab)}
-              onPlanRoute={isAdmin ? handlePlanRouteForVehicle : undefined}
-              onSwitchVehicle={(vId) => setSelectedVehicleId(vId)}
-            />
-          </ErrorBoundary>
+          isAdmin ? (
+            adminMapViewVehicleId ? (
+              <ErrorBoundary title="Vehicle Live Map View">
+                <VehicleTracking
+                  vehicleId={adminMapViewVehicleId}
+                  onBack={() => setAdminMapViewVehicleId(null)}
+                  onPlanRoute={handlePlanRouteForVehicle}
+                  onSwitchVehicle={(vId) => setAdminMapViewVehicleId(vId)}
+                />
+              </ErrorBoundary>
+            ) : (
+              <Dashboard
+                onNavigateTab={(tab) => setCurrentTab(tab)}
+                onViewVehicle={(vId) => setAdminMapViewVehicleId(vId)}
+                initialUserTab="vehicle"
+                isLiveUserView={true}
+              />
+            )
+          ) : (
+            <ErrorBoundary title="Vehicle Live Map View">
+              <VehicleTracking
+                vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
+                onBack={() => setCurrentTab(previousTab)}
+                onSwitchVehicle={(vId) => setSelectedVehicleId(vId)}
+              />
+            </ErrorBoundary>
+          )
         )}
 
         {currentTab === 'users' && isAdmin && <UsersManagement />}

@@ -22,20 +22,28 @@ interface DashboardProps {
   onNavigateTab: (tab: string) => void;
   onViewVehicle: (vehicleId: number) => void;
   initialUserTab?: 'vehicle' | 'history';
+  isLiveUserView?: boolean;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
   onNavigateTab,
   onViewVehicle,
-  initialUserTab = 'vehicle'
+  initialUserTab = 'vehicle',
+  isLiveUserView = false
 }) => {
   const { isAdmin } = useAuth();
+  const isUserMode = !isAdmin || isLiveUserView;
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [userActiveTab, setUserActiveTab] = useState<'vehicle' | 'history'>(initialUserTab);
+
+  // States for Admin Live User View preview
+  const [userList, setUserList] = useState<any[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
 
   useEffect(() => {
     if (initialUserTab) {
@@ -49,22 +57,69 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
   const [userVehicleTrips, setUserVehicleTrips] = useState<any[]>([]);
 
-  const fetchData = async () => {
+  const fetchData = async (overrideUserId?: number) => {
     try {
       setLoading(true);
-      const [statsData, vehList] = await Promise.all([
-        api.getStats(),
-        api.getVehicles()
-      ]);
-      setStats(statsData.stats);
-      const uniqueVehList = Array.from(new Map((vehList || []).map((v: Vehicle) => [v.id, v])).values());
-      setVehicles(uniqueVehList);
 
-      // If user has allocated vehicles, fetch trips for date-wise history showcase
-      if (!isAdmin && vehList && vehList.length > 0) {
-        api.getVehicleTrips(vehList[0].id)
-          .then(trips => setUserVehicleTrips(trips || []))
-          .catch(() => { });
+      if (isLiveUserView) {
+        // Admin inspecting User Dashboard:
+        let currentUid = overrideUserId !== undefined ? overrideUserId : selectedUserId;
+        let users = userList;
+        if (users.length === 0) {
+          const uRes = await api.getUsers().catch(() => []);
+          const regUsers = (uRes || []).filter((u: any) => u.role !== 'admin');
+          setUserList(regUsers);
+          users = regUsers;
+          if (!currentUid && regUsers.length > 0) {
+            const allVehs = await api.getVehicles().catch(() => []);
+            const userWithVeh = regUsers.find((u: any) => allVehs.some((v: any) => v.assigned_user_id === u.id));
+            currentUid = userWithVeh ? userWithVeh.id : regUsers[0].id;
+            setSelectedUserId(currentUid);
+          }
+        }
+
+        // Fetch vehicles assigned to this specific user
+        const vehList = await api.getVehicles(currentUid ? { userId: String(currentUid) } : {}).catch(() => []);
+        const uniqueVehList = Array.from(new Map((vehList || []).map((v: Vehicle) => [v.id, v])).values());
+        setVehicles(uniqueVehList);
+
+        // Compute User Dashboard stats
+        const uTotal = uniqueVehList.length;
+        const uMoving = uniqueVehList.filter(v => v.status === 'moving').length;
+        const uActive = uniqueVehList.filter(v => v.status === 'active').length;
+        const uInactive = uniqueVehList.filter(v => v.status === 'inactive').length;
+        setStats({
+          totalVehicles: uTotal,
+          movingVehicles: uMoving,
+          activeVehicles: uActive,
+          inactiveVehicles: uInactive,
+          avgSpeed: 0,
+          totalUsers: 1,
+          totalRoutes: 0
+        });
+
+        // Fetch date-wise recorded trips for this user's vehicle
+        if (uniqueVehList.length > 0) {
+          const trips = await api.getVehicleTrips(uniqueVehList[0].id).catch(() => []);
+          setUserVehicleTrips(trips || []);
+        } else {
+          setUserVehicleTrips([]);
+        }
+      } else {
+        const [statsData, vehList] = await Promise.all([
+          api.getStats(),
+          api.getVehicles()
+        ]);
+        setStats(statsData.stats);
+        const uniqueVehList = Array.from(new Map((vehList || []).map((v: Vehicle) => [v.id, v])).values());
+        setVehicles(uniqueVehList);
+
+        // If user has allocated vehicles, fetch trips for date-wise history showcase
+        if (!isAdmin && vehList && vehList.length > 0) {
+          api.getVehicleTrips(vehList[0].id)
+            .then(trips => setUserVehicleTrips(trips || []))
+            .catch(() => { });
+        }
       }
     } catch (err) {
       console.error('Failed to load fleet dashboard:', err);
@@ -73,9 +128,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const handleUserChange = (newUid: number) => {
+    setSelectedUserId(newUid);
+    fetchData(newUid);
+  };
+
   useEffect(() => {
     fetchData();
-  }, [isAdmin]);
+  }, [isAdmin, isLiveUserView]);
 
   const handleOpenHistoryModal = async (v: Vehicle) => {
     setHistoryModalVehicle(v);
@@ -271,6 +331,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="p-4 sm:p-6 lg:p-7 max-w-7xl mx-auto space-y-5 sm:space-y-6">
+      {/* Top Banner & User Switcher for Admin in Live User View */}
+      {isLiveUserView && (
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 to-slate-800 rounded-3xl text-white shadow-xs border border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white/10 text-white flex items-center justify-center font-bold shrink-0 border border-white/10">
+              <Compass className="w-5 h-5 text-red-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-black tracking-tight text-white">
+                  Live User View
+                </h2>
+                <span className="text-[10px] font-mono font-bold bg-[#E60012] text-white px-2 py-0.5 rounded-full">
+                  User Dashboard Preview
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 font-medium mt-0.5">
+                Verifying live vehicle telematics, route assignment & date-wise trip history as seen by the user.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto bg-white/10 p-1.5 rounded-2xl border border-white/10">
+            <span className="text-xs font-bold text-slate-300 pl-2 whitespace-nowrap">Switch User:</span>
+            <select
+              value={selectedUserId || ''}
+              onChange={(e) => handleUserChange(Number(e.target.value))}
+              className="bg-slate-900 text-white border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold shadow-2xs focus:outline-none focus:border-red-500 cursor-pointer"
+            >
+              {userList.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.email || u.phone})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* ONE LARGE UNIFIED MAIN CONTAINER (ALL-IN-ONE ENTERPRISE LAYOUT) */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
         {/* Section 1: Fleet Operational Overview (4 Metrics inside unified container) */}
@@ -280,7 +379,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div>
               <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Fleet</span>
               <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-0.5 font-mono">{total}</div>
-              <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 font-medium">Registered units</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 font-medium">{isUserMode ? 'Assigned units' : 'Registered units'}</p>
             </div>
             <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
               <Truck className="w-4 h-4" />
@@ -328,7 +427,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="border-t border-[#E60012]/10" />
 
         {/* User Dashboard Tab Switcher: [ Assigned Vehicle ] and [ Trip History ] */}
-        {!isAdmin && (
+        {isUserMode && (
           <div className="px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-white">
             <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200/80">
               <button
@@ -374,13 +473,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
         )}
 
         {/* Section 2: Fleet Vehicles Section (Visible for Admin OR when user is on 'vehicle' tab) */}
-        {(isAdmin || userActiveTab === 'vehicle') && (
+        {(!isUserMode || userActiveTab === 'vehicle') && (
           <>
             {/* Section Controls Bar */}
             <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/40">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">
-                  {isAdmin ? 'Vehicle Fleet & Allocations' : 'My Assigned Vehicle'}
+                  {isUserMode ? 'My Assigned Vehicle' : 'Vehicle Fleet & Allocations'}
                 </h2>
                 <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full font-bold">
                   {filteredVehicles.length} Units
@@ -538,7 +637,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (!isAdmin) {
+                                  if (isUserMode) {
                                     setUserActiveTab('history');
                                   } else {
                                     handleOpenHistoryModal(v);
@@ -551,7 +650,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 <span>History</span>
                               </button>
 
-                              {isAdmin && (
+                              {!isUserMode && (
                                 <button
                                   type="button"
                                   onClick={() => onNavigateTab('routes')}
@@ -574,8 +673,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </>
         )}
 
-        {/* Date-Wise Vehicle Journey Logs & Trip History Section (For Regular User View - visible ONLY when on 'history' tab) */}
-        {!isAdmin && userActiveTab === 'history' && vehicles.length > 0 && (
+        {/* Date-Wise Vehicle Journey Logs & Trip History Section (For Regular User View & Admin Live User View) */}
+        {isUserMode && userActiveTab === 'history' && (
           <div>
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -588,7 +687,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       Vehicle Journey Logs & Date-Wise Trip History
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
-                      {vehicles[0].registration_no} • {userVehicleTrips.length} Total Trips Recorded
+                      {vehicles.length > 0 ? `${vehicles[0].registration_no} • ${userVehicleTrips.length} Total Trips Recorded` : 'No vehicle assigned to this account'}
                     </p>
                   </div>
                 </div>
@@ -602,18 +701,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <Truck className="w-3.5 h-3.5 text-slate-500" />
                     <span>View Assigned Vehicle</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenHistoryModal(vehicles[0])}
-                    className="px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  >
-                    <Calendar className="w-3.5 h-3.5 text-slate-300" />
-                    <span>Full Modal</span>
-                  </button>
+                  {vehicles.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenHistoryModal(vehicles[0])}
+                      className="px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-slate-300" />
+                      <span>Full Modal</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {userVehicleTrips.length === 0 ? (
+              {vehicles.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-xs">
+                  No vehicle or recorded journeys found for this user account.
+                </div>
+              ) : userVehicleTrips.length === 0 ? (
                 <div className="py-8 text-center text-slate-400 text-xs">
                   No recorded trips found for {vehicles[0].registration_no} yet.
                 </div>
