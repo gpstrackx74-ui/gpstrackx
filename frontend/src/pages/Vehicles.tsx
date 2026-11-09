@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { Vehicle, User } from '../types';
+import { DMYDateInput } from '../components/DMYDateInput';
 import {
   FileSpreadsheet,
   Navigation,
@@ -89,12 +90,12 @@ const AmPmTimeInput: React.FC<{
   const minutes = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
 
   return (
-    <div>
-      <label className="block text-slate-600 font-bold mb-1">
+    <div className="min-w-0">
+      <label className="block text-slate-600 font-bold mb-1 text-xs">
         {label}
       </label>
       <div className="flex items-center justify-between gap-1 px-2 py-1.5 rounded-xl border border-slate-200 bg-white shadow-2xs">
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex items-center gap-0.5 min-w-0">
           <select
             value={parsed.hour}
             onChange={(e) => handleHourChange(e.target.value)}
@@ -115,11 +116,11 @@ const AmPmTimeInput: React.FC<{
             ))}
           </select>
         </div>
-        <div className="flex items-center shrink-0 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+        <div className="flex items-center shrink-0 bg-slate-100 rounded-lg p-0.5 border border-slate-200 ml-1">
           <button
             type="button"
             onClick={() => handlePeriodChange('AM')}
-            className={`px-2 py-1 text-[10px] font-black rounded-md transition cursor-pointer shrink-0 ${parsed.period === 'AM'
+            className={`px-1.5 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer shrink-0 ${parsed.period === 'AM'
                 ? 'bg-[#E60012] text-white shadow-2xs'
                 : 'text-slate-500 hover:text-slate-800'
               }`}
@@ -129,7 +130,7 @@ const AmPmTimeInput: React.FC<{
           <button
             type="button"
             onClick={() => handlePeriodChange('PM')}
-            className={`px-2 py-1 text-[10px] font-black rounded-md transition cursor-pointer shrink-0 ${parsed.period === 'PM'
+            className={`px-1.5 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer shrink-0 ${parsed.period === 'PM'
                 ? 'bg-[#E60012] text-white shadow-2xs'
                 : 'text-slate-500 hover:text-slate-800'
               }`}
@@ -1616,21 +1617,20 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                       </div>
 
                       {/* Trip Date */}
+                      {/* Trip Date (Strict DD/MM/YYYY Format) */}
                       <div>
                         <label className="block text-slate-600 font-bold mb-1">
                           Trip Date
                         </label>
-                        <input
-                          type="date"
+                        <DMYDateInput
                           value={tripForm.trip_date}
-                          onChange={(e) => setTripForm({ ...tripForm, trip_date: e.target.value })}
-                          className="w-full px-3 py-2 rounded-xl border border-slate-200 font-medium text-xs focus:outline-none focus:border-red-500"
-                          required
+                          onChange={(iso) => setTripForm({ ...tripForm, trip_date: iso })}
+                          className="w-full justify-between px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-xs focus-within:border-red-500 shadow-2xs"
                         />
                       </div>
 
                       {/* Start Time & End Time in 2-Column Grid (Zero Overflow for AM/PM buttons) */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <AmPmTimeInput
                           label="Start Time"
                           value={tripForm.start_trip_time}

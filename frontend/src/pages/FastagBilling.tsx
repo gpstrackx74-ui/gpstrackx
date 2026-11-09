@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Vehicle, FastagTransaction, FastagStats } from '../types';
+import { DMYDateInput } from '../components/DMYDateInput';
 import {
   Receipt,
   Truck,
@@ -394,20 +395,19 @@ export const FastagBilling: React.FC = () => {
               </select>
             </div>
 
-            {/* Date Filter */}
-            <div className="flex items-center gap-1.5 bg-white px-3 py-2 rounded-xl border border-slate-200 text-xs">
+            {/* Date Filter (Strict DD/MM/YYYY Format) */}
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200 text-xs shadow-2xs">
               <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <input
-                type="date"
+              <DMYDateInput
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                onChange={(iso) => setSelectedDate(iso)}
+                className="bg-transparent"
               />
               {selectedDate && (
                 <button
                   type="button"
                   onClick={() => setSelectedDate('')}
-                  className="text-slate-400 hover:text-slate-600 ml-1"
+                  className="text-slate-400 hover:text-slate-600 ml-1 p-0.5"
                   title="Clear date"
                 >
                   <X className="w-3 h-3" />
@@ -1171,18 +1171,16 @@ export const FastagBilling: React.FC = () => {
                 </p>
               </div>
 
-              {/* Date & Time */}
+              {/* Date & Time (Strict DD/MM/YYYY Format) */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     Crossing Date
                   </label>
-                  <input
-                    type="date"
+                  <DMYDateInput
                     value={formDate}
-                    onChange={(e) => setFormDate(e.target.value)}
-                    className="w-full bg-white px-3 py-2 rounded-xl border border-slate-200 font-bold text-slate-900 focus:outline-none focus:border-slate-800"
-                    required
+                    onChange={(iso) => setFormDate(iso)}
+                    className="w-full justify-between bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 font-bold text-slate-900 shadow-2xs"
                   />
                 </div>
                 <div className="space-y-1">

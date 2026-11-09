@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { Vehicle, AlternativeRoute, Stoppage, TollGate } from '../types';
 import { InteractiveMap } from '../components/InteractiveMap';
 import { LocationSearchInput } from '../components/LocationSearchInput';
+import { DMYDateInput } from '../components/DMYDateInput';
 import {
   detectRealTollsOnRoute,
   computeTotalTruckToll,
@@ -1488,7 +1489,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
           {/* 4-Column Inputs: Start Date, End Date, Start Time, End Time */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            {/* 1. Trip Start Date (From) */}
+            {/* 1. Trip Start Date (From) (Strict DD/MM/YYYY) */}
             <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -1496,21 +1497,19 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 </label>
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
               </div>
-              <input
-                type="date"
+              <DMYDateInput
                 value={tripDate}
-                onChange={(e) => {
-                  const val = e.target.value;
+                onChange={(val) => {
                   setTripDate(val);
                   if (endTripDate < val) {
                     setEndTripDate(val);
                   }
                 }}
-                className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition"
+                className="w-full justify-between bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-slate-900 shadow-2xs"
               />
             </div>
 
-            {/* 2. Trip End Date (To Date) */}
+            {/* 2. Trip End Date (To Date) (Strict DD/MM/YYYY) */}
             <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -1518,12 +1517,11 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 </label>
                 <Calendar className="w-3.5 h-3.5 text-[#0F172A]" />
               </div>
-              <input
-                type="date"
+              <DMYDateInput
                 min={tripDate}
                 value={endTripDate || tripDate}
-                onChange={(e) => setEndTripDate(e.target.value)}
-                className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition"
+                onChange={(val) => setEndTripDate(val)}
+                className="w-full justify-between bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-slate-900 shadow-2xs"
               />
             </div>
 

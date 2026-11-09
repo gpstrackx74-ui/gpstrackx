@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { Vehicle, RouteDetail, Stoppage, TollGate } from '../types';
 import { InteractiveMap } from '../components/InteractiveMap';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { DMYDateInput, formatToDMY, normalizeToYMD } from '../components/DMYDateInput';
 import {
   Navigation,
   Plus,
@@ -45,8 +46,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   const [manualTolls, setManualTolls] = useState<TollGate[]>([]);
   const [loading, setLoading] = useState(true);
   const [allTrips, setAllTrips] = useState<any[]>([]);
-  const [noTripFoundModal, setNoTripFoundModal] = useState<boolean>(false);
-  const [noTripDate, setNoTripDate] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>('');
 
   // Filter Period
   const [period, setPeriod] = useState<'today' | '7days' | '30days'>('today');
@@ -67,49 +67,83 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       .catch(() => { });
   }, []);
 
-  const fetchVehicleDetails = async (targetId: number) => {
+  const fetchVehicleDetails = async (targetId: number, isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       const [data, trips] = await Promise.all([
         api.getVehicle(targetId),
         api.getVehicleTrips(targetId).catch(() => [])
       ]);
       setVehicle(data.vehicle);
-      setAllTrips(trips || []);
+      const tripsList = trips || [];
+      setAllTrips(tripsList);
 
-      if (data.activeRoute) {
-        setActiveRoute(data.activeRoute);
-        const rDate = data.activeRoute.trip_date || (data.activeRoute.created_at ? data.activeRoute.created_at.split('T')[0] : '');
-        if (rDate) {
-          setFromDate(rDate);
-          setToDate(rDate);
+      // If initial load or user hasn't explicitly chosen a date yet, use active route or today
+      if (isInitial || !selectedDate) {
+        if (data.activeRoute) {
+          setActiveRoute(data.activeRoute);
+          const rDate = normalizeToYMD(data.activeRoute.trip_date || (data.activeRoute.created_at ? data.activeRoute.created_at.split('T')[0] : ''));
+          if (rDate) {
+            setSelectedDate(rDate);
+            setFromDate(rDate);
+            setToDate(rDate);
+          }
+        }
+        setStoppages(data.stoppages || []);
+        setManualTolls(data.manualTolls || []);
+      } else {
+        // User has explicitly chosen a date, find trip matching selectedDate
+        const targetYMD = normalizeToYMD(selectedDate);
+        const matchingTrip = tripsList.find((t: any) => {
+          const d1 = normalizeToYMD(t.trip_date || (t.created_at ? t.created_at.split('T')[0] : ''));
+          const d2 = normalizeToYMD(t.end_trip_date || t.trip_date || d1);
+          return d1 === targetYMD || (d1 <= targetYMD && d2 >= targetYMD);
+        });
+
+        if (matchingTrip) {
+          setActiveRoute(matchingTrip);
+          try {
+            if (matchingTrip.waypoints_json) {
+              const wp = typeof matchingTrip.waypoints_json === 'string' ? JSON.parse(matchingTrip.waypoints_json) : matchingTrip.waypoints_json;
+              if (Array.isArray(wp)) setStoppages(wp);
+            }
+          } catch (_) {}
+          try {
+            if (matchingTrip.toll_gates_json) {
+              const tg = typeof matchingTrip.toll_gates_json === 'string' ? JSON.parse(matchingTrip.toll_gates_json) : matchingTrip.toll_gates_json;
+              if (Array.isArray(tg)) setManualTolls(tg);
+            }
+          } catch (_) {}
+        } else {
+          setActiveRoute(null);
+          setStoppages([]);
+          setManualTolls([]);
         }
       }
-      setStoppages(data.stoppages || []);
-      setManualTolls(data.manualTolls || []);
     } catch (err) {
       console.error('Failed to load vehicle telemetry:', err);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   };
 
   const handleDateChange = (newDate: string, tripsList = allTrips) => {
-    setFromDate(newDate);
-    setToDate(newDate);
+    const ymd = normalizeToYMD(newDate);
+    setSelectedDate(ymd);
+    setFromDate(ymd);
+    setToDate(ymd);
 
-    if (!newDate) return;
+    if (!ymd) return;
 
     // Check if any trip exists on this date
     const found = tripsList.find((t: any) => {
-      const d1 = t.trip_date || (t.created_at ? t.created_at.split('T')[0] : '');
-      const d2 = t.end_trip_date || d1;
-      return d1 === newDate || (d1 <= newDate && d2 >= newDate);
+      const d1 = normalizeToYMD(t.trip_date || (t.created_at ? t.created_at.split('T')[0] : ''));
+      const d2 = normalizeToYMD(t.end_trip_date || t.trip_date || d1);
+      return d1 === ymd || (d1 <= ymd && d2 >= ymd);
     });
 
     if (found) {
       setActiveRoute(found);
-      setNoTripFoundModal(false);
       try {
         if (found.waypoints_json) {
           const wp = typeof found.waypoints_json === 'string' ? JSON.parse(found.waypoints_json) : found.waypoints_json;
@@ -123,26 +157,24 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
         }
       } catch (_) {}
     } else {
-      // Clear route, stoppages and tolls so map is blank
+      // Clear route, stoppages and tolls so map is completely empty/blank and details reset to zero
       setActiveRoute(null);
       setStoppages([]);
       setManualTolls([]);
-      setNoTripDate(newDate);
-      setNoTripFoundModal(true);
     }
   };
 
   useEffect(() => {
     if (!vehicleId) return;
-    fetchVehicleDetails(vehicleId);
+    fetchVehicleDetails(vehicleId, true);
     const interval = setInterval(() => {
-      // Pause background network fetch while user is actively running route playback
+      // Background network fetch preserves user selected date
       if (!isPlaying) {
-        fetchVehicleDetails(vehicleId);
+        fetchVehicleDetails(vehicleId, false);
       }
     }, 10000);
     return () => clearInterval(interval);
-  }, [vehicleId, isPlaying]);
+  }, [vehicleId, isPlaying, selectedDate]);
 
   // Parse route coordinates safely with useMemo
   const parsedCoordinates = React.useMemo<[number, number][]>(() => {
@@ -304,6 +336,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
 
   // Determine current simulated position with rock-solid coordinates
   const currentPlaybackPoint: [number, number] | null = React.useMemo(() => {
+    // If no active route (vehicle did not run on this selected date), return null so map is completely blank
+    if (!activeRoute) return null;
     if (smoothPlaybackCoordinates.length > 0) {
       // If vehicle status is NOT moving and not actively replaying, park truck at the END POINT of the route
       if (vehicle?.status !== 'moving' && !isPlaying) {
@@ -315,22 +349,22 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
     }
     return null;
-  }, [smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, vehicle?.status, isPlaying]);
+  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, vehicle?.status, isPlaying]);
 
-  const playbackProgressPercent = smoothPlaybackCoordinates.length > 1
+  const playbackProgressPercent = activeRoute && smoothPlaybackCoordinates.length > 1
     ? Math.min(100, Math.round((playbackIndex / (smoothPlaybackCoordinates.length - 1)) * 100))
-    : (vehicle?.status !== 'moving' ? 100 : 0);
+    : (activeRoute && vehicle?.status !== 'moving' ? 100 : 0);
 
   const simulatedDistanceCoveredKm = activeRoute?.total_distance_km
     ? ((playbackProgressPercent / 100) * Number(activeRoute.total_distance_km)).toFixed(1)
     : '0';
 
-  const simulatedSpeed = (vehicle?.status === 'moving' || isPlaying)
+  const simulatedSpeed = (activeRoute && (vehicle?.status === 'moving' || isPlaying))
     ? (vehicle?.current_speed && vehicle.current_speed > 0 ? vehicle.current_speed : 48)
     : 0;
 
   const simulatedVehiclePosition = React.useMemo(() => {
-    if (!currentPlaybackPoint || !vehicle) return null;
+    if (!activeRoute || !currentPlaybackPoint || !vehicle) return null;
     return {
       lat: currentPlaybackPoint[0],
       lng: currentPlaybackPoint[1],
@@ -338,7 +372,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       status: (vehicle.status === 'moving' || isPlaying) ? 'moving' : 'stopped',
       plate: vehicle.registration_no
     };
-  }, [currentPlaybackPoint, vehicle, simulatedSpeed, isPlaying]);
+  }, [activeRoute, currentPlaybackPoint, vehicle, simulatedSpeed, isPlaying]);
 
   // Stoppages with calculated arrival and departure times based on route duration
   const stoppagesWithTimings = React.useMemo(() => {
@@ -457,7 +491,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-xl font-black text-slate-900 tracking-tight font-mono">
                   {vehicle.registration_no}
                 </h2>
@@ -470,35 +504,19 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   {isMoving && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>}
                   {vehicle.status?.toUpperCase()}
                 </span>
-
-                {/* Instant Vehicle Switcher dropdown if user has multiple accessible vehicles */}
-                {vehicleList.length > 1 && onSwitchVehicle && (
-                  <div className="flex items-center gap-1.5 ml-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Switch:</span>
-                    <select
-                      value={vehicle.id}
-                      onChange={(e) => onSwitchVehicle(Number(e.target.value))}
-                      className="bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-mono font-bold text-slate-800 shadow-2xs focus:outline-none focus:border-slate-800 transition cursor-pointer"
-                    >
-                      {vehicleList.map(v => (
-                        <option key={v.id} value={v.id}>
-                          {v.registration_no} • {v.name_model} {v.route_name ? `(${v.route_name})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <span className="text-xs font-bold text-slate-500">
+                  {vehicle.name_model}
+                </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">{vehicle.name_model} • Real-time GPS Telematics</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5 shrink-0">
             {isAdmin && onPlanRoute && (
               <button
                 type="button"
                 onClick={() => onPlanRoute(vehicle.id)}
-                className="px-3.5 py-2 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                className="px-4 py-2 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer whitespace-nowrap"
               >
                 Modify Route on Map
               </button>
@@ -526,37 +544,33 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <span>Filter Period:</span>
             </div>
 
-            <div className="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
               <span className="text-[10px] font-bold text-slate-400 uppercase">From:</span>
-              <input
-                type="date"
+              <DMYDateInput
                 value={fromDate}
-                onChange={(e) => handleDateChange(e.target.value)}
-                className="bg-transparent font-mono text-slate-800 focus:outline-none"
+                onChange={(val) => handleDateChange(val)}
               />
-              <span className="text-slate-400 mx-1">|</span>
+              <span className="text-slate-300 mx-0.5">|</span>
               <input
                 type="text"
                 value={fromTime}
                 onChange={(e) => setFromTime(e.target.value)}
-                className="w-16 bg-transparent font-mono text-slate-800 focus:outline-none"
+                className="w-16 bg-transparent font-mono text-slate-800 focus:outline-none text-xs"
               />
             </div>
 
-            <div className="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
               <span className="text-[10px] font-bold text-slate-400 uppercase">To:</span>
-              <input
-                type="date"
+              <DMYDateInput
                 value={toDate}
-                onChange={(e) => handleDateChange(e.target.value)}
-                className="bg-transparent font-mono text-slate-800 focus:outline-none"
+                onChange={(val) => handleDateChange(val)}
               />
-              <span className="text-slate-400 mx-1">|</span>
+              <span className="text-slate-300 mx-0.5">|</span>
               <input
                 type="text"
                 value={toTime}
                 onChange={(e) => setToTime(e.target.value)}
-                className="w-16 bg-transparent font-mono text-slate-800 focus:outline-none"
+                className="w-16 bg-transparent font-mono text-slate-800 focus:outline-none text-xs"
               />
             </div>
 
@@ -582,18 +596,18 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   const pastDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                   const todayStr = now.toISOString().split('T')[0];
                   const found = allTrips.find((t: any) => {
-                    const d1 = t.trip_date || (t.created_at ? t.created_at.split('T')[0] : '');
+                    const d1 = normalizeToYMD(t.trip_date || (t.created_at ? t.created_at.split('T')[0] : ''));
                     return d1 >= pastDate && d1 <= todayStr;
                   });
                   if (found) {
-                    setActiveRoute(found);
-                    setNoTripFoundModal(false);
+                    handleDateChange(found.trip_date || pastDate);
                   } else {
+                    setSelectedDate(todayStr);
+                    setFromDate(todayStr);
+                    setToDate(todayStr);
                     setActiveRoute(null);
                     setStoppages([]);
                     setManualTolls([]);
-                    setNoTripDate(`${pastDate} to ${todayStr}`);
-                    setNoTripFoundModal(true);
                   }
                 }}
                 className={`px-3 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer ${period === '7days' ? 'bg-white text-slate-900 border border-slate-300 shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -609,18 +623,18 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   const pastDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                   const todayStr = now.toISOString().split('T')[0];
                   const found = allTrips.find((t: any) => {
-                    const d1 = t.trip_date || (t.created_at ? t.created_at.split('T')[0] : '');
+                    const d1 = normalizeToYMD(t.trip_date || (t.created_at ? t.created_at.split('T')[0] : ''));
                     return d1 >= pastDate && d1 <= todayStr;
                   });
                   if (found) {
-                    setActiveRoute(found);
-                    setNoTripFoundModal(false);
+                    handleDateChange(found.trip_date || pastDate);
                   } else {
+                    setSelectedDate(todayStr);
+                    setFromDate(todayStr);
+                    setToDate(todayStr);
                     setActiveRoute(null);
                     setStoppages([]);
                     setManualTolls([]);
-                    setNoTripDate(`${pastDate} to ${todayStr}`);
-                    setNoTripFoundModal(true);
                   }
                 }}
                 className={`px-3 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer ${period === '30days' ? 'bg-white text-slate-900 border border-slate-300 shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -648,174 +662,179 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
         {/* Thin divider with light red 10% opacity */}
         <div className="border-t border-[#E60012]/10" />
 
-        {/* Section 3: Main Grid: Left Vehicle Details & Right Map */}
-        <div className="p-5 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column: Vehicle Card & Specs (4 Cols) */}
-          <div className="lg:col-span-4 space-y-5">
-            {/* Vehicle Profile & Specifications */}
-            <div className="rounded-2xl p-4 sm:p-5 bg-slate-50/50 border border-slate-200/80">
-              <div className="flex items-center gap-3 pb-4 border-b border-slate-200/70">
-                <div className="w-12 h-12 rounded-xl bg-white text-slate-900 border border-slate-200 flex items-center justify-center shadow-xs">
-                  <Truck className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-mono font-black text-slate-900 text-base">{vehicle.registration_no}</h3>
-                  <p className="text-xs text-slate-500 font-medium">{vehicle.name_model}</p>
-                </div>
-              </div>
-
-              {/* Speed Gauge */}
-              <div className="my-4 p-4 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between shadow-xs">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Velocity</span>
-                  <div className="text-3xl font-black text-slate-900 tracking-tight font-mono mt-0.5">
-                    {vehicle.current_speed || 0}
-                    <span className="text-xs font-semibold text-slate-500 ml-1">KM/H</span>
+        {/* Section 3: Landscape Information Panel (Horizontal Arrangement) */}
+        <div className="p-5 sm:p-6 space-y-5">
+          {/* Top Landscape Grid: 4 Horizontal Multi-Metric Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
+            {/* Card 1: Vehicle Profile & Telemetry */}
+            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-white text-slate-900 border border-slate-200 flex items-center justify-center shadow-xs">
+                    <Truck className="w-5 h-5" />
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-1">Limit: {vehicle.max_speed_limit} km/h</p>
+                  <div>
+                    <h3 className="font-mono font-black text-slate-900 text-sm">{vehicle.registration_no}</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">{vehicle.name_model} • {vehicle.vehicle_type}</p>
+                  </div>
                 </div>
-                <div className="w-12 h-12 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-900">
-                  <Gauge className="w-6 h-6" />
+                <div className="text-right">
+                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
+                    {activeRoute ? (vehicle.current_speed || 0) : 0}
+                    <span className="text-[10px] font-semibold text-slate-500 ml-0.5">KM/H</span>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Live Speed</span>
                 </div>
               </div>
-
-              {/* Specifications list */}
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                  <span className="text-slate-400 font-medium">Assigned User:</span>
-                  <span className="font-bold text-slate-800">{vehicle.owner_name || 'Unassigned'}</span>
+              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Assigned User</span>
+                  <span className="font-bold text-slate-800 truncate block">{vehicle.owner_name || 'Unassigned'}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                  <span className="text-slate-400 font-medium">Driver Contact:</span>
-                  <span className="font-mono text-slate-800">{vehicle.owner_phone || '+91 98765 43210'}</span>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Driver Phone</span>
+                  <span className="font-mono text-slate-800 truncate block">{vehicle.owner_phone || '+91 98765 43210'}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                  <span className="text-slate-400 font-medium">Vehicle Type:</span>
-                  <span className="font-bold text-slate-800">{vehicle.vehicle_type}</span>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">GPS Device ID</span>
+                  <span className="font-mono text-slate-800 truncate block">{vehicle.device_id || 'GPS-AUTO'}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                  <span className="text-slate-400 font-medium">GPS Device ID:</span>
-                  <span className="font-mono text-slate-800">{vehicle.device_id}</span>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Fuel Type</span>
+                  <span className="font-bold text-slate-800 truncate block">{vehicle.fuel_type || 'Diesel'}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                  <span className="text-slate-400 font-medium">IMEI Number:</span>
-                  <span className="font-mono text-slate-800">{vehicle.imei_number}</span>
-                </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                  <span className="text-slate-400 font-medium">Chassis Number:</span>
-                  <span className="font-mono text-slate-800">{vehicle.chassis_number || 'N/A'}</span>
-                </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                  <span className="text-slate-400 font-medium">Fuel Type:</span>
-                  <span className="font-bold text-slate-800">{vehicle.fuel_type}</span>
-                </div>
-                {activeRoute && (
-                  <>
-                    <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                      <span className="text-slate-400 font-medium">Scheduled Date:</span>
-                      <span className="font-mono font-bold text-slate-800">
-                        {activeRoute.trip_date || 'Today'}{activeRoute.end_trip_date && activeRoute.end_trip_date !== activeRoute.trip_date ? ` → ${activeRoute.end_trip_date}` : ''}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-slate-400 font-medium">Trip Window:</span>
-                      <span className="font-mono font-bold text-slate-800">
-                        {activeRoute.start_trip_time || '08:00'} → {activeRoute.end_trip_time || '18:00'}
-                      </span>
-                    </div>
-                  </>
-                )}
               </div>
             </div>
 
-            {/* Stoppages & Toll Gate Summary (Admin Only) */}
-            {isAdmin && activeRoute && (
-              <div className="rounded-2xl p-4 sm:p-5 bg-slate-50/50 border border-slate-200/80 space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2.5">
-                    <h4 className="text-xs font-extrabold uppercase tracking-wide text-slate-900">
-                      Route Stoppages
-                    </h4>
-                    <span className="text-[10px] font-mono font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">
-                      {stoppages.length} Halts
-                    </span>
-                  </div>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-0.5">
-                    {stoppagesWithTimings.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic">No scheduled stoppages on this route.</p>
-                    ) : (
-                      stoppagesWithTimings.map((s, idx) => {
-                        const durationMins = s.stop_duration_mins || s.duration || 20;
-                        const arrStr = (s as any).arrival_time || '09:00 AM';
-                        const depStr = (s as any).departure_time || '09:20 AM';
-                        const cleanName = (s.name || `Stoppage #${idx + 1}`)
-                          .replace(/Highway Dhaba & Rest Point|Fuel Station & Inspection Bay|Driver Rest Area|Logistics Checkpoint|Restaurant|Dhaba/gi, 'Transit Halt').replace(/\r?\n/g, ' ')
-                          .trim();
-
-                        return (
-                          <div key={idx} className="p-2.5 rounded-xl bg-white border border-slate-200/70 space-y-1.5 text-xs shadow-2xs">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="w-5 h-5 rounded-full bg-slate-900 text-white font-bold text-[9px] flex items-center justify-center shrink-0">
-                                  {idx + 1}
-                                </span>
-                                <span className="font-bold text-slate-900 truncate">
-                                  {cleanName}
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-bold text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
-                                {durationMins}m Halt
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-1 border-t border-slate-100">
-                              <span>Arrival: <strong className="text-slate-800 font-sans">{arrStr}</strong></span>
-                              <span>Departure: <strong className="text-slate-800 font-sans">{depStr}</strong></span>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
+            {/* Card 2: Active Route Corridor & Schedule */}
+            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
+                <div className="min-w-0 pr-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Active Corridor</span>
+                  <h4 className="font-bold text-slate-900 text-xs truncate" title={activeRoute?.route_name || 'Corridor'}>
+                    {activeRoute?.route_name || 'Direct Route Corridor'}
+                  </h4>
                 </div>
-
-                <div className="pt-3 border-t border-slate-200/70">
-                  <div className="flex items-center justify-between mb-2.5">
-                    <h4 className="text-xs font-extrabold uppercase tracking-wide text-slate-900">
-                      Toll Plazas & Charges
-                    </h4>
-                    <span className="text-[10px] font-mono font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">
-                      {routeTolls.length} Plazas
-                    </span>
+                <div className="text-right shrink-0">
+                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
+                    {activeRoute ? (activeRoute.total_distance_km || 0) : 0}
+                    <span className="text-[10px] font-semibold text-slate-500 ml-0.5">KM</span>
                   </div>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
-                    {routeTolls.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic">No toll plazas on this road corridor.</p>
-                    ) : (
-                      routeTolls.map((t, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200/70 text-xs shadow-2xs">
-                          <div className="truncate mr-2">
-                            <p className="font-bold text-slate-800 text-xs truncate">{t.name}</p>
-                            <span className="text-[10px] text-slate-400">
-                              {t.is_manual ? 'Manual Rate' : 'Electronic FASTag'}
-                            </span>
-                          </div>
-                          {t.charges > 0 && (
-                            <span className="font-mono font-bold text-slate-900 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 text-xs shrink-0">
-                              ₹{t.charges}
-                            </span>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Dist</span>
                 </div>
               </div>
-            )}
+              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Scheduled Dates</span>
+                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
+                    {activeRoute?.trip_date ? formatToDMY(activeRoute.trip_date) : formatToDMY(fromDate)}{activeRoute?.end_trip_date && activeRoute.end_trip_date !== activeRoute.trip_date ? ` → ${formatToDMY(activeRoute.end_trip_date)}` : ''}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Trip Window</span>
+                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
+                    {activeRoute ? `${activeRoute.start_trip_time || '08:00 AM'} → ${activeRoute.end_trip_time || '06:00 PM'}` : '00:00 → 00:00'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Origin</span>
+                  <span className="font-semibold text-slate-700 truncate block text-[11px]">{activeRoute?.start_location_name || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Destination</span>
+                  <span className="font-semibold text-slate-700 truncate block text-[11px]">{activeRoute?.end_location_name || '-'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Journey & Travel Transit */}
+            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
+                <div className="min-w-0 pr-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Travel Duration</span>
+                  <h4 className="font-bold text-slate-900 text-xs truncate">
+                    {activeRoute?.route_name ? 'Transit Window' : 'No Scheduled Trip'}
+                  </h4>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
+                    {activeRoute?.estimated_travel_time_min ? `${Math.floor(activeRoute.estimated_travel_time_min / 60)}h ${activeRoute.estimated_travel_time_min % 60}m` : '0h 0m'}
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Est. Duration</span>
+                </div>
+              </div>
+              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Route Leg</span>
+                  <span className="font-bold text-slate-800 text-[11px] truncate block">
+                    {activeRoute ? `${activeRoute.start_location_name || 'Start'} → ${activeRoute.end_location_name || 'End'}` : '-'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Average Speed</span>
+                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
+                    {activeRoute && activeRoute.total_distance_km && activeRoute.estimated_travel_time_min ? `${Math.round((Number(activeRoute.total_distance_km) / (Number(activeRoute.estimated_travel_time_min) / 60)))} km/h` : '0 km/h'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Corridor Type</span>
+                  <span className="font-semibold text-slate-700 truncate block text-[11px]">
+                    {activeRoute ? 'Commercial Highway' : 'Inactive'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">FASTag Service</span>
+                  <span className="font-semibold text-slate-700 truncate block text-[11px]">
+                    {routeTolls.length > 0 ? 'Electronic Active' : 'Standard'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Fleet Telemetry & Connectivity */}
+            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
+                <div className="min-w-0 pr-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Telemetry Status</span>
+                  <h4 className="font-bold text-slate-900 text-xs truncate">
+                    {activeRoute ? (isMoving ? 'Moving On-Road' : 'Stationary') : 'No Trip Recorded'}
+                  </h4>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
+                    {activeRoute ? simulatedDistanceCoveredKm : 0}
+                    <span className="text-[10px] font-semibold text-slate-500 ml-0.5">KM</span>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Distance Covered</span>
+                </div>
+              </div>
+              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">GPS Signal</span>
+                  <span className="font-mono font-bold text-emerald-600 text-[11px] truncate block">Live 4G Active</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Playback Progress</span>
+                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
+                    {activeRoute ? `${playbackProgressPercent}%` : '0%'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Engine Ignition</span>
+                  <span className="font-semibold text-slate-700 truncate block text-[11px]">
+                    {activeRoute && isMoving ? 'Ignition ON' : 'Ignition OFF'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Odometer Mode</span>
+                  <span className="font-semibold text-slate-700 truncate block text-[11px]">High Precision</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Right Column: Route Map (On-Road Tracking) (8 Cols) */}
-          <div className="lg:col-span-8 flex flex-col">
+          {/* Full-Width Route Map Section */}
+          <div className="flex flex-col space-y-3">
             {/* No Allotted Route Banner if vehicle has no route yet */}
             {!activeRoute && (
               <div className="mb-4 p-4 rounded-2xl bg-amber-50/80 border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
@@ -990,48 +1009,6 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
           </div>
         </div>
       </div>
-
-      {/* Date Filter: No Trips Recorded Alert Modal */}
-      {noTripFoundModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
-              <AlertCircle className="w-7 h-7" />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">
-                Is Date Me Koi Vehicle Nahi Chala Hai
-              </h3>
-              <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
-                Chuni gayi tareekh <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{noTripDate}</span> par vehicle <span className="font-mono font-bold text-slate-800">{vehicle?.registration_no}</span> ka koi route ya trip record nahi mila hai.
-              </p>
-            </div>
-            <div className="flex items-center justify-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setNoTripFoundModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
-              >
-                Theek Hai (Close)
-              </button>
-              {allTrips.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const latest = allTrips[0];
-                    const lDate = latest.trip_date || (latest.created_at ? latest.created_at.split('T')[0] : '');
-                    if (lDate) handleDateChange(lDate);
-                    else setNoTripFoundModal(false);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs transition cursor-pointer shadow-xs"
-                >
-                  Active Date Par Jayein
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
