@@ -93,22 +93,22 @@ const AmPmTimeInput: React.FC<{
       <label className="block text-slate-600 font-bold mb-1">
         {label}
       </label>
-      <div className="flex items-center justify-between gap-1 p-1 rounded-xl border border-slate-200 bg-white shadow-2xs">
-        <div className="flex items-center gap-0.5 min-w-0">
+      <div className="flex items-center justify-between gap-1 px-2 py-1.5 rounded-xl border border-slate-200 bg-white shadow-2xs">
+        <div className="flex items-center gap-1 min-w-0">
           <select
             value={parsed.hour}
             onChange={(e) => handleHourChange(e.target.value)}
-            className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer py-1 pl-1"
+            className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer py-0.5 px-0.5"
           >
             {hours.map(h => (
               <option key={h} value={h}>{h}</option>
             ))}
           </select>
-          <span className="font-mono font-bold text-slate-400">:</span>
+          <span className="font-mono font-black text-slate-400">:</span>
           <select
             value={parsed.minute}
             onChange={(e) => handleMinuteChange(e.target.value)}
-            className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer py-1 pl-1"
+            className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer py-0.5 px-0.5"
           >
             {minutes.map(m => (
               <option key={m} value={m}>{m}</option>
@@ -119,7 +119,7 @@ const AmPmTimeInput: React.FC<{
           <button
             type="button"
             onClick={() => handlePeriodChange('AM')}
-            className={`px-2 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer ${parsed.period === 'AM'
+            className={`px-2 py-1 text-[10px] font-black rounded-md transition cursor-pointer shrink-0 ${parsed.period === 'AM'
                 ? 'bg-[#E60012] text-white shadow-2xs'
                 : 'text-slate-500 hover:text-slate-800'
               }`}
@@ -129,7 +129,7 @@ const AmPmTimeInput: React.FC<{
           <button
             type="button"
             onClick={() => handlePeriodChange('PM')}
-            className={`px-2 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer ${parsed.period === 'PM'
+            className={`px-2 py-1 text-[10px] font-black rounded-md transition cursor-pointer shrink-0 ${parsed.period === 'PM'
                 ? 'bg-[#E60012] text-white shadow-2xs'
                 : 'text-slate-500 hover:text-slate-800'
               }`}

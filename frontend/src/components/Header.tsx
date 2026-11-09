@@ -7,9 +7,6 @@ import {
   LogOut, 
   Shield, 
   UserCheck, 
-  PanelLeftClose, 
-  PanelLeftOpen,
-  Menu,
   X,
   Truck,
   Route,
@@ -17,28 +14,48 @@ import {
   Compass,
   ArrowRight,
   Loader2,
-  Receipt
+  Receipt,
+  LayoutDashboard,
+  Settings,
+  History
 } from 'lucide-react';
 
 interface HeaderProps {
-  title: string;
+  title?: string;
   subtitle?: string;
+  currentTab?: string;
+  onNavigateTab?: (tab: string, vehicleId?: number) => void;
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
-  onNavigateTab?: (tab: string, vehicleId?: number) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
-  title, 
-  subtitle, 
-  isSidebarCollapsed = false,
-  onToggleSidebar,
+  currentTab = 'dashboard', 
   onNavigateTab
 }) => {
-  const { user, isAdmin, quickSwitchUser, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
 
   const [demoUsers, setDemoUsers] = useState<any[]>([]);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+
+  const adminNavItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'vehicles', label: 'Vehicles', icon: Truck },
+    { id: 'vehicle-tracking', label: 'Live User View', icon: Compass },
+    { id: 'routes', label: 'Route Planner', icon: Route },
+    { id: 'fastag', label: 'FASTag Toll', icon: Receipt },
+    { id: 'users', label: 'Users', icon: UsersIcon },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
+
+  const userNavItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'vehicle-tracking', label: 'Live User View', icon: Compass },
+    { id: 'history', label: 'Trip History', icon: History },
+    { id: 'fastag', label: 'FASTag Toll', icon: Receipt },
+  ];
+
+  const currentNavItems = isAdmin ? adminNavItems : userNavItems;
 
   // Global Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -134,103 +151,111 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/70 px-4 sm:px-6 py-2.5 sm:py-3 sticky top-0 z-30 flex items-center justify-between select-none transition-colors">
-      {/* Left: Sidebar Toggle & Page Title (Ref: Reference Image 2) */}
-      <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
-        {onToggleSidebar && (
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            className="w-9 h-9 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 flex items-center justify-center transition border border-transparent hover:border-slate-200 shrink-0 cursor-pointer"
-            title="Toggle Menu"
+    <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 py-2 sticky top-0 z-40 select-none transition-colors shadow-2xs">
+      <div className="flex items-center justify-between gap-3 max-w-[1700px] mx-auto w-full">
+        {/* Left: Brand Logo & Side-by-Side Navigation Links */}
+        <div className="flex items-center gap-2.5 sm:gap-4 lg:gap-6 min-w-0 flex-1">
+          {/* Brand Logo */}
+          <div 
+            onClick={() => onNavigateTab?.('dashboard')}
+            className="flex items-center gap-2 shrink-0 cursor-pointer hover:opacity-90 transition py-0.5"
+            title="GpsTrackX Fleet Platform"
           >
-            <Menu className="w-5 h-5 md:hidden" />
-            <span className="hidden md:flex">
-              {isSidebarCollapsed ? (
-                <PanelLeftOpen className="w-5 h-5" />
-              ) : (
-                <PanelLeftClose className="w-5 h-5" />
-              )}
-            </span>
-          </button>
-        )}
+            <img 
+              src="/gpstrackx-brand.png" 
+              alt="GpsTrackX" 
+              className="h-8 w-auto object-contain hidden sm:block" 
+            />
+            <div className="flex items-center gap-1.5 sm:hidden">
+              <img 
+                src="/gpstrackx-icon.png" 
+                alt="GpsTrackX" 
+                className="h-7 w-7 object-contain" 
+              />
+              <span className="font-mono font-black text-slate-900 text-sm tracking-tight">GpsTrack<span className="text-[#E60012]">X</span></span>
+            </div>
+          </div>
 
-        {isSidebarCollapsed && (
-          <img 
-            src="/gpstrackx-brand.png" 
-            alt="GpsTrackX" 
-            className="h-7.5 w-auto object-contain shrink-0 hidden lg:block" 
-          />
-        )}
-
-        <div className="min-w-0">
-          <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight truncate">
-            {title}
-          </h1>
-          {subtitle && (
-            <p className="text-[11px] text-slate-400 font-medium hidden md:block truncate">
-              {subtitle}
-            </p>
-          )}
+          {/* Side-by-Side Horizontal Navigation Bar */}
+          <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+            {currentNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onNavigateTab?.(item.id)}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                    isActive
+                      ? 'bg-[#E60012] text-white shadow-2xs font-black'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/90'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                  <span className="whitespace-nowrap">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
-      </div>
 
-      {/* Right: Omnipresent Global Search, Notifications & User Profile */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* Working Global Search Bar */}
-        <div ref={searchContainerRef} className="relative">
-          <div className="relative flex items-center">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                if (!isSearchOpen) setIsSearchOpen(true);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (searchResults) {
-                    if (searchResults.vehicles && searchResults.vehicles.length > 0) {
-                      handleSelectNav('vehicle-tracking', searchResults.vehicles[0].id);
-                    } else if (searchResults.routes && searchResults.routes.length > 0) {
-                      handleSelectNav('routes', searchResults.routes[0].vehicle_id);
-                    } else if (searchResults.pages && searchResults.pages.length > 0) {
-                      handleSelectNav(searchResults.pages[0].tab || 'dashboard');
-                    } else if (searchResults.users && searchResults.users.length > 0) {
-                      handleSelectNav('users');
-                    } else if ((searchResults as any).fastag && (searchResults as any).fastag.length > 0) {
-                      handleSelectNav('fastag');
+        {/* Right: Compact Search & User Profile */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Compact Global Search Bar */}
+          <div ref={searchContainerRef} className="relative">
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (!isSearchOpen) setIsSearchOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (searchResults) {
+                      if (searchResults.vehicles && searchResults.vehicles.length > 0) {
+                        handleSelectNav('vehicle-tracking', searchResults.vehicles[0].id);
+                      } else if (searchResults.routes && searchResults.routes.length > 0) {
+                        handleSelectNav('routes', searchResults.routes[0].vehicle_id);
+                      } else if (searchResults.pages && searchResults.pages.length > 0) {
+                        handleSelectNav(searchResults.pages[0].tab || 'dashboard');
+                      } else if (searchResults.users && searchResults.users.length > 0) {
+                        handleSelectNav('users');
+                      } else if ((searchResults as any).fastag && (searchResults as any).fastag.length > 0) {
+                        handleSelectNav('fastag');
+                      }
                     }
                   }
-                }
-              }}
-              onFocus={() => setIsSearchOpen(true)}
-              placeholder="Search vehicles, routes, users, pages..."
-              className="w-40 sm:w-60 md:w-80 lg:w-96 pl-8.5 pr-14 py-1.5 text-xs bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-slate-900 placeholder:text-slate-400 rounded-full border border-slate-200/90 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition shadow-2xs outline-none"
-            />
-            {isSearching ? (
-              <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin absolute right-3 pointer-events-none" />
-            ) : searchQuery ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSearchResults(null);
                 }}
-                className="absolute right-2.5 p-0.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition cursor-pointer"
-                title="Clear Search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <span className="hidden sm:inline-flex items-center absolute right-2 text-[10px] font-mono text-slate-400 bg-white border border-slate-200 rounded px-1.5 py-0.2 pointer-events-none shadow-2xs">
-                Ctrl K
-              </span>
-            )}
-          </div>
+                onFocus={() => setIsSearchOpen(true)}
+                placeholder="Search..."
+                className="w-24 sm:w-36 md:w-44 lg:w-48 pl-7.5 pr-6 py-1 text-xs bg-slate-100 hover:bg-slate-100/90 focus:bg-white text-slate-900 placeholder:text-slate-400 rounded-xl border border-slate-200/90 focus:border-slate-400 focus:ring-1 focus:ring-slate-200 transition shadow-2xs outline-none"
+              />
+              {isSearching ? (
+                <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin absolute right-2 pointer-events-none" />
+              ) : searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchResults(null);
+                  }}
+                  className="absolute right-1.5 p-0.5 rounded-full text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                  title="Clear Search"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              ) : (
+                <span className="hidden sm:inline-flex items-center absolute right-1.5 text-[9px] font-mono text-slate-400 bg-white border border-slate-200 rounded px-1 py-0.2 pointer-events-none shadow-2xs">
+                  ⌘K
+                </span>
+              )}
+            </div>
 
           {/* Global Search Results Dropdown / Popover */}
           {isSearchOpen && (searchQuery.trim().length > 0 || searchResults) && (
@@ -512,6 +537,7 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
           )}
+        </div>
         </div>
       </div>
     </header>

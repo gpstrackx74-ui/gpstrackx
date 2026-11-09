@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { api } from './api/client';
-import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { LandingPage } from './pages/LandingPage';
 import { AuthPage } from './pages/AuthPage';
@@ -17,8 +16,6 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const AppContent: React.FC = () => {
   const { user, loading, isAdmin } = useAuth();
   const [currentTab, setCurrentTab] = useState('dashboard');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [previousTab, setPreviousTab] = useState<'dashboard' | 'vehicles'>('dashboard');
   const [routePlanVehicleId, setRoutePlanVehicleId] = useState<number | null>(null);
@@ -70,14 +67,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  const handleToggleSidebar = () => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      setMobileMenuOpen(!mobileMenuOpen);
-    } else {
-      setSidebarCollapsed(!sidebarCollapsed);
-    }
-  };
-
   // Handle viewing vehicle details & live tracking
   const handleViewVehicle = (id: number) => {
     setPreviousTab(currentTab === 'vehicles' ? 'vehicles' : 'dashboard');
@@ -91,149 +80,79 @@ const AppContent: React.FC = () => {
     setCurrentTab('routes');
   };
 
-  // Dynamic header titles matching Reference Image 2
-  const getHeaderInfo = () => {
-    switch (currentTab) {
-      case 'dashboard':
-        return {
-          title: 'Track Vehicles',
-          subtitle: 'Have an in-depth look at all the metrics within your dashboard'
-        };
-      case 'history':
-        return {
-          title: 'Trip History',
-          subtitle: 'Date-wise vehicle journey logs, historical route records and travel stats'
-        };
-      case 'vehicles':
-        return {
-          title: 'Vehicle Management',
-          subtitle: 'Manage commercial vehicle inventory and active drivers'
-        };
-      case 'routes':
-        return {
-          title: isAdmin ? 'Route Planning' : 'Route & Live Map View',
-          subtitle: isAdmin
-            ? 'Select start/end points, compare road routes and allocate to vehicle'
-            : 'Live Google Maps path, stoppages, toll plazas and route motion playback'
-        };
-      case 'vehicle-tracking':
-        return {
-          title: 'Live User View',
-          subtitle: 'Live Google Maps path, speed, stoppage records, tolls and playback simulation'
-        };
-      case 'fastag':
-        return {
-          title: 'FASTag Tolls & Invoices',
-          subtitle: 'Commercial truck electronic toll collection, tariffs and tax bills'
-        };
-      case 'users':
-        return {
-          title: 'User Management',
-          subtitle: 'Create, edit and manage system user accounts'
-        };
-      case 'settings':
-        return {
-          title: 'Fleet Settings',
-          subtitle: 'Configure platform parameters and Google Maps engine'
-        };
-      default:
-        return {
-          title: 'Fleet Operations',
-          subtitle: 'Commercial vehicle tracking and management'
-        };
-    }
-  };
-
-  const headerInfo = getHeaderInfo();
-
   return (
-    <div className="h-screen bg-[#F8FAFC] flex overflow-hidden">
-      {/* Collapsible / Responsive Mobile Drawer Sidebar */}
-      <Sidebar 
-        currentTab={currentTab} 
-        setCurrentTab={setCurrentTab} 
-        isCollapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        isMobileOpen={mobileMenuOpen}
-        onCloseMobile={() => setMobileMenuOpen(false)}
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
+      {/* Top Header Bar with Side-by-Side Navigation Links */}
+      <Header
+        currentTab={currentTab}
+        onNavigateTab={(tab, vehicleId) => {
+          if (tab === 'routes' && vehicleId) {
+            handlePlanRouteForVehicle(vehicleId);
+          } else if (vehicleId) {
+            handleViewVehicle(vehicleId);
+          } else {
+            setCurrentTab(tab);
+          }
+        }}
       />
 
-      {/* Main Content Area (Static Sidebar, Content Scrolls) */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
-        {/* Top Header Bar (Ref: Reference Image 2) */}
-        <Header
-          title={headerInfo.title}
-          subtitle={headerInfo.subtitle}
-          isSidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={handleToggleSidebar}
-          onNavigateTab={(tab, vehicleId) => {
-            if (tab === 'routes' && vehicleId) {
-              handlePlanRouteForVehicle(vehicleId);
-            } else if (vehicleId) {
-              handleViewVehicle(vehicleId);
-            } else {
-              setCurrentTab(tab);
-            }
-          }}
-        />
+      {/* Main Content Area (Full Width, Enterprise Modern Layout) */}
+      <main className="flex-1 pb-12">
+        {currentTab === 'dashboard' && (
+          <Dashboard 
+            onNavigateTab={(tab) => setCurrentTab(tab)} 
+            onViewVehicle={handleViewVehicle}
+            initialUserTab="vehicle"
+          />
+        )}
 
-        <main className="flex-1 pb-12">
-          {currentTab === 'dashboard' && (
-            <Dashboard 
-              onNavigateTab={(tab) => setCurrentTab(tab)} 
-              onViewVehicle={handleViewVehicle}
-              initialUserTab="vehicle"
+        {currentTab === 'history' && !isAdmin && (
+          <Dashboard 
+            onNavigateTab={(tab) => setCurrentTab(tab)} 
+            onViewVehicle={handleViewVehicle}
+            initialUserTab="history"
+          />
+        )}
+
+        {currentTab === 'vehicles' && (
+          <Vehicles 
+            onViewVehicle={handleViewVehicle}
+            onPlanRouteForVehicle={isAdmin ? handlePlanRouteForVehicle : undefined}
+          />
+        )}
+
+        {currentTab === 'routes' && (
+          isAdmin ? (
+            <RoutePlanning
+              initialVehicleId={routePlanVehicleId}
+              onSavedRouteSuccess={(vId) => handleViewVehicle(vId)}
             />
-          )}
-
-          {currentTab === 'history' && !isAdmin && (
-            <Dashboard 
-              onNavigateTab={(tab) => setCurrentTab(tab)} 
-              onViewVehicle={handleViewVehicle}
-              initialUserTab="history"
+          ) : (
+            <VehicleTracking
+              vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
+              onBack={() => setCurrentTab('dashboard')}
+              onSwitchVehicle={(vId) => setSelectedVehicleId(vId)}
             />
-          )}
+          )
+        )}
 
-          {currentTab === 'vehicles' && (
-            <Vehicles 
-              onViewVehicle={handleViewVehicle}
-              onPlanRouteForVehicle={isAdmin ? handlePlanRouteForVehicle : undefined}
+        {currentTab === 'vehicle-tracking' && (
+          <ErrorBoundary title="Vehicle Live Map View">
+            <VehicleTracking
+              vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
+              onBack={() => setCurrentTab(previousTab)}
+              onPlanRoute={isAdmin ? handlePlanRouteForVehicle : undefined}
+              onSwitchVehicle={(vId) => setSelectedVehicleId(vId)}
             />
-          )}
+          </ErrorBoundary>
+        )}
 
-          {currentTab === 'routes' && (
-            isAdmin ? (
-              <RoutePlanning
-                initialVehicleId={routePlanVehicleId}
-                onSavedRouteSuccess={(vId) => handleViewVehicle(vId)}
-              />
-            ) : (
-              <VehicleTracking
-                vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
-                onBack={() => setCurrentTab('dashboard')}
-                onSwitchVehicle={(vId) => setSelectedVehicleId(vId)}
-              />
-            )
-          )}
+        {currentTab === 'users' && isAdmin && <UsersManagement />}
 
-          {currentTab === 'vehicle-tracking' && (
-            <ErrorBoundary title="Vehicle Live Map View">
-              <VehicleTracking
-                vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
-                onBack={() => setCurrentTab(previousTab)}
-                onPlanRoute={isAdmin ? handlePlanRouteForVehicle : undefined}
-                onSwitchVehicle={(vId) => setSelectedVehicleId(vId)}
-              />
-            </ErrorBoundary>
-          )}
+        {currentTab === 'fastag' && <FastagBilling />}
 
-          {currentTab === 'users' && isAdmin && <UsersManagement />}
-
-          {currentTab === 'fastag' && <FastagBilling />}
-
-          {currentTab === 'settings' && isAdmin && <SettingsPage />}
-        </main>
-      </div>
+        {currentTab === 'settings' && isAdmin && <SettingsPage />}
+      </main>
     </div>
   );
 };

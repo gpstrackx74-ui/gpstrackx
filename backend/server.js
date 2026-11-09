@@ -275,20 +275,27 @@ app.post('/api/auth/login', (req, res) => {
   const clean = cleanPhoneNumber(loginId);
   let user = null;
 
-  if (loginId.includes('@')) {
-    user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(loginId.trim());
-  } else if (clean && clean.length >= 7) {
+  // 1. Try finding by email (case-insensitive)
+  user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(loginId);
+
+  // 2. If not found by email, try finding by phone number
+  if (!user && clean && clean.length >= 7) {
     const allUsers = db.prepare('SELECT * FROM users').all();
     user = allUsers.find(u => {
       if (!u.phone) return false;
       const uClean = cleanPhoneNumber(u.phone);
-      return uClean === clean || u.phone.includes(clean);
+      return uClean === clean || uClean.endsWith(clean) || clean.endsWith(uClean);
     });
-    if (!user) {
-      user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)').get(loginId.trim(), loginId.trim());
-    }
-  } else {
-    user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)').get(loginId.trim(), loginId.trim());
+  }
+
+  // 3. Fallback: try direct name or raw phone match
+  if (!user) {
+    user = db.prepare(`
+      SELECT * FROM users 
+      WHERE LOWER(name) = LOWER(?) 
+         OR phone = ? 
+         OR REPLACE(REPLACE(phone, ' ', ''), '+91', '') = ?
+    `).get(loginId, loginId, clean);
   }
 
   if (!user) {
@@ -321,8 +328,6 @@ app.post('/api/auth/login', (req, res) => {
   if (user.status !== 'active') {
     return res.status(403).json({ error: 'Account has been deactivated. Please contact fleet administrator.' });
   }
-
-  smsService.consumePhoneOtp(phone);
 
   recordUserLogin({
     userId: user.id,
@@ -426,83 +431,6 @@ app.post('/api/auth/register', (req, res) => {
       companyName: newUser.company_name,
       role: newUser.role,
       avatarColor: newUser.avatar_color
-    }
-  });
-});
-
-app.post('/api/auth/login', (req, res) => {
-  const { identifier, phone, email, password } = req.body;
-  const loginId = String(identifier || phone || email || '').trim();
-
-  if (!loginId || !password) {
-    return res.status(400).json({ error: 'Mobile number or email and password are required' });
-  }
-
-  const clean = cleanPhoneNumber(loginId);
-  let user = null;
-
-  if (clean.length === 10 && !loginId.includes('@')) {
-    user = db.prepare('SELECT * FROM users WHERE phone LIKE ? OR phone LIKE ?').get(`%${clean}`, clean);
-  } else {
-    user = db.prepare('SELECT * FROM users WHERE email = ?').get(loginId.toLowerCase());
-  }
-
-  if (!user) {
-    recordUserLogin({ email: loginId, role: 'unknown', req, status: 'FAILED_INVALID_USER' });
-    return res.status(401).json({ error: 'Invalid login credentials. Please check your mobile number or email.' });
-  }
-
-  const validPassword = bcrypt.compareSync(password, user.password);
-  if (!validPassword) {
-    recordUserLogin({
-      userId: user.id,
-      email: user.email,
-      userName: user.name,
-      role: user.role,
-      req,
-      status: 'FAILED_INVALID_PASSWORD'
-    });
-    return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
-  }
-
-  if (user.status !== 'active') {
-    recordUserLogin({
-      userId: user.id,
-      email: user.email,
-      userName: user.name,
-      role: user.role,
-      req,
-      status: 'FAILED_ACCOUNT_DEACTIVATED'
-    });
-    return res.status(403).json({ error: 'Account has been deactivated. Please contact fleet administrator.' });
-  }
-
-  // Record successful login audit in SQLite and live Supabase Cloud
-  recordUserLogin({
-    userId: user.id,
-    email: user.email,
-    userName: user.name,
-    role: user.role,
-    req,
-    status: 'SUCCESS'
-  });
-
-  const token = jwt.sign(
-    { id: user.id, name: user.name, email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      companyName: user.company_name,
-      role: user.role,
-      avatarColor: user.avatar_color
     }
   });
 });
@@ -1127,19 +1055,28 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
   }
 
   const cleanPhone = cleanPhoneNumber(phone || '');
-  const userEmail = email && /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim())
+  const hasValidEmail = email && email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const userEmail = hasValidEmail
     ? email.trim().toLowerCase()
     : (cleanPhone ? `${cleanPhone}@gpstrackx.in` : `user.${Date.now()}@gpstrackx.in`);
 
-  const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(userEmail);
-  if (existing) {
+  const existingEmail = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(userEmail);
+  if (existingEmail) {
     return res.status(400).json({ error: 'User with this email already exists' });
+  }
+
+  if (cleanPhone) {
+    const allUsers = db.prepare('SELECT id, phone FROM users').all();
+    const existingPhone = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
+    if (existingPhone) {
+      return res.status(400).json({ error: 'User with this mobile number already exists' });
+    }
   }
 
   const colors = ['#EF4444', '#DC2626', '#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'];
   const avatarColor = colors[Math.floor(Math.random() * colors.length)];
   const hash = bcrypt.hashSync(password, 10);
-  const formattedPhone = cleanPhone ? `+91 ${cleanPhone}` : (phone || '');
+  const formattedPhone = cleanPhone ? (phone && phone.trim().startsWith('+') ? phone.trim() : `+91 ${cleanPhone}`) : (phone || '');
 
   try {
     const result = db.prepare(`

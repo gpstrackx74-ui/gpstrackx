@@ -44,6 +44,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   const [stoppages, setStoppages] = useState<Stoppage[]>([]);
   const [manualTolls, setManualTolls] = useState<TollGate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [allTrips, setAllTrips] = useState<any[]>([]);
+  const [noTripFoundModal, setNoTripFoundModal] = useState<boolean>(false);
+  const [noTripDate, setNoTripDate] = useState<string>('');
 
   // Filter Period
   const [period, setPeriod] = useState<'today' | '7days' | '30days'>('today');
@@ -67,15 +70,65 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   const fetchVehicleDetails = async (targetId: number) => {
     try {
       setLoading(true);
-      const data = await api.getVehicle(targetId);
+      const [data, trips] = await Promise.all([
+        api.getVehicle(targetId),
+        api.getVehicleTrips(targetId).catch(() => [])
+      ]);
       setVehicle(data.vehicle);
-      setActiveRoute(data.activeRoute);
+      setAllTrips(trips || []);
+
+      if (data.activeRoute) {
+        setActiveRoute(data.activeRoute);
+        const rDate = data.activeRoute.trip_date || (data.activeRoute.created_at ? data.activeRoute.created_at.split('T')[0] : '');
+        if (rDate) {
+          setFromDate(rDate);
+          setToDate(rDate);
+        }
+      }
       setStoppages(data.stoppages || []);
       setManualTolls(data.manualTolls || []);
     } catch (err) {
       console.error('Failed to load vehicle telemetry:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDateChange = (newDate: string, tripsList = allTrips) => {
+    setFromDate(newDate);
+    setToDate(newDate);
+
+    if (!newDate) return;
+
+    // Check if any trip exists on this date
+    const found = tripsList.find((t: any) => {
+      const d1 = t.trip_date || (t.created_at ? t.created_at.split('T')[0] : '');
+      const d2 = t.end_trip_date || d1;
+      return d1 === newDate || (d1 <= newDate && d2 >= newDate);
+    });
+
+    if (found) {
+      setActiveRoute(found);
+      setNoTripFoundModal(false);
+      try {
+        if (found.waypoints_json) {
+          const wp = typeof found.waypoints_json === 'string' ? JSON.parse(found.waypoints_json) : found.waypoints_json;
+          if (Array.isArray(wp)) setStoppages(wp);
+        }
+      } catch (_) {}
+      try {
+        if (found.toll_gates_json) {
+          const tg = typeof found.toll_gates_json === 'string' ? JSON.parse(found.toll_gates_json) : found.toll_gates_json;
+          if (Array.isArray(tg)) setManualTolls(tg);
+        }
+      } catch (_) {}
+    } else {
+      // Clear route, stoppages and tolls so map is blank
+      setActiveRoute(null);
+      setStoppages([]);
+      setManualTolls([]);
+      setNoTripDate(newDate);
+      setNoTripFoundModal(true);
     }
   };
 
@@ -478,7 +531,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <input
                 type="date"
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
+                onChange={(e) => handleDateChange(e.target.value)}
                 className="bg-transparent font-mono text-slate-800 focus:outline-none"
               />
               <span className="text-slate-400 mx-1">|</span>
@@ -495,7 +548,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <input
                 type="date"
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
+                onChange={(e) => handleDateChange(e.target.value)}
                 className="bg-transparent font-mono text-slate-800 focus:outline-none"
               />
               <span className="text-slate-400 mx-1">|</span>
@@ -511,7 +564,11 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setPeriod('today')}
+                onClick={() => {
+                  setPeriod('today');
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  handleDateChange(todayStr);
+                }}
                 className={`px-3 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer ${period === 'today' ? 'bg-white text-slate-900 border border-slate-300 shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
               >
@@ -519,7 +576,26 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               </button>
               <button
                 type="button"
-                onClick={() => setPeriod('7days')}
+                onClick={() => {
+                  setPeriod('7days');
+                  const now = new Date();
+                  const pastDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                  const todayStr = now.toISOString().split('T')[0];
+                  const found = allTrips.find((t: any) => {
+                    const d1 = t.trip_date || (t.created_at ? t.created_at.split('T')[0] : '');
+                    return d1 >= pastDate && d1 <= todayStr;
+                  });
+                  if (found) {
+                    setActiveRoute(found);
+                    setNoTripFoundModal(false);
+                  } else {
+                    setActiveRoute(null);
+                    setStoppages([]);
+                    setManualTolls([]);
+                    setNoTripDate(`${pastDate} to ${todayStr}`);
+                    setNoTripFoundModal(true);
+                  }
+                }}
                 className={`px-3 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer ${period === '7days' ? 'bg-white text-slate-900 border border-slate-300 shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
               >
@@ -527,7 +603,26 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               </button>
               <button
                 type="button"
-                onClick={() => setPeriod('30days')}
+                onClick={() => {
+                  setPeriod('30days');
+                  const now = new Date();
+                  const pastDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                  const todayStr = now.toISOString().split('T')[0];
+                  const found = allTrips.find((t: any) => {
+                    const d1 = t.trip_date || (t.created_at ? t.created_at.split('T')[0] : '');
+                    return d1 >= pastDate && d1 <= todayStr;
+                  });
+                  if (found) {
+                    setActiveRoute(found);
+                    setNoTripFoundModal(false);
+                  } else {
+                    setActiveRoute(null);
+                    setStoppages([]);
+                    setManualTolls([]);
+                    setNoTripDate(`${pastDate} to ${todayStr}`);
+                    setNoTripFoundModal(true);
+                  }
+                }}
                 className={`px-3 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer ${period === '30days' ? 'bg-white text-slate-900 border border-slate-300 shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
               >
@@ -536,16 +631,18 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end lg:self-auto text-xs">
-            <button
-              type="button"
-              onClick={() => alert('Exporting PDF Telemetry Report...')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 hover:text-[#0F172A] text-slate-700 font-bold rounded-xl border border-slate-200 transition cursor-pointer shadow-2xs"
-            >
-              <Download className="w-3.5 h-3.5 text-[#0F172A]" />
-              <span>Export PDF</span>
-            </button>
-          </div>
+          {isAdmin && (
+            <div className="flex items-center gap-2 self-end lg:self-auto text-xs">
+              <button
+                type="button"
+                onClick={() => alert('Exporting PDF Telemetry Report...')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 hover:text-[#0F172A] text-slate-700 font-bold rounded-xl border border-slate-200 transition cursor-pointer shadow-2xs"
+              >
+                <Download className="w-3.5 h-3.5 text-[#0F172A]" />
+                <span>Export PDF</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Thin divider with light red 10% opacity */}
@@ -631,8 +728,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               </div>
             </div>
 
-            {/* Stoppages & Toll Gate Summary */}
-            {activeRoute && (
+            {/* Stoppages & Toll Gate Summary (Admin Only) */}
+            {isAdmin && activeRoute && (
               <div className="rounded-2xl p-4 sm:p-5 bg-slate-50/50 border border-slate-200/80 space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-2.5">
@@ -719,30 +816,6 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
 
           {/* Right Column: Route Map (On-Road Tracking) (8 Cols) */}
           <div className="lg:col-span-8 flex flex-col">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-3 border-b border-slate-100">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-600"></span>
-                  <h3 className="text-sm font-extrabold text-slate-900">
-                    Route Map (On-Road Tracking)
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {activeRoute ? activeRoute.route_name.replace(/\r?\n/g, ' ') : 'No active road route assigned yet'}
-                </p>
-              </div>
-
-              {activeRoute && (
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="font-bold text-slate-900">{activeRoute.total_distance_km} KM</span>
-                  <span className="text-slate-300">•</span>
-                  <span className="font-bold text-slate-800">
-                    ~{Math.floor(activeRoute.estimated_travel_time_min / 60)}h {activeRoute.estimated_travel_time_min % 60}m
-                  </span>
-                </div>
-              )}
-            </div>
-
             {/* No Allotted Route Banner if vehicle has no route yet */}
             {!activeRoute && (
               <div className="mb-4 p-4 rounded-2xl bg-amber-50/80 border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
@@ -917,6 +990,48 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
           </div>
         </div>
       </div>
+
+      {/* Date Filter: No Trips Recorded Alert Modal */}
+      {noTripFoundModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900 tracking-tight">
+                Is Date Me Koi Vehicle Nahi Chala Hai
+              </h3>
+              <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
+                Chuni gayi tareekh <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{noTripDate}</span> par vehicle <span className="font-mono font-bold text-slate-800">{vehicle?.registration_no}</span> ka koi route ya trip record nahi mila hai.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setNoTripFoundModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+              >
+                Theek Hai (Close)
+              </button>
+              {allTrips.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const latest = allTrips[0];
+                    const lDate = latest.trip_date || (latest.created_at ? latest.created_at.split('T')[0] : '');
+                    if (lDate) handleDateChange(lDate);
+                    else setNoTripFoundModal(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs transition cursor-pointer shadow-xs"
+                >
+                  Active Date Par Jayein
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

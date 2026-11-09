@@ -124,8 +124,13 @@ export const UsersManagement: React.FC = () => {
       setFormError(null);
 
       const payload = {
-        ...formData,
-        email: formData.email.trim() || (formData.phone.replace(/\D/g, '') + '@fleet.gpstrackx.com')
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        company_name: formData.company_name.trim(),
+        role: formData.role,
+        status: formData.status,
+        ...(formData.password ? { password: formData.password } : {})
       };
       if (editingUser) {
         await api.updateUser(editingUser.id, payload);
