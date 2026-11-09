@@ -331,45 +331,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="p-4 sm:p-6 lg:p-7 max-w-7xl mx-auto space-y-5 sm:space-y-6">
-      {/* Top Banner & User Switcher for Admin in Live User View */}
-      {isLiveUserView && (
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 to-slate-800 rounded-3xl text-white shadow-xs border border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white/10 text-white flex items-center justify-center font-bold shrink-0 border border-white/10">
-              <Compass className="w-5 h-5 text-red-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm sm:text-base font-black tracking-tight text-white">
-                  Live User View
-                </h2>
-                <span className="text-[10px] font-mono font-bold bg-[#E60012] text-white px-2 py-0.5 rounded-full">
-                  User Dashboard Preview
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 font-medium mt-0.5">
-                Verifying live vehicle telematics, route assignment & date-wise trip history as seen by the user.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-auto bg-white/10 p-1.5 rounded-2xl border border-white/10">
-            <span className="text-xs font-bold text-slate-300 pl-2 whitespace-nowrap">Switch User:</span>
-            <select
-              value={selectedUserId || ''}
-              onChange={(e) => handleUserChange(Number(e.target.value))}
-              className="bg-slate-900 text-white border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold shadow-2xs focus:outline-none focus:border-red-500 cursor-pointer"
-            >
-              {userList.map(u => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.email || u.phone})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-
       {/* ONE LARGE UNIFIED MAIN CONTAINER (ALL-IN-ONE ENTERPRISE LAYOUT) */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
         {/* Section 1: Fleet Operational Overview (4 Metrics inside unified container) */}

@@ -62,7 +62,7 @@ function initializeDatabase() {
       chassis_number TEXT,
       fuel_type TEXT DEFAULT 'Diesel',
       assigned_user_id INTEGER,
-      status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'moving', 'stopped')),
+      status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'moving', 'stopped', 'stop', 'parking')),
       current_speed REAL DEFAULT 0,
       max_speed_limit REAL DEFAULT 80,
       current_lat REAL,
@@ -148,6 +148,9 @@ function initializeDatabase() {
     }
     if (!routeCols.includes('end_trip_date')) {
       db.exec('ALTER TABLE routes ADD COLUMN end_trip_date TEXT');
+    }
+    if (!routeCols.includes('operational_status')) {
+      db.exec("ALTER TABLE routes ADD COLUMN operational_status TEXT DEFAULT 'moving'");
     }
   } catch (e) {}
 

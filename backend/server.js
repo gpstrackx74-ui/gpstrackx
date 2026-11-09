@@ -748,6 +748,47 @@ app.put('/api/routes/:id/activate', authenticateToken, (req, res) => {
   }
 });
 
+// Update a specific route's operational status (moving / stop / parking)
+app.put('/api/routes/:id/operational-status', authenticateToken, (req, res) => {
+  const routeId = req.params.id;
+  const { operational_status } = req.body;
+  if (!['moving', 'stop', 'parking', 'active', 'inactive', 'stopped'].includes(operational_status)) {
+    return res.status(400).json({ error: 'Invalid operational status' });
+  }
+
+  try {
+    const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(routeId);
+    if (!route) return res.status(404).json({ error: 'Route not found' });
+
+    // Regular users can only update routes for their assigned vehicles
+    if (req.user.role !== 'admin') {
+      const vehicle = db.prepare('SELECT assigned_user_id FROM vehicles WHERE id = ?').get(route.vehicle_id);
+      if (!vehicle || vehicle.assigned_user_id !== req.user.id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+    }
+
+    db.prepare('UPDATE routes SET operational_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(operational_status, routeId);
+
+    // Update vehicle status & current speed accordingly
+    let newSpeed = 0;
+    if (operational_status === 'moving') {
+      newSpeed = 48;
+    } else if (operational_status === 'stop' || operational_status === 'parking') {
+      newSpeed = 0;
+    }
+    db.prepare('UPDATE vehicles SET status = ?, current_speed = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+      operational_status,
+      newSpeed,
+      route.vehicle_id
+    );
+
+    res.json({ success: true, operational_status, vehicle_id: route.vehicle_id, current_speed: newSpeed });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update operational status: ' + err.message });
+  }
+});
+
 app.get('/api/vehicles/:id', authenticateToken, (req, res) => {
   const vehicleId = req.params.id;
 
@@ -933,6 +974,14 @@ app.put('/api/vehicles/:id', authenticateToken, requireAdmin, (req, res) => {
   }
 
   try {
+    const safeStatus = status || 'active';
+    let targetSpeed = (vehicle && vehicle.current_speed) || 0;
+    if (safeStatus === 'stop' || safeStatus === 'parking' || safeStatus === 'stopped') {
+      targetSpeed = 0;
+    } else if (safeStatus === 'moving') {
+      targetSpeed = (targetSpeed > 0) ? targetSpeed : 48;
+    }
+
     db.prepare(`
       UPDATE vehicles SET
         registration_no = ?,
@@ -945,6 +994,7 @@ app.put('/api/vehicles/:id', authenticateToken, requireAdmin, (req, res) => {
         assigned_user_id = ?,
         max_speed_limit = ?,
         status = ?,
+        current_speed = ?,
         axle_type = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -958,10 +1008,15 @@ app.put('/api/vehicles/:id', authenticateToken, requireAdmin, (req, res) => {
       fuel_type,
       assigned_user_id ? parseInt(assigned_user_id) : null,
       max_speed_limit ? parseFloat(max_speed_limit) : 80,
-      status || 'active',
+      safeStatus,
+      targetSpeed,
       axle_type || '4-axle',
       vehicleId
     );
+
+    if (safeStatus === 'moving' || safeStatus === 'stop' || safeStatus === 'parking') {
+      db.prepare('UPDATE routes SET operational_status = ? WHERE vehicle_id = ? AND is_active = 1').run(safeStatus, vehicleId);
+    }
 
     const updated = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId);
     if (updated) {

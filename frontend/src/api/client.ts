@@ -176,6 +176,11 @@ export const api = {
   // Vehicle Multi-Trip Management
   getVehicleTrips: (vehicleId: number | string) => apiRequest<any[]>(`/vehicles/${vehicleId}/trips`),
   activateVehicleTrip: (routeId: number | string) => apiRequest<{ success: boolean; message: string }>(`/routes/${routeId}/activate`, { method: 'PUT' }),
+  updateRouteOperationalStatus: (routeId: number | string, operational_status: string) =>
+    apiRequest<{ success: boolean; operational_status: string }>(`/routes/${routeId}/operational-status`, {
+      method: 'PUT',
+      body: JSON.stringify({ operational_status })
+    }),
   addVehicleTrip: (vehicleId: number | string, data: any) =>
     apiRequest<any>('/routes', {
       method: 'POST',

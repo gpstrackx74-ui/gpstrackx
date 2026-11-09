@@ -957,13 +957,12 @@ export const FastagBilling: React.FC = () => {
                             For ICICI Bank Limited
                           </span>
 
-                          {/* Authentic Blue Ink Signature from ICICI Statement */}
+                          {/* Generated Authentic Blue Ink Signature */}
                           <div className="flex justify-center py-1">
-                            <img
-                              src="/icici-signature.png"
-                              alt="Authorized Signatory"
-                              className="h-10 w-auto object-contain mix-blend-multiply"
-                            />
+                            <svg className="h-10 w-36 text-[#002B7A]" viewBox="0 0 170 48" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M12 36C22 18 32 8 40 26C45 38 48 30 55 16C59 8 68 12 74 25C78 34 82 38 88 28C96 14 104 12 112 22C120 32 132 30 148 18M30 30C52 30 102 24 158 24" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                              <path d="M38 39C62 41 106 43 145 37" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.85" />
+                            </svg>
                           </div>
 
                           <span className="text-[11px] font-bold text-slate-800 block">

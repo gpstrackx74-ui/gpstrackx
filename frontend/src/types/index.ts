@@ -26,7 +26,9 @@ export interface Vehicle {
   chassis_number: string;
   fuel_type: string;
   assigned_user_id: number | null;
-  status: 'active' | 'inactive' | 'moving' | 'stopped' | 'stop' | 'service';
+  status: 'active' | 'inactive' | 'moving' | 'stopped' | 'stop' | 'parking' | 'service';
+  operational_status?: string;
+  location?: string;
   current_speed: number;
   max_speed_limit: number;
   current_lat: number;
@@ -108,6 +110,7 @@ export interface RouteDetail {
   start_trip_time?: string;
   end_trip_time?: string;
   is_active: number;
+  operational_status?: string;
   created_at: string;
 }
 

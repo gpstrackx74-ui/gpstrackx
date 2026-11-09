@@ -473,7 +473,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
     );
   }
 
-  const isMoving = vehicle.status === 'moving';
+  const isMoving = (vehicle?.status as string) === 'moving' || (activeRoute?.operational_status === 'moving');
+  const isStopped = (vehicle?.status as string) === 'stop' || (vehicle?.status as string) === 'stopped' || (activeRoute?.operational_status === 'stop');
+  const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
 
   return (
     <div className="p-4 sm:p-6 lg:p-7 space-y-4 max-w-7xl mx-auto w-full min-w-0 font-sans">
@@ -497,11 +499,15 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                 </h2>
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isMoving
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : isStopped
+                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                  : isParking
+                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
                   : vehicle.status === 'active'
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                    : 'bg-slate-100 text-slate-600 border border-slate-200'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200'
                   }`}>
-                  {isMoving && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>}
+                  {isMoving && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>}
                   {vehicle.status?.toUpperCase()}
                 </span>
                 <span className="text-xs font-bold text-slate-500">
@@ -546,9 +552,11 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
 
             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
               <span className="text-[10px] font-bold text-slate-400 uppercase">From:</span>
-              <DMYDateInput
+              <input
+                type="date"
                 value={fromDate}
-                onChange={(val) => handleDateChange(val)}
+                onChange={(e) => handleDateChange(e.target.value)}
+                className="bg-transparent font-mono text-slate-800 focus:outline-none text-xs"
               />
               <span className="text-slate-300 mx-0.5">|</span>
               <input
@@ -561,9 +569,11 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
 
             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
               <span className="text-[10px] font-bold text-slate-400 uppercase">To:</span>
-              <DMYDateInput
+              <input
+                type="date"
                 value={toDate}
-                onChange={(val) => handleDateChange(val)}
+                onChange={(e) => handleDateChange(e.target.value)}
+                className="bg-transparent font-mono text-slate-800 focus:outline-none text-xs"
               />
               <span className="text-slate-300 mx-0.5">|</span>
               <input
@@ -664,171 +674,80 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
 
         {/* Section 3: Landscape Information Panel (Horizontal Arrangement) */}
         <div className="p-5 sm:p-6 space-y-5">
-          {/* Top Landscape Grid: 4 Horizontal Multi-Metric Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
-            {/* Card 1: Vehicle Profile & Telemetry */}
-            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
-              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-white text-slate-900 border border-slate-200 flex items-center justify-center shadow-xs">
-                    <Truck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-mono font-black text-slate-900 text-sm">{vehicle.registration_no}</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">{vehicle.name_model} • {vehicle.vehicle_type}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
-                    {activeRoute ? (vehicle.current_speed || 0) : 0}
-                    <span className="text-[10px] font-semibold text-slate-500 ml-0.5">KM/H</span>
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Live Speed</span>
-                </div>
+          {/* Single Plain Telemetry Overview Card (Speed, Fuel Type, Ignition Status, Trip, Date, Total Distance, Vehicle No, Address) */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+              {/* 1. Vehicle No */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Vehicle No</span>
+                <span className="font-mono font-black text-slate-900 text-sm block truncate mt-1">
+                  {vehicle.registration_no}
+                </span>
               </div>
-              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Assigned User</span>
-                  <span className="font-bold text-slate-800 truncate block">{vehicle.owner_name || 'Unassigned'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Driver Phone</span>
-                  <span className="font-mono text-slate-800 truncate block">{vehicle.owner_phone || '+91 98765 43210'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">GPS Device ID</span>
-                  <span className="font-mono text-slate-800 truncate block">{vehicle.device_id || 'GPS-AUTO'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Fuel Type</span>
-                  <span className="font-bold text-slate-800 truncate block">{vehicle.fuel_type || 'Diesel'}</span>
-                </div>
-              </div>
-            </div>
 
-            {/* Card 2: Active Route Corridor & Schedule */}
-            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
-              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
-                <div className="min-w-0 pr-2">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Active Corridor</span>
-                  <h4 className="font-bold text-slate-900 text-xs truncate" title={activeRoute?.route_name || 'Corridor'}>
-                    {activeRoute?.route_name || 'Direct Route Corridor'}
-                  </h4>
+              {/* 2. Speed */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Speed</span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="font-mono font-black text-slate-900 text-sm">
+                    {activeRoute && isMoving ? (vehicle.current_speed || 45) : 0}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">KM/H</span>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
+              </div>
+
+              {/* 3. Fuel Type */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Fuel Type</span>
+                <span className="font-bold text-slate-800 text-xs sm:text-sm block truncate mt-1">
+                  {vehicle.fuel_type || 'Diesel'}
+                </span>
+              </div>
+
+              {/* 4. Ignition Status */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ignition Status</span>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className={`inline-block w-2 h-2 rounded-full ${activeRoute && isMoving ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                  <span className={`font-black text-xs ${activeRoute && isMoving ? 'text-emerald-700' : 'text-slate-500'}`}>
+                    {activeRoute && isMoving ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 5. Trip */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Trip</span>
+                <span className="font-bold text-slate-800 text-xs block truncate mt-1" title={activeRoute?.route_name || 'No Active Trip'}>
+                  {activeRoute?.route_name || 'No Active Trip'}
+                </span>
+              </div>
+
+              {/* 6. Date */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Date</span>
+                <span className="font-mono font-bold text-slate-800 text-xs block truncate mt-1">
+                  {activeRoute?.trip_date ? formatToDMY(activeRoute.trip_date) : (fromDate ? formatToDMY(fromDate) : '-')}
+                </span>
+              </div>
+
+              {/* 7. Total Distance */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Distance</span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="font-mono font-black text-slate-900 text-sm">
                     {activeRoute ? (activeRoute.total_distance_km || 0) : 0}
-                    <span className="text-[10px] font-semibold text-slate-500 ml-0.5">KM</span>
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Dist</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">KM</span>
                 </div>
               </div>
-              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Scheduled Dates</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
-                    {activeRoute?.trip_date ? formatToDMY(activeRoute.trip_date) : formatToDMY(fromDate)}{activeRoute?.end_trip_date && activeRoute.end_trip_date !== activeRoute.trip_date ? ` → ${formatToDMY(activeRoute.end_trip_date)}` : ''}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Trip Window</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
-                    {activeRoute ? `${activeRoute.start_trip_time || '08:00 AM'} → ${activeRoute.end_trip_time || '06:00 PM'}` : '00:00 → 00:00'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Origin</span>
-                  <span className="font-semibold text-slate-700 truncate block text-[11px]">{activeRoute?.start_location_name || '-'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Destination</span>
-                  <span className="font-semibold text-slate-700 truncate block text-[11px]">{activeRoute?.end_location_name || '-'}</span>
-                </div>
-              </div>
-            </div>
 
-            {/* Card 3: Journey & Travel Transit */}
-            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
-              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
-                <div className="min-w-0 pr-2">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Travel Duration</span>
-                  <h4 className="font-bold text-slate-900 text-xs truncate">
-                    {activeRoute?.route_name ? 'Transit Window' : 'No Scheduled Trip'}
-                  </h4>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
-                    {activeRoute?.estimated_travel_time_min ? `${Math.floor(activeRoute.estimated_travel_time_min / 60)}h ${activeRoute.estimated_travel_time_min % 60}m` : '0h 0m'}
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Est. Duration</span>
-                </div>
-              </div>
-              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Route Leg</span>
-                  <span className="font-bold text-slate-800 text-[11px] truncate block">
-                    {activeRoute ? `${activeRoute.start_location_name || 'Start'} → ${activeRoute.end_location_name || 'End'}` : '-'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Average Speed</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
-                    {activeRoute && activeRoute.total_distance_km && activeRoute.estimated_travel_time_min ? `${Math.round((Number(activeRoute.total_distance_km) / (Number(activeRoute.estimated_travel_time_min) / 60)))} km/h` : '0 km/h'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Corridor Type</span>
-                  <span className="font-semibold text-slate-700 truncate block text-[11px]">
-                    {activeRoute ? 'Commercial Highway' : 'Inactive'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">FASTag Service</span>
-                  <span className="font-semibold text-slate-700 truncate block text-[11px]">
-                    {routeTolls.length > 0 ? 'Electronic Active' : 'Standard'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 4: Fleet Telemetry & Connectivity */}
-            <div className="rounded-2xl p-4 bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between shadow-2xs">
-              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/60">
-                <div className="min-w-0 pr-2">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Telemetry Status</span>
-                  <h4 className="font-bold text-slate-900 text-xs truncate">
-                    {activeRoute ? (isMoving ? 'Moving On-Road' : 'Stationary') : 'No Trip Recorded'}
-                  </h4>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">
-                    {activeRoute ? simulatedDistanceCoveredKm : 0}
-                    <span className="text-[10px] font-semibold text-slate-500 ml-0.5">KM</span>
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Distance Covered</span>
-                </div>
-              </div>
-              <div className="pt-2.5 grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">GPS Signal</span>
-                  <span className="font-mono font-bold text-emerald-600 text-[11px] truncate block">Live 4G Active</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Playback Progress</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">
-                    {activeRoute ? `${playbackProgressPercent}%` : '0%'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Engine Ignition</span>
-                  <span className="font-semibold text-slate-700 truncate block text-[11px]">
-                    {activeRoute && isMoving ? 'Ignition ON' : 'Ignition OFF'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Odometer Mode</span>
-                  <span className="font-semibold text-slate-700 truncate block text-[11px]">High Precision</span>
-                </div>
+              {/* 8. Address */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Address</span>
+                <span className="font-medium text-slate-700 text-xs block truncate mt-1" title={activeRoute?.start_location_name || vehicle.location || 'Raipur, Chhattisgarh'}>
+                  {activeRoute?.start_location_name || vehicle.location || 'Raipur, Chhattisgarh'}
+                </span>
               </div>
             </div>
           </div>
