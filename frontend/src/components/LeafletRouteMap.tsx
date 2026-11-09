@@ -150,9 +150,9 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     });
 
     if (vehicleMarkerRef.current) {
-      // GPU accelerated position update with smooth slow gliding motion
+      // GPU accelerated position update with smooth slow gliding motion (4.8s for 5s ticks)
       const el = vehicleMarkerRef.current.getElement();
-      if (el) el.style.transition = 'transform 1.1s linear';
+      if (el) el.style.transition = isMoving ? 'transform 4.8s linear' : 'transform 0.5s ease-out';
       vehicleMarkerRef.current.setLatLng(p);
       const speedEl = el?.querySelector('.veh-speed-val');
       if (speedEl && vehiclePosition.speed !== undefined) {
@@ -161,7 +161,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     } else {
       const marker = L.marker(p, { icon: vehIcon, zIndexOffset: 1000 }).addTo(map);
       const el = marker.getElement();
-      if (el) el.style.transition = 'transform 1.1s linear';
+      if (el) el.style.transition = isMoving ? 'transform 4.8s linear' : 'transform 0.5s ease-out';
       marker.bindPopup(`
         <div class="p-2 min-w-[160px]">
           <div class="flex items-center justify-between gap-2">

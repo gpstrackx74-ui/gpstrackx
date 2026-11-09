@@ -17,8 +17,14 @@ import {
   Receipt,
   LayoutDashboard,
   Settings,
-  History
+  History,
+  ChevronUp
 } from 'lucide-react';
+import { 
+  highlightInPage, 
+  clearHighlights, 
+  setPendingSearchFocus 
+} from '../utils/searchHighlighter';
 
 interface HeaderProps {
   title?: string;
@@ -38,13 +44,14 @@ export const Header: React.FC<HeaderProps> = ({
   const [demoUsers, setDemoUsers] = useState<any[]>([]);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
+  // Strictly reordered admin tabs per specification (No Dashboard tab for admin):
+  // 1. Live User View, 2. Users, 3. Vehicles, 4. Route Planner, 5. FASTag Toll, 6. Settings
   const adminNavItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'vehicles', label: 'Vehicles', icon: Truck },
     { id: 'vehicle-tracking', label: 'Live User View', icon: Compass },
+    { id: 'users', label: 'Users', icon: UsersIcon },
+    { id: 'vehicles', label: 'Vehicles', icon: Truck },
     { id: 'routes', label: 'Route Planner', icon: Route },
     { id: 'fastag', label: 'FASTag Toll', icon: Receipt },
-    { id: 'users', label: 'Users', icon: UsersIcon },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -57,8 +64,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   const currentNavItems = isAdmin ? adminNavItems : userNavItems;
 
-  // Global Search State
+  // Global & In-Page Search State
   const [searchQuery, setSearchQuery] = useState('');
+  const [inPageMatchStats, setInPageMatchStats] = useState<{ total: number; current: number }>({ total: 0, current: 0 });
   const [searchResults, setSearchResults] = useState<{
     vehicles: any[];
     routes: any[];
@@ -116,14 +124,20 @@ export const Header: React.FC<HeaderProps> = ({
     api.getDemoUsers().then(users => setDemoUsers(users)).catch(() => {});
   }, []);
 
-  // Debounced search query
+  // In-page search highlight and server fleet search query
   useEffect(() => {
     const trimmed = searchQuery.trim();
-    if (!trimmed) {
+    if (!trimmed || trimmed.length < 2) {
+      clearHighlights();
+      setInPageMatchStats({ total: 0, current: 0 });
       setSearchResults(null);
       setIsSearching(false);
       return;
     }
+
+    // Immediately highlight on the active page and focus first match
+    const stats = highlightInPage(trimmed, false);
+    setInPageMatchStats(stats);
 
     setIsSearching(true);
     const timer = setTimeout(() => {
@@ -143,11 +157,20 @@ export const Header: React.FC<HeaderProps> = ({
   }, [searchQuery]);
 
   const handleSelectNav = (tab: string, vehicleId?: number) => {
+    if (searchQuery.trim().length >= 2) {
+      setPendingSearchFocus(searchQuery.trim());
+    }
     if (onNavigateTab) {
       onNavigateTab(tab, vehicleId);
     }
     setIsSearchOpen(false);
-    setSearchQuery('');
+  };
+
+  const handleCycleInPageMatch = (advanceNext = true) => {
+    if (searchQuery.trim().length >= 2) {
+      const stats = highlightInPage(searchQuery.trim(), advanceNext);
+      setInPageMatchStats(stats);
+    }
   };
 
   return (
@@ -156,7 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Left: Brand Logo */}
         <div className="flex items-center gap-2 shrink-0">
           <div 
-            onClick={() => onNavigateTab?.('dashboard')}
+            onClick={() => onNavigateTab?.(isAdmin ? 'vehicle-tracking' : 'dashboard')}
             className="flex items-center gap-2 shrink-0 cursor-pointer hover:opacity-90 transition py-0.5"
             title="GpsTrackX Fleet Platform"
           >
@@ -218,13 +241,18 @@ export const Header: React.FC<HeaderProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
+                    // If matches exist on the current page, cycle to next match and focus it!
+                    if (inPageMatchStats.total > 0) {
+                      handleCycleInPageMatch(true);
+                      return;
+                    }
                     if (searchResults) {
                       if (searchResults.vehicles && searchResults.vehicles.length > 0) {
                         handleSelectNav('vehicle-tracking', searchResults.vehicles[0].id);
                       } else if (searchResults.routes && searchResults.routes.length > 0) {
                         handleSelectNav('routes', searchResults.routes[0].vehicle_id);
                       } else if (searchResults.pages && searchResults.pages.length > 0) {
-                        handleSelectNav(searchResults.pages[0].tab || 'dashboard');
+                        handleSelectNav(searchResults.pages[0].tab || (isAdmin ? 'vehicle-tracking' : 'dashboard'));
                       } else if (searchResults.users && searchResults.users.length > 0) {
                         handleSelectNav('users');
                       } else if ((searchResults as any).fastag && (searchResults as any).fastag.length > 0) {
@@ -235,8 +263,21 @@ export const Header: React.FC<HeaderProps> = ({
                 }}
                 onFocus={() => setIsSearchOpen(true)}
                 placeholder="Search..."
-                className="w-24 sm:w-36 md:w-44 lg:w-48 pl-7.5 pr-6 py-1 text-xs bg-slate-100 hover:bg-slate-100/90 focus:bg-white text-slate-900 placeholder:text-slate-400 rounded-xl border border-slate-200/90 focus:border-slate-400 focus:ring-1 focus:ring-slate-200 transition shadow-2xs outline-none"
+                className="w-28 sm:w-40 md:w-48 lg:w-56 pl-7.5 pr-14 py-1 text-xs bg-slate-100 hover:bg-slate-100/90 focus:bg-white text-slate-900 placeholder:text-slate-400 rounded-xl border border-slate-200/90 focus:border-slate-400 focus:ring-1 focus:ring-slate-200 transition shadow-2xs outline-none"
               />
+
+              {/* In-Page Match Counter & Next Button */}
+              {inPageMatchStats.total > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleCycleInPageMatch(true)}
+                  className="absolute right-6 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-mono font-bold hover:bg-amber-200 transition cursor-pointer"
+                  title="Click or press Enter to focus next match on page"
+                >
+                  {inPageMatchStats.current}/{inPageMatchStats.total}
+                </button>
+              )}
+
               {isSearching ? (
                 <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin absolute right-2 pointer-events-none" />
               ) : searchQuery ? (
@@ -244,6 +285,8 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   onClick={() => {
                     setSearchQuery('');
+                    clearHighlights();
+                    setInPageMatchStats({ total: 0, current: 0 });
                     setSearchResults(null);
                   }}
                   className="absolute right-1.5 p-0.5 rounded-full text-slate-400 hover:text-slate-700 transition cursor-pointer"
@@ -264,7 +307,9 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Search Header Summary */}
               <div className="flex items-center justify-between pb-2 text-[11px] font-semibold text-slate-500">
                 <span>
-                  {searchResults && searchResults.total > 0
+                  {inPageMatchStats.total > 0
+                    ? `Found ${inPageMatchStats.total} match(es) on this page (Press Enter to jump)`
+                    : searchResults && searchResults.total > 0
                     ? `Found ${searchResults.total} fleet records for "${searchQuery}"`
                     : isSearching ? `Searching across all pages...` : `Search Results for "${searchQuery}"`}
                 </span>

@@ -53,12 +53,33 @@ input:-webkit-autofill:active {
   transition: background-color 5000s ease-in-out 0s;
 }
 
-/* Chrome & Browser Password Manager Autofill Styling */
-input:-webkit-autofill,
-input:-webkit-autofill:hover, 
-input:-webkit-autofill:focus, 
-input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 30px white inset !important;
-  -webkit-text-fill-color: #0F172A !important;
-  transition: background-color 5000s ease-in-out 0s;
+/* In-Page Text Search Highlighting & Focus Pulse */
+.gpx-search-highlight {
+  background-color: #fef08a !important; /* amber-200 */
+  color: #0f172a !important;
+  outline: 2px solid #f59e0b !important; /* amber-500 */
+  border-radius: 4px !important;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.45) !important;
+  transition: all 0.2s ease-in-out !important;
 }
+
+.gpx-search-active-highlight {
+  background-color: #fde047 !important; /* yellow-300 */
+  color: #000000 !important;
+  outline: 3px solid #e11d48 !important; /* rose-600 */
+  border-radius: 6px !important;
+  box-shadow: 0 0 16px rgba(225, 29, 72, 0.6) !important;
+  animation: gpx-search-pulse 1.2s ease-in-out infinite alternate !important;
+}
+
+@keyframes gpx-search-pulse {
+  from {
+    transform: scale(1);
+    box-shadow: 0 0 8px rgba(225, 29, 72, 0.4);
+  }
+  to {
+    transform: scale(1.04);
+    box-shadow: 0 0 20px rgba(225, 29, 72, 0.7);
+  }
+}
+

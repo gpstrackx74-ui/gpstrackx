@@ -1872,28 +1872,40 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                                 </span>
                               )}
 
-                              {/* Operational Status Selector directly on Trip Card */}
-                              <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">Status:</span>
-                                <select
-                                  value={opStatus}
-                                  disabled={updatingTripStatusId === trip.id}
-                                  onChange={(e) => handleUpdateTripOperationalStatus(trip.id, e.target.value)}
-                                  className={`text-[10px] font-bold bg-transparent cursor-pointer focus:outline-none ${
-                                    opStatus === 'moving'
-                                      ? 'text-emerald-700 font-black'
-                                      : opStatus === 'stop'
-                                      ? 'text-rose-700 font-black'
-                                      : opStatus === 'parking'
-                                      ? 'text-amber-700 font-black'
-                                      : 'text-slate-700'
-                                  }`}
-                                >
-                                  <option value="moving">Moving</option>
-                                  <option value="stop">Stop</option>
-                                  <option value="parking">Parking</option>
-                                </select>
-                              </div>
+                              {/* Operational Status Selector directly on Trip Card (Admin Only) */}
+                              {isAdmin ? (
+                                <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Status:</span>
+                                  <select
+                                    value={opStatus}
+                                    disabled={updatingTripStatusId === trip.id}
+                                    onChange={(e) => handleUpdateTripOperationalStatus(trip.id, e.target.value)}
+                                    className={`text-[10px] font-bold bg-transparent cursor-pointer focus:outline-none ${
+                                      opStatus === 'moving'
+                                        ? 'text-emerald-700 font-black'
+                                        : opStatus === 'stop'
+                                        ? 'text-rose-700 font-black'
+                                        : opStatus === 'parking'
+                                        ? 'text-amber-700 font-black'
+                                        : 'text-slate-700'
+                                    }`}
+                                  >
+                                    <option value="moving">Moving</option>
+                                    <option value="stop">Stop</option>
+                                    <option value="parking">Parking</option>
+                                  </select>
+                                </div>
+                              ) : (
+                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${
+                                  opStatus === 'moving'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : opStatus === 'stop'
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {opStatus}
+                                </span>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-1.5">

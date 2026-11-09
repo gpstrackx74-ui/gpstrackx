@@ -279,9 +279,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   useEffect(() => {
     if (!isPlaying || smoothPlaybackCoordinates.length <= 1) return;
 
-    // Very slow, calm real-time movement (1200ms per step) when vehicle is in moving status
+    // Calm real-time movement (advances along route every 5 seconds) when vehicle is in moving status
     const intervalMs = vehicle?.status === 'moving'
-      ? Math.max(300, Math.round(1200 / playbackSpeed))
+      ? Math.max(1000, Math.round(5000 / playbackSpeed))
       : Math.max(100, Math.round(250 / playbackSpeed));
 
     const interval = setInterval(() => {
@@ -523,38 +523,40 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   {vehicle.status?.toUpperCase()}
                 </span>
 
-                {/* Instant Real-Time Operational Status Switcher */}
-                <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-xl border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Set Status:</span>
-                  <select
-                    value={vehicle.status || 'stop'}
-                    onChange={async (e) => {
-                      const newStatus = e.target.value;
-                      try {
-                        await api.updateVehicleStatus(vehicle.id, newStatus);
-                        setVehicle(prev => prev ? { ...prev, status: newStatus as any, current_speed: newStatus === 'moving' ? 48 : 0 } : prev);
-                        if (activeRoute) {
-                          setActiveRoute(prev => prev ? { ...prev, operational_status: newStatus } : null);
+                {/* Instant Real-Time Operational Status Switcher (Admin Only) */}
+                {isAdmin && (
+                  <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">Set Status:</span>
+                    <select
+                      value={vehicle.status || 'stop'}
+                      onChange={async (e) => {
+                        const newStatus = e.target.value;
+                        try {
+                          await api.updateVehicleStatus(vehicle.id, newStatus);
+                          setVehicle(prev => prev ? { ...prev, status: newStatus as any, current_speed: newStatus === 'moving' ? 48 : 0 } : prev);
+                          if (activeRoute) {
+                            setActiveRoute(prev => prev ? { ...prev, operational_status: newStatus } : null);
+                          }
+                        } catch (err) {
+                          console.error('Failed to update status:', err);
                         }
-                      } catch (err) {
-                        console.error('Failed to update status:', err);
-                      }
-                    }}
-                    className={`text-[11px] font-black px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition ${
-                      vehicle.status === 'moving'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : (vehicle.status === 'stop' || vehicle.status === 'stopped')
-                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                        : vehicle.status === 'parking'
-                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                        : 'bg-white text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    <option value="moving">Moving</option>
-                    <option value="stop">Stop</option>
-                    <option value="parking">Parking</option>
-                  </select>
-                </div>
+                      }}
+                      className={`text-[11px] font-black px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition ${
+                        vehicle.status === 'moving'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : (vehicle.status === 'stop' || vehicle.status === 'stopped')
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : vehicle.status === 'parking'
+                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                          : 'bg-white text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      <option value="moving">Moving</option>
+                      <option value="stop">Stop</option>
+                      <option value="parking">Parking</option>
+                    </select>
+                  </div>
+                )}
 
                 <span className="text-xs font-bold text-slate-500">
                   {vehicle.name_model}
@@ -835,8 +837,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               </div>
             )}
 
-            {/* VEHICLE ROUTE PLAYBACK CONTROLLER BAR */}
-            {activeRoute && parsedCoordinates.length > 0 && (
+            {/* VEHICLE ROUTE PLAYBACK CONTROLLER BAR (Admin Simulation Tool) */}
+            {isAdmin && activeRoute && parsedCoordinates.length > 0 && (
               <div className="mb-3.5 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/90 shadow-2xs space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">

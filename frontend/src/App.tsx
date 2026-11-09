@@ -12,12 +12,13 @@ import { UsersManagement } from './pages/Users';
 import { SettingsPage } from './pages/Settings';
 import { FastagBilling } from './pages/FastagBilling';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { checkAndApplyPendingSearch } from './utils/searchHighlighter';
 
 const AppContent: React.FC = () => {
   const { user, loading, isAdmin } = useAuth();
-  const [currentTab, setCurrentTab] = useState('dashboard');
+  const [currentTab, setCurrentTab] = useState('vehicle-tracking');
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
-  const [previousTab, setPreviousTab] = useState<'dashboard' | 'vehicles'>('dashboard');
+  const [previousTab, setPreviousTab] = useState<'dashboard' | 'vehicles'>('vehicles');
   const [routePlanVehicleId, setRoutePlanVehicleId] = useState<number | null>(null);
   const [userVehicles, setUserVehicles] = useState<any[]>([]);
   const [adminMapViewVehicleId, setAdminMapViewVehicleId] = useState<number | null>(null);
@@ -25,7 +26,8 @@ const AppContent: React.FC = () => {
   // Automatically fetch accessible vehicles so Map View & Route Telemetry always have a target vehicle
   useEffect(() => {
     if (user) {
-      setCurrentTab('dashboard');
+      // Admin defaults to 'vehicle-tracking' (Live User View), regular users default to 'dashboard'
+      setCurrentTab(user.role === 'admin' ? 'vehicle-tracking' : 'dashboard');
       api.getVehicles()
         .then((vehs) => {
           setUserVehicles(vehs || []);
@@ -38,6 +40,18 @@ const AppContent: React.FC = () => {
         .catch(() => {});
     }
   }, [user]);
+
+  // If admin is on dashboard tab, redirect directly to vehicle-tracking
+  useEffect(() => {
+    if (isAdmin && currentTab === 'dashboard') {
+      setCurrentTab('vehicle-tracking');
+    }
+  }, [isAdmin, currentTab]);
+
+  // Highlight and focus pending search terms across tab transitions
+  useEffect(() => {
+    checkAndApplyPendingSearch();
+  }, [currentTab, selectedVehicleId, adminMapViewVehicleId]);
 
   const [authView, setAuthView] = useState<'landing' | 'login' | 'signup'>('landing');
 
