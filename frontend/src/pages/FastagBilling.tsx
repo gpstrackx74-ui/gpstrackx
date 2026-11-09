@@ -443,7 +443,7 @@ export const FastagBilling: React.FC = () => {
               <Receipt className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">No FASTag toll transactions found.</p>
               <p className="text-[11px] text-slate-400">
-                {isAdmin ? 'Plan a route with tolls in Route Planner or click "+ Add FASTag Toll Bill" above.' : 'No toll transactions recorded on your assigned vehicle corridors yet.'}
+                {isAdmin ? 'Plan a route with tolls in Route Planner or click "+ Add FASTag Toll Bill" above.' : 'No toll transactions recorded for your vehicle yet.'}
               </p>
             </div>
           ) : (

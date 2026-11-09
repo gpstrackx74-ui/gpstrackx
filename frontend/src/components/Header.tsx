@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const userNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'vehicle-tracking', label: 'Live User View', icon: Compass },
+    { id: 'vehicle-tracking', label: 'Live Tracking', icon: Compass },
     { id: 'history', label: 'Trip History', icon: History },
     { id: 'fastag', label: 'FASTag Toll', icon: Receipt },
   ];
@@ -402,8 +402,8 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
 
-              {/* 3. Users Section */}
-              {searchResults && searchResults.users && searchResults.users.length > 0 && (
+              {/* 3. Users Section (Admin Only) */}
+              {isAdmin && searchResults && searchResults.users && searchResults.users.length > 0 && (
                 <div className="py-2 space-y-1">
                   <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                     <UsersIcon className="w-3 h-3 text-purple-500" />
@@ -563,9 +563,9 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500 font-medium">Access Permission:</span>
+                  <span className="text-slate-500 font-medium">Status:</span>
                   <span className="font-bold uppercase px-1.5 py-0.2 rounded bg-white border border-slate-200 text-slate-800">
-                    {isAdmin ? 'Super Admin' : 'Fleet User'}
+                    {isAdmin ? 'Super Admin' : 'Active Account'}
                   </span>
                 </div>
               </div>

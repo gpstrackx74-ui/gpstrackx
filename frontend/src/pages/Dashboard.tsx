@@ -20,7 +20,7 @@ import {
 
 interface DashboardProps {
   onNavigateTab: (tab: string) => void;
-  onViewVehicle: (vehicleId: number) => void;
+  onViewVehicle: (vehicleId: number, trip?: any) => void;
   initialUserTab?: 'vehicle' | 'history';
   isLiveUserView?: boolean;
 }
@@ -163,17 +163,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const handleViewHistoricalTripOnMap = async (trip: any, targetVehicleId: number) => {
-    try {
-      if (!trip.is_active) {
-        await api.activateVehicleTrip(trip.id);
-      }
-      setHistoryModalVehicle(null);
-      onViewVehicle(targetVehicleId);
-    } catch (err: any) {
-      setHistoryModalVehicle(null);
-      onViewVehicle(targetVehicleId);
-    }
+  const handleViewHistoricalTripOnMap = (trip: any, targetVehicleId: number) => {
+    setHistoryModalVehicle(null);
+    onViewVehicle(targetVehicleId, trip);
   };
 
   // Group trips date-wise for user dashboard view
@@ -498,11 +490,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <thead>
                   <tr className="bg-slate-50/70 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
                     <th className="py-3 px-4">Vehicle</th>
-                    <th className="py-3 px-4">Allotted User</th>
+                    <th className="py-3 px-4">Driver / User</th>
                     <th className="py-3 px-4">Type</th>
                     <th className="py-3 px-4">Speed</th>
                     <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Assigned Route</th>
+                    <th className="py-3 px-4">Route</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -571,13 +563,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 type="button"
                                 onClick={() => onViewVehicle(v.id)}
                                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] border border-red-200 transition cursor-pointer max-w-[210px] text-left"
-                                title="Click to view live route on map"
+                                title="Click to view route on map"
                               >
                                 <MapPin className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                                <span className="truncate">{v.route_name}</span>
+                                <span className="truncate">{v.route_name.replace(/\s*\(Modified on Map\)/gi, '')}</span>
                               </button>
                             ) : (
-                              <span className="text-[11px] text-slate-400 italic">No route assigned</span>
+                              <span className="text-[11px] text-slate-400 italic">Standby (No active trip)</span>
                             )}
                           </td>
 
@@ -769,7 +761,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       <MapPin className="w-3 h-3" />
                                       <span>View on Map</span>
                                     </button>
-                                    {!isActive && (
+                                    {isAdmin && !isActive && (
                                       <button
                                         type="button"
                                         onClick={() => handleActivateHistoricalTrip(trip.id)}
@@ -898,13 +890,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 type="button"
                                 onClick={() => handleViewHistoricalTripOnMap(trip, historyModalVehicle.id)}
                                 className="px-3 py-1 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-extrabold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
-                                title="Inspect this trip on Live User View"
+                                title="View trip route on map"
                               >
                                 <MapPin className="w-3.5 h-3.5" />
                                 <span>View on Map</span>
                               </button>
 
-                              {!isActive && (
+                              {isAdmin && !isActive && (
                                 <button
                                   type="button"
                                   onClick={() => handleActivateHistoricalTrip(trip.id)}

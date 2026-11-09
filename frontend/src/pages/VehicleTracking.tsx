@@ -32,12 +32,19 @@ import {
 
 interface VehicleTrackingProps {
   vehicleId: number;
+  historicalTrip?: any | null;
   onBack: () => void;
   onPlanRoute?: (vehicleId: number) => void;
   onSwitchVehicle?: (vehicleId: number) => void;
 }
 
-export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onBack, onPlanRoute, onSwitchVehicle }) => {
+export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ 
+  vehicleId, 
+  historicalTrip,
+  onBack, 
+  onPlanRoute, 
+  onSwitchVehicle 
+}) => {
   const { isAdmin } = useAuth();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [vehicleList, setVehicleList] = useState<Vehicle[]>([]);
@@ -60,14 +67,28 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   const [playbackIndex, setPlaybackIndex] = useState<number>(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
+  const todayYMD = React.useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // Determine if this is a Trip History review or past date inspection
+  const isHistoricalTripView = React.useMemo(() => {
+    if (historicalTrip) return true;
+    if (activeRoute && Number(activeRoute.is_active) === 0) return true;
+    if (selectedDate && selectedDate !== todayYMD) return true;
+    return false;
+  }, [historicalTrip, activeRoute, selectedDate, todayYMD]);
+
   const isMoving = (vehicle?.status as string) === 'moving' || (activeRoute?.operational_status === 'moving');
   const isStopped = (vehicle?.status as string) === 'stop' || (vehicle?.status as string) === 'stopped' || (activeRoute?.operational_status === 'stop');
   const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
 
+  // Only suppress polyline when it is a LIVE moving tracking session today!
+  // In Trip History or past trip review, polyline is ALWAYS drawn with full details!
+  const isLiveMovingMode = isMoving && !isHistoricalTripView;
+
   const [liveSpeed, setLiveSpeed] = useState<number>(48);
 
   useEffect(() => {
-    if (!isMoving) {
+    if (!isLiveMovingMode) {
       setLiveSpeed(0);
       return;
     }
@@ -76,7 +97,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       setLiveSpeed(Math.max(40, Math.min(58, 48 + jitter)));
     }, 2000);
     return () => clearInterval(timer);
-  }, [isMoving]);
+  }, [isLiveMovingMode]);
 
   // Load available vehicles for instant in-map vehicle switching
   useEffect(() => {
@@ -96,8 +117,28 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       const tripsList = trips || [];
       setAllTrips(tripsList);
 
-      // If initial load or user hasn't explicitly chosen a date yet, use active route or today
-      if (isInitial || !selectedDate) {
+      // If a specific historical trip was passed from Trip History, display it with full route details
+      if (historicalTrip) {
+        setActiveRoute(historicalTrip);
+        const rDate = normalizeToYMD(historicalTrip.trip_date || (historicalTrip.created_at ? historicalTrip.created_at.split('T')[0] : ''));
+        if (rDate) {
+          setSelectedDate(rDate);
+          setFromDate(rDate);
+          setToDate(rDate);
+        }
+        try {
+          if (historicalTrip.waypoints_json) {
+            const wp = typeof historicalTrip.waypoints_json === 'string' ? JSON.parse(historicalTrip.waypoints_json) : historicalTrip.waypoints_json;
+            if (Array.isArray(wp)) setStoppages(wp);
+          }
+        } catch (_) {}
+        try {
+          if (historicalTrip.toll_gates_json) {
+            const tg = typeof historicalTrip.toll_gates_json === 'string' ? JSON.parse(historicalTrip.toll_gates_json) : historicalTrip.toll_gates_json;
+            if (Array.isArray(tg)) setManualTolls(tg);
+          }
+        } catch (_) {}
+      } else if (isInitial || !selectedDate) {
         if (data.activeRoute) {
           setActiveRoute(data.activeRoute);
           const rDate = normalizeToYMD(data.activeRoute.trip_date || (data.activeRoute.created_at ? data.activeRoute.created_at.split('T')[0] : ''));
@@ -262,10 +303,10 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
     return manualTolls;
   }, [activeRoute?.toll_gates_json, manualTolls]);
 
-  // Auto play/move when vehicle status is 'moving', park at END POINT when status is NOT 'moving'
+  // Auto play/move when vehicle is in LIVE moving mode today, park at END POINT when status is NOT moving or in history review
   useEffect(() => {
     if (!vehicle) return;
-    if (vehicle.status === 'moving') {
+    if (isLiveMovingMode) {
       setIsPlaying(true);
     } else {
       setIsPlaying(false);
@@ -273,14 +314,14 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
         setPlaybackIndex(smoothPlaybackCoordinates.length - 1);
       }
     }
-  }, [vehicle?.id, vehicle?.status, smoothPlaybackCoordinates.length]);
+  }, [vehicle?.id, isLiveMovingMode, smoothPlaybackCoordinates.length]);
 
   // Playback timer ticker - smoothly and calmly moves vehicle along smoothPlaybackCoordinates
   useEffect(() => {
     if (!isPlaying || smoothPlaybackCoordinates.length <= 1) return;
 
-    // Calm real-time movement (advances along route every 5 seconds) when vehicle is in moving status
-    const intervalMs = vehicle?.status === 'moving'
+    // Calm real-time movement (advances along route every 5 seconds) when vehicle is in live moving status
+    const intervalMs = isLiveMovingMode
       ? Math.max(1000, Math.round(5000 / playbackSpeed))
       : Math.max(100, Math.round(250 / playbackSpeed));
 
@@ -289,8 +330,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
         const step = 1;
         const next = prev + step;
         if (next >= smoothPlaybackCoordinates.length - 1) {
-          // If vehicle is actively set to moving, loop continuously along the route
-          if (vehicle?.status === 'moving') {
+          // If vehicle is actively set to live moving mode, loop continuously along the route
+          if (isLiveMovingMode) {
             return 0;
           }
           setIsPlaying(false);
@@ -301,7 +342,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
     }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length, vehicle?.status]);
+  }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length, isLiveMovingMode]);
 
   const handleResetPlayback = () => {
     setIsPlaying(false);
@@ -311,14 +352,18 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   // Memoize routes and endpoints BEFORE any early return to strictly adhere to React Rules of Hooks
   const trackingRoutes = React.useMemo(() => {
     if (!activeRoute) return [];
+    const cleanRouteName = (activeRoute.route_name || 'Commercial Highway Route')
+      .replace(/\s*\(Modified on Map\)/gi, '')
+      .replace(/\r?\n/g, ' ');
+
     return [{
       id: `active-${activeRoute.id}`,
-      name: (activeRoute.route_name || 'Commercial Highway Route').replace(/\r?\n/g, ' '),
+      name: cleanRouteName,
       distanceKm: Number(activeRoute.total_distance_km || 0),
       timeMinutes: Number(activeRoute.estimated_travel_time_min || 0),
       tollGatesCount: routeTolls.length,
       stopsCount: stoppages.length,
-      summary: 'Active Commercial Highway Route',
+      summary: cleanRouteName,
       color: activeRoute.route_color || '#EF4444',
       coordinates: parsedCoordinates,
       tollGates: routeTolls
@@ -357,8 +402,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
     // If no active route (vehicle did not run on this selected date), return null so map is completely blank
     if (!activeRoute) return null;
     if (smoothPlaybackCoordinates.length > 0) {
-      // If vehicle status is NOT moving and not actively replaying, park truck at the END POINT of the route
-      if (vehicle?.status !== 'moving' && !isPlaying) {
+      // If vehicle is NOT in live moving mode and not actively replaying, park truck at the END POINT of the route
+      if (!isLiveMovingMode && !isPlaying) {
         return smoothPlaybackCoordinates[smoothPlaybackCoordinates.length - 1];
       }
       return smoothPlaybackCoordinates[Math.min(playbackIndex, smoothPlaybackCoordinates.length - 1)];
@@ -367,17 +412,17 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
     }
     return null;
-  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, vehicle?.status, isPlaying]);
+  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, isLiveMovingMode, isPlaying]);
 
   const playbackProgressPercent = activeRoute && smoothPlaybackCoordinates.length > 1
     ? Math.min(100, Math.round((playbackIndex / (smoothPlaybackCoordinates.length - 1)) * 100))
-    : (activeRoute && vehicle?.status !== 'moving' ? 100 : 0);
+    : (activeRoute && !isLiveMovingMode ? 100 : 0);
 
   const simulatedDistanceCoveredKm = activeRoute?.total_distance_km
     ? ((playbackProgressPercent / 100) * Number(activeRoute.total_distance_km)).toFixed(1)
     : '0';
 
-  const simulatedSpeed = (activeRoute && (isMoving || isPlaying)) ? liveSpeed : 0;
+  const simulatedSpeed = (activeRoute && (isLiveMovingMode || isPlaying)) ? liveSpeed : 0;
 
   const simulatedVehiclePosition = React.useMemo(() => {
     if (!activeRoute || !currentPlaybackPoint || !vehicle) return null;
@@ -385,10 +430,10 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       lat: currentPlaybackPoint[0],
       lng: currentPlaybackPoint[1],
       speed: simulatedSpeed,
-      status: (isMoving || isPlaying) ? 'moving' : 'stopped',
+      status: (isLiveMovingMode || isPlaying) ? 'moving' : 'stopped',
       plate: vehicle.registration_no
     };
-  }, [activeRoute, currentPlaybackPoint, vehicle, simulatedSpeed, isMoving, isPlaying]);
+  }, [activeRoute, currentPlaybackPoint, vehicle, simulatedSpeed, isLiveMovingMode, isPlaying]);
 
   // Stoppages with calculated arrival and departure times based on route duration
   const stoppagesWithTimings = React.useMemo(() => {
@@ -738,10 +783,10 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Speed</span>
                 <div className="flex items-baseline gap-1 mt-1">
                   <span className="font-mono font-black text-slate-900 text-sm">
-                    {activeRoute && isMoving ? liveSpeed : 0}
+                    {activeRoute && isLiveMovingMode ? liveSpeed : 0}
                   </span>
                   <span className="text-[10px] font-bold text-slate-400">KM/H</span>
-                  {isMoving && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5"></span>}
+                  {isLiveMovingMode && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5"></span>}
                 </div>
               </div>
 
@@ -757,9 +802,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ignition Status</span>
                 <div className="mt-1 flex items-center gap-1.5">
-                  <span className={`inline-block w-2 h-2 rounded-full ${activeRoute && isMoving ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-                  <span className={`font-black text-xs ${activeRoute && isMoving ? 'text-emerald-700' : 'text-slate-500'}`}>
-                    {activeRoute && isMoving ? 'ON' : 'OFF'}
+                  <span className={`inline-block w-2 h-2 rounded-full ${activeRoute && (isLiveMovingMode || isMoving) ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                  <span className={`font-black text-xs ${activeRoute && (isLiveMovingMode || isMoving) ? 'text-emerald-700' : 'text-slate-500'}`}>
+                    {activeRoute && (isLiveMovingMode || isMoving) ? 'ON' : 'OFF'}
                   </span>
                 </div>
               </div>
@@ -767,8 +812,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               {/* 5. Trip */}
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Trip</span>
-                <span className="font-bold text-slate-800 text-xs block truncate mt-1" title={activeRoute?.route_name || 'No Active Trip'}>
-                  {activeRoute?.route_name || 'No Active Trip'}
+                <span className="font-bold text-slate-800 text-xs block truncate mt-1" title={activeRoute?.route_name?.replace(/\s*\(Modified on Map\)/gi, '') || 'No Active Trip'}>
+                  {activeRoute?.route_name?.replace(/\s*\(Modified on Map\)/gi, '') || 'No Active Trip'}
                 </span>
               </div>
 
@@ -784,7 +829,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Distance</span>
                 <div className="flex items-baseline gap-1 mt-1">
-                  {isMoving ? (
+                  {isLiveMovingMode ? (
                     <span className="font-mono font-bold text-slate-400 text-xs italic">--</span>
                   ) : (
                     <>
@@ -809,8 +854,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
 
           {/* Full-Width Route Map Section */}
           <div className="flex flex-col space-y-3">
-            {/* No Allotted Route Banner if vehicle has no route yet */}
-            {!activeRoute && (
+            {/* No Active Route Banner (Admin Only) */}
+            {isAdmin && !activeRoute && (
               <div className="mb-4 p-4 rounded-2xl bg-amber-50/80 border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold shrink-0">
@@ -824,7 +869,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   </div>
                 </div>
 
-                {isAdmin && onPlanRoute && (
+                {onPlanRoute && (
                   <button
                     type="button"
                     onClick={() => onPlanRoute(vehicle.id)}
@@ -834,6 +879,21 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                     <span>+ Allot Route for {vehicle.registration_no}</span>
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Clean Neutral Banner for Regular Users */}
+            {!isAdmin && !activeRoute && (
+              <div className="mb-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-3 text-xs">
+                <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-bold shrink-0">
+                  <Navigation className="w-4 h-4 text-slate-500" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-800 text-xs">No Journey Recorded</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    No active trip recorded for this vehicle on the selected date.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -948,28 +1008,26 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                 <InteractiveMap
                   height="520px"
                   center={currentPlaybackPoint || (vehicle.current_lat && Number(vehicle.current_lat) !== 0 ? [Number(vehicle.current_lat), Number(vehicle.current_lng)] : (activeRoute?.start_lat ? [Number(activeRoute.start_lat), Number(activeRoute.start_lng)] : (parsedCoordinates.length > 0 ? parsedCoordinates[0] : [21.8974, 82.8000])))}
-                  zoom={isMoving ? 11 : 8}
-                  routes={isMoving ? [] : trackingRoutes}
-                  selectedRouteId={isMoving ? '' : (activeRoute ? `active-${activeRoute.id}` : '')}
+                  zoom={isLiveMovingMode ? 11 : 8}
+                  routes={isLiveMovingMode ? [] : trackingRoutes}
+                  selectedRouteId={isLiveMovingMode ? '' : (activeRoute ? `active-${activeRoute.id}` : '')}
                   vehiclePosition={simulatedVehiclePosition}
-                  startPoint={isMoving ? null : memoizedStart}
-                  endPoint={isMoving ? null : memoizedEnd}
-                  stoppages={isMoving ? [] : stoppagesWithTimings}
-                  tollGates={isMoving ? [] : routeTolls}
+                  startPoint={isLiveMovingMode ? null : memoizedStart}
+                  endPoint={isLiveMovingMode ? null : memoizedEnd}
+                  stoppages={isLiveMovingMode ? [] : stoppagesWithTimings}
+                  tollGates={isLiveMovingMode ? [] : routeTolls}
                 />
               </ErrorBoundary>
             </div>
 
             {/* Route Leg Legend / Live Status Indicator */}
             <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs font-semibold text-slate-600 gap-3">
-              {isMoving ? (
+              {isLiveMovingMode ? (
                 <div className="flex items-center gap-2">
                   <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
                   <span className="font-extrabold text-emerald-700">Vehicle Moving Live On-Road</span>
                   <span className="text-slate-300">•</span>
                   <span className="font-mono text-slate-700 font-bold">Speed: {liveSpeed} km/h</span>
-                  <span className="text-slate-300">•</span>
-                  <span className="text-slate-500 italic text-[11px]">Full route corridor line & total distance unlock when vehicle is stopped</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-4">

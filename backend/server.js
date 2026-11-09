@@ -2399,13 +2399,15 @@ app.get('/api/search', authenticateToken, (req, res) => {
       LIMIT 8
     `).all(queryPattern, queryPattern, queryPattern, queryPattern, queryPattern);
 
-    // 3. Users
-    const users = db.prepare(`
+    const isAdmin = req.user?.role === 'admin';
+
+    // 3. Users (Admin Only)
+    const users = isAdmin ? db.prepare(`
       SELECT id, name, email, phone, role, status, avatar_color
       FROM users
       WHERE name LIKE ? OR email LIKE ? OR phone LIKE ? OR role LIKE ?
       LIMIT 8
-    `).all(queryPattern, queryPattern, queryPattern, queryPattern);
+    `).all(queryPattern, queryPattern, queryPattern, queryPattern) : [];
 
     // 4. FASTag Toll Invoices & Debits
     const fastag = db.prepare(`
@@ -2415,15 +2417,24 @@ app.get('/api/search', authenticateToken, (req, res) => {
       LIMIT 8
     `).all(queryPattern, queryPattern, queryPattern, queryPattern, queryPattern);
 
-    // 5. System Pages
-    const systemPages = [
-      { title: 'Dashboard', tab: 'dashboard', desc: 'Fleet overview, KPI stats and live vehicle table' },
+    // 5. System Pages (Role-bounded to prevent any admin route planner leaks)
+    const adminPages = [
+      { title: 'Live User View', tab: 'vehicle-tracking', desc: 'Live user tracking and vehicle monitoring' },
+      { title: 'Users', tab: 'users', desc: 'User accounts and assignments' },
       { title: 'Vehicles', tab: 'vehicles', desc: 'All registered fleet vehicles and GPS tracking' },
       { title: 'Route Planner', tab: 'routes', desc: 'Plan routes on Google Maps with tolls & stops' },
       { title: 'FASTag Tolls', tab: 'fastag', desc: 'Electronic toll collection bills, truck tariffs & tax invoices' },
-      { title: 'User Management', tab: 'users', desc: 'Admin & fleet drivers user management' },
       { title: 'Fleet Settings', tab: 'settings', desc: 'System configuration, Google Maps API key & preferences' }
     ];
+
+    const userPages = [
+      { title: 'Dashboard', tab: 'dashboard', desc: 'Fleet overview and assigned vehicle status' },
+      { title: 'Live Tracking', tab: 'vehicle-tracking', desc: 'Real-time vehicle map tracking and telematics' },
+      { title: 'Trip History', tab: 'history', desc: 'Date-wise vehicle journey logs and trips' },
+      { title: 'FASTag Tolls', tab: 'fastag', desc: 'Electronic toll collection bills & invoices' }
+    ];
+
+    const systemPages = isAdmin ? adminPages : userPages;
 
     const qLower = q.toLowerCase();
     const pages = systemPages.filter(p => 

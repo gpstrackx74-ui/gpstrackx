@@ -127,3 +127,4 @@ export function checkAndApplyPendingSearch(callback?: (stats: { total: number; c
     }
   } catch (e) {}
 }
+

@@ -603,7 +603,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     setModifiedDurationMins(updated.timeMinutes);
     setModifiedPolyline(updated.coordinates);
     if (!newModifiedRouteName) {
-      setNewModifiedRouteName(`${corridorNameInput || 'Route'} (Modified on Map)`);
+      setNewModifiedRouteName(corridorNameInput || 'Commercial Highway Corridor');
     }
 
     setRoutes(prev => prev.map((r, i) => i === 0 ? {
@@ -611,7 +611,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       coordinates: updated.coordinates,
       distanceKm: updated.distanceKm,
       timeMinutes: updated.timeMinutes,
-      name: `${corridorNameInput || 'Route'} (Modified via Map Drag)`
+      name: corridorNameInput || 'Commercial Highway Corridor'
     } : r));
 
     setTravelHours(Math.floor(updated.timeMinutes / 60));
@@ -621,7 +621,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
   // Save Modified Draggable Route as Brand New Route
   const handleSaveModifiedAsNewRoute = async () => {
-    const routeName = newModifiedRouteName.trim() || `${corridorNameInput || 'Route'} (Modified)`;
+    const routeName = newModifiedRouteName.trim() || corridorNameInput || 'Commercial Highway Corridor';
     try {
       setSaving(true);
       await api.saveCorridor({
