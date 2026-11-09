@@ -99,6 +99,11 @@ export const api = {
   getVehicle: (id: number | string) => apiRequest<any>(`/vehicles/${id}`),
   createVehicle: (data: any) => apiRequest('/vehicles', { method: 'POST', body: JSON.stringify(data) }),
   updateVehicle: (id: number | string, data: any) => apiRequest(`/vehicles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateVehicleStatus: (id: number | string, status: string) =>
+    apiRequest<{ success: boolean; status: string }>(`/vehicles/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status })
+    }),
   deleteVehicle: (id: number | string) => apiRequest(`/vehicles/${id}`, { method: 'DELETE' }),
 
   // Users

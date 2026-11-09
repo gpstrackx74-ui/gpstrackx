@@ -1095,26 +1095,23 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
           <table className="w-full text-left text-xs">
             <thead className="bg-[#F8FAFC] border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
               <tr>
-                <th className="py-3 px-4">Registration</th>
-                <th className="py-3 px-4">Assigned User</th>
-                <th className="py-3 px-4">Type / Axle</th>
-                <th className="py-3 px-4">Speed</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Assigned Route</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+                <th className="py-3.5 px-4">Registration</th>
+                <th className="py-3.5 px-4">Assigned User</th>
+                <th className="py-3.5 px-4">Vehicle Type</th>
+                <th className="py-3.5 px-4">Speed</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {vehicles.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400 text-xs">
+                  <td colSpan={6} className="py-12 text-center text-slate-400 text-xs">
                     {loading ? 'Loading fleet vehicles...' : 'No vehicles found matching current criteria.'}
                   </td>
                 </tr>
               ) : (
                 vehicles.map((v) => {
-                  const isMoving = v.status === 'moving';
-                  const axle = (v as any).axle_type || '2-axle';
                   return (
                     <tr key={v.id} className="hover:bg-slate-50/70 transition">
                       <td className="py-3.5 px-4">
@@ -1125,9 +1122,6 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                           <div>
                             <p className="font-extrabold text-slate-900 font-mono text-sm tracking-tight">
                               {v.registration_no}
-                            </p>
-                            <p className="text-[10px] text-slate-400 font-mono">
-                              Chassis: {v.chassis_number || 'N/A'}
                             </p>
                           </div>
                         </div>
@@ -1145,20 +1139,15 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                       </td>
 
                       <td className="py-3.5 px-4">
-                        <p className="font-semibold text-slate-800">{v.name_model}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                            {v.vehicle_type}
-                          </span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-[#0F172A] font-bold border border-emerald-100">
-                            {axle.toUpperCase()}
-                          </span>
-                        </div>
+                        <p className="font-bold text-slate-800 text-xs">{v.name_model}</p>
+                        <span className="inline-block text-[10px] px-2 py-0.5 mt-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
+                          {v.vehicle_type}
+                        </span>
                       </td>
 
                       <td className="py-3.5 px-4">
                         <span className="font-mono font-bold text-slate-900 text-sm">
-                          {v.current_speed || 0}
+                          {v.status === 'moving' ? (v.current_speed || 48) : 0}
                         </span>
                         <span className="text-[10px] text-slate-400 ml-1">km/h</span>
                       </td>
@@ -1180,36 +1169,6 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                           {v.status === 'parking' && <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>}
                           {v.status?.toUpperCase()}
                         </span>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        {v.route_name ? (
-                          <button
-                            type="button"
-                            onClick={() => onViewVehicle(v.id)}
-                            className="text-left group flex items-start gap-1.5 p-1.5 rounded-xl hover:bg-[#F1F5F9] border border-transparent hover:border-[#0F172A]/30 transition cursor-pointer max-w-[210px]"
-                            title="Click to view live route on map"
-                          >
-                            <MapPin className="w-3.5 h-3.5 text-[#0F172A] shrink-0 mt-0.5" />
-                            <div className="truncate">
-                              <p className="font-bold text-slate-800 group-hover:text-[#0F172A] truncate">{v.route_name}</p>
-                              <p className="text-[10px] text-[#0F172A] font-semibold">{v.total_distance_km} KM • View Map</p>
-                            </div>
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-400 italic text-[11px]">No active route</span>
-                            {isAdmin && onPlanRouteForVehicle && (
-                              <button
-                                type="button"
-                                onClick={() => onPlanRouteForVehicle(v.id)}
-                                className="px-2 py-0.5 rounded bg-slate-100 hover:bg-[#F1F5F9] text-slate-600 hover:text-[#0F172A] text-[10px] font-bold transition"
-                              >
-                                + Set Route
-                              </button>
-                            )}
-                          </div>
-                        )}
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
@@ -1985,7 +1944,16 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                                 {trip.total_tolls_amount ? `₹${trip.total_tolls_amount}` : 'Toll Incl.'}
                               </span>
                               <span className="bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">
-                                {trip.stoppages_count || 0} Stops
+                                {(() => {
+                                  if (trip.stoppages_count && Number(trip.stoppages_count) > 0) return trip.stoppages_count;
+                                  if (trip.waypoints_json) {
+                                    try {
+                                      const wp = typeof trip.waypoints_json === 'string' ? JSON.parse(trip.waypoints_json) : trip.waypoints_json;
+                                      if (Array.isArray(wp) && wp.length > 0) return wp.length;
+                                    } catch (_) {}
+                                  }
+                                  return 0;
+                                })()} Stops
                               </span>
                             </div>
                           </div>

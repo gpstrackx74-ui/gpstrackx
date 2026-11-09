@@ -747,7 +747,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       </span>
                                     )}
                                     <span className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
-                                      <strong className="text-slate-900 font-sans">{trip.stoppages_count || 0}</strong> Stops
+                                      <strong className="text-slate-900 font-sans">{(() => {
+                                        if (trip.stoppages_count && Number(trip.stoppages_count) > 0) return trip.stoppages_count;
+                                        if (trip.waypoints_json) {
+                                          try {
+                                            const wp = typeof trip.waypoints_json === 'string' ? JSON.parse(trip.waypoints_json) : trip.waypoints_json;
+                                            if (Array.isArray(wp) && wp.length > 0) return wp.length;
+                                          } catch (_) {}
+                                        }
+                                        return 0;
+                                      })()}</strong> Stops
                                     </span>
                                   </div>
 
@@ -936,7 +945,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             </div>
                             <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
                               <span className="text-[9px] text-slate-400 block uppercase font-bold">Stoppages</span>
-                              <span className="font-mono font-black text-slate-900">{trip.stoppages_count || 0} Stops</span>
+                              <span className="font-mono font-black text-slate-900">{(() => {
+                                if (trip.stoppages_count && Number(trip.stoppages_count) > 0) return trip.stoppages_count;
+                                if (trip.waypoints_json) {
+                                  try {
+                                    const wp = typeof trip.waypoints_json === 'string' ? JSON.parse(trip.waypoints_json) : trip.waypoints_json;
+                                    if (Array.isArray(wp) && wp.length > 0) return wp.length;
+                                  } catch (_) {}
+                                }
+                                return 0;
+                              })()} Stops</span>
                             </div>
                           </div>
                         </div>

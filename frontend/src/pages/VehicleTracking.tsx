@@ -60,6 +60,24 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
   const [playbackIndex, setPlaybackIndex] = useState<number>(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
+  const isMoving = (vehicle?.status as string) === 'moving' || (activeRoute?.operational_status === 'moving');
+  const isStopped = (vehicle?.status as string) === 'stop' || (vehicle?.status as string) === 'stopped' || (activeRoute?.operational_status === 'stop');
+  const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
+
+  const [liveSpeed, setLiveSpeed] = useState<number>(48);
+
+  useEffect(() => {
+    if (!isMoving) {
+      setLiveSpeed(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      const jitter = Math.floor(Math.sin(Date.now() / 2000) * 4) + (Math.floor(Math.random() * 3) - 1);
+      setLiveSpeed(Math.max(40, Math.min(58, 48 + jitter)));
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [isMoving]);
+
   // Load available vehicles for instant in-map vehicle switching
   useEffect(() => {
     api.getVehicles()
@@ -359,9 +377,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
     ? ((playbackProgressPercent / 100) * Number(activeRoute.total_distance_km)).toFixed(1)
     : '0';
 
-  const simulatedSpeed = (activeRoute && (vehicle?.status === 'moving' || isPlaying))
-    ? (vehicle?.current_speed && vehicle.current_speed > 0 ? vehicle.current_speed : 48)
-    : 0;
+  const simulatedSpeed = (activeRoute && (isMoving || isPlaying)) ? liveSpeed : 0;
 
   const simulatedVehiclePosition = React.useMemo(() => {
     if (!activeRoute || !currentPlaybackPoint || !vehicle) return null;
@@ -369,10 +385,10 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
       lat: currentPlaybackPoint[0],
       lng: currentPlaybackPoint[1],
       speed: simulatedSpeed,
-      status: (vehicle.status === 'moving' || isPlaying) ? 'moving' : 'stopped',
+      status: (isMoving || isPlaying) ? 'moving' : 'stopped',
       plate: vehicle.registration_no
     };
-  }, [activeRoute, currentPlaybackPoint, vehicle, simulatedSpeed, isPlaying]);
+  }, [activeRoute, currentPlaybackPoint, vehicle, simulatedSpeed, isMoving, isPlaying]);
 
   // Stoppages with calculated arrival and departure times based on route duration
   const stoppagesWithTimings = React.useMemo(() => {
@@ -473,10 +489,6 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
     );
   }
 
-  const isMoving = (vehicle?.status as string) === 'moving' || (activeRoute?.operational_status === 'moving');
-  const isStopped = (vehicle?.status as string) === 'stop' || (vehicle?.status as string) === 'stopped' || (activeRoute?.operational_status === 'stop');
-  const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
-
   return (
     <div className="p-4 sm:p-6 lg:p-7 space-y-4 max-w-7xl mx-auto w-full min-w-0 font-sans">
       {/* ONE LARGE UNIFIED MAIN CONTAINER (ALL-IN-ONE ENTERPRISE LAYOUT) */}
@@ -510,6 +522,40 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                   {isMoving && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>}
                   {vehicle.status?.toUpperCase()}
                 </span>
+
+                {/* Instant Real-Time Operational Status Switcher */}
+                <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Set Status:</span>
+                  <select
+                    value={vehicle.status || 'stop'}
+                    onChange={async (e) => {
+                      const newStatus = e.target.value;
+                      try {
+                        await api.updateVehicleStatus(vehicle.id, newStatus);
+                        setVehicle(prev => prev ? { ...prev, status: newStatus as any, current_speed: newStatus === 'moving' ? 48 : 0 } : prev);
+                        if (activeRoute) {
+                          setActiveRoute(prev => prev ? { ...prev, operational_status: newStatus } : null);
+                        }
+                      } catch (err) {
+                        console.error('Failed to update status:', err);
+                      }
+                    }}
+                    className={`text-[11px] font-black px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition ${
+                      vehicle.status === 'moving'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : (vehicle.status === 'stop' || vehicle.status === 'stopped')
+                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                        : vehicle.status === 'parking'
+                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                        : 'bg-white text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <option value="moving">Moving</option>
+                    <option value="stop">Stop</option>
+                    <option value="parking">Parking</option>
+                  </select>
+                </div>
+
                 <span className="text-xs font-bold text-slate-500">
                   {vehicle.name_model}
                 </span>
@@ -690,9 +736,10 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Speed</span>
                 <div className="flex items-baseline gap-1 mt-1">
                   <span className="font-mono font-black text-slate-900 text-sm">
-                    {activeRoute && isMoving ? (vehicle.current_speed || 45) : 0}
+                    {activeRoute && isMoving ? liveSpeed : 0}
                   </span>
                   <span className="text-[10px] font-bold text-slate-400">KM/H</span>
+                  {isMoving && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5"></span>}
                 </div>
               </div>
 
@@ -735,10 +782,16 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Distance</span>
                 <div className="flex items-baseline gap-1 mt-1">
-                  <span className="font-mono font-black text-slate-900 text-sm">
-                    {activeRoute ? (activeRoute.total_distance_km || 0) : 0}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-400">KM</span>
+                  {isMoving ? (
+                    <span className="font-mono font-bold text-slate-400 text-xs italic">--</span>
+                  ) : (
+                    <>
+                      <span className="font-mono font-black text-slate-900 text-sm">
+                        {activeRoute ? (activeRoute.total_distance_km || 0) : 0}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400">KM</span>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -803,12 +856,18 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
 
                   <div className="flex items-center gap-3 text-xs">
                     <div className="flex items-center gap-1 font-mono font-bold text-slate-700">
-                      <span className="text-slate-400 font-normal">Covered:</span>
-                      <span className="text-slate-900 font-black tabular-nums min-w-[3.2rem] text-right inline-block">{simulatedDistanceCoveredKm}</span>
-                      <span className="text-slate-400">/ {activeRoute.total_distance_km} KM</span>
-                      <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-bold ml-1 tabular-nums min-w-[2.6rem] text-center inline-block">
-                        {playbackProgressPercent}%
-                      </span>
+                      <span className="text-slate-400 font-normal">{isMoving ? 'Transit Status:' : 'Covered:'}</span>
+                      {isMoving ? (
+                        <span className="text-emerald-700 font-black">Live Moving On-Road ({liveSpeed} km/h)</span>
+                      ) : (
+                        <>
+                          <span className="text-slate-900 font-black tabular-nums min-w-[3.2rem] text-right inline-block">{simulatedDistanceCoveredKm}</span>
+                          <span className="text-slate-400">/ {activeRoute.total_distance_km} KM</span>
+                          <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-bold ml-1 tabular-nums min-w-[2.6rem] text-center inline-block">
+                            {playbackProgressPercent}%
+                          </span>
+                        </>
+                      )}
                     </div>
 
                     {activeRoute.trip_date && (
@@ -886,43 +945,54 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ vehicleId, onB
               <ErrorBoundary title="Live Telemetry & Road Map">
                 <InteractiveMap
                   height="520px"
-                  center={vehicle.current_lat && Number(vehicle.current_lat) !== 0 ? [Number(vehicle.current_lat), Number(vehicle.current_lng)] : (activeRoute?.start_lat ? [Number(activeRoute.start_lat), Number(activeRoute.start_lng)] : (parsedCoordinates.length > 0 ? parsedCoordinates[0] : [21.8974, 82.8000]))}
-                  zoom={8}
-                  routes={trackingRoutes}
-                  selectedRouteId={activeRoute ? `active-${activeRoute.id}` : ''}
+                  center={currentPlaybackPoint || (vehicle.current_lat && Number(vehicle.current_lat) !== 0 ? [Number(vehicle.current_lat), Number(vehicle.current_lng)] : (activeRoute?.start_lat ? [Number(activeRoute.start_lat), Number(activeRoute.start_lng)] : (parsedCoordinates.length > 0 ? parsedCoordinates[0] : [21.8974, 82.8000])))}
+                  zoom={isMoving ? 11 : 8}
+                  routes={isMoving ? [] : trackingRoutes}
+                  selectedRouteId={isMoving ? '' : (activeRoute ? `active-${activeRoute.id}` : '')}
                   vehiclePosition={simulatedVehiclePosition}
-                  startPoint={memoizedStart}
-                  endPoint={memoizedEnd}
-                  stoppages={stoppagesWithTimings}
-                  tollGates={routeTolls}
+                  startPoint={isMoving ? null : memoizedStart}
+                  endPoint={isMoving ? null : memoizedEnd}
+                  stoppages={isMoving ? [] : stoppagesWithTimings}
+                  tollGates={isMoving ? [] : routeTolls}
                 />
               </ErrorBoundary>
             </div>
 
-            {/* Route Leg Legend */}
+            {/* Route Leg Legend / Live Status Indicator */}
             <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs font-semibold text-slate-600 gap-3">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5">
-                  <Flag className="w-3.5 h-3.5 text-emerald-600 fill-emerald-500" />
-                  <span className="font-bold text-slate-800">Start (Green Flag)</span>
+              {isMoving ? (
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                  <span className="font-extrabold text-emerald-700">Vehicle Moving Live On-Road</span>
+                  <span className="text-slate-300">•</span>
+                  <span className="font-mono text-slate-700 font-bold">Speed: {liveSpeed} km/h</span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-slate-500 italic text-[11px]">Full route corridor line & total distance unlock when vehicle is stopped</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Flag className="w-3.5 h-3.5 text-red-600 fill-red-500" />
-                  <span className="font-bold text-slate-800">Destination (Red Flag)</span>
+              ) : (
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <Flag className="w-3.5 h-3.5 text-emerald-600 fill-emerald-500" />
+                    <span className="font-bold text-slate-800">Start (Green Flag)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Flag className="w-3.5 h-3.5 text-red-600 fill-red-500" />
+                    <span className="font-bold text-slate-800">Destination (Red Flag)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded-full bg-orange-500"></span>
+                    <span>Stoppage Point</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+                    <span>Toll Plaza</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full bg-orange-500"></span>
-                  <span>Stoppage Point</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full bg-amber-500"></span>
-                  <span>Toll Plaza</span>
-                </div>
-              </div>
+              )}
 
-              <div className="flex items-center gap-1.5 text-red-600 font-bold">
-                <span className="w-2 h-2 rounded-full bg-red-600"></span>
-                <span>Vehicle Moving Live</span>
+              <div className="flex items-center gap-1.5 text-slate-600 font-bold">
+                <span className={`w-2 h-2 rounded-full ${isMoving ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
+                <span>{isMoving ? 'Live GPS Moving Mode' : 'Stationary / Parked Mode'}</span>
               </div>
             </div>
           </div>

@@ -701,14 +701,51 @@ app.get('/api/vehicles/:id/trips', authenticateToken, (req, res) => {
   try {
     const trips = db.prepare(`
       SELECT r.*,
-        (SELECT COUNT(*) FROM stoppages WHERE route_id = r.id) as stoppages_count,
-        (SELECT COALESCE(SUM(charges), 0) FROM manual_toll_gates WHERE route_id = r.id) as total_tolls_amount
+        (SELECT COUNT(*) FROM stoppages WHERE route_id = r.id) as sql_stoppages_count,
+        (SELECT COALESCE(SUM(charges), 0) FROM manual_toll_gates WHERE route_id = r.id) as sql_tolls_amount,
+        v.stoppages_count as veh_stoppages_count,
+        v.total_toll_fee as veh_total_toll_fee
       FROM routes r
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
       WHERE r.vehicle_id = ?
       ORDER BY r.id DESC
     `).all(vehicleId);
 
-    res.json(trips);
+    const formattedTrips = trips.map(t => {
+      let stopsCount = t.sql_stoppages_count || 0;
+      if (stopsCount === 0 && t.waypoints_json) {
+        try {
+          const wp = typeof t.waypoints_json === 'string' ? JSON.parse(t.waypoints_json) : t.waypoints_json;
+          if (Array.isArray(wp) && wp.length > 0) {
+            stopsCount = wp.length;
+          }
+        } catch (_) {}
+      }
+      if (stopsCount === 0 && t.veh_stoppages_count) {
+        stopsCount = t.veh_stoppages_count;
+      }
+
+      let tollsAmount = t.sql_tolls_amount || 0;
+      if (tollsAmount === 0 && t.toll_gates_json) {
+        try {
+          const tg = typeof t.toll_gates_json === 'string' ? JSON.parse(t.toll_gates_json) : t.toll_gates_json;
+          if (Array.isArray(tg) && tg.length > 0) {
+            tollsAmount = tg.reduce((sum, item) => sum + (Number(item.charges) || 0), 0);
+          }
+        } catch (_) {}
+      }
+      if (tollsAmount === 0 && t.veh_total_toll_fee) {
+        tollsAmount = t.veh_total_toll_fee;
+      }
+
+      return {
+        ...t,
+        stoppages_count: stopsCount,
+        total_tolls_amount: tollsAmount
+      };
+    });
+
+    res.json(formattedTrips);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch vehicle trips: ' + err.message });
   }
@@ -786,6 +823,41 @@ app.put('/api/routes/:id/operational-status', authenticateToken, (req, res) => {
     res.json({ success: true, operational_status, vehicle_id: route.vehicle_id, current_speed: newSpeed });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update operational status: ' + err.message });
+  }
+});
+
+// Update vehicle status directly (moving / stop / parking)
+app.put('/api/vehicles/:id/status', authenticateToken, (req, res) => {
+  const vehicleId = req.params.id;
+  const { status } = req.body;
+  if (!['moving', 'stop', 'parking', 'active', 'inactive', 'stopped'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid vehicle status' });
+  }
+
+  try {
+    const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId);
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
+
+    let newSpeed = 0;
+    if (status === 'moving') {
+      newSpeed = 48;
+    } else if (status === 'stop' || status === 'parking' || status === 'stopped') {
+      newSpeed = 0;
+    }
+
+    db.prepare('UPDATE vehicles SET status = ?, current_speed = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+      status,
+      newSpeed,
+      vehicleId
+    );
+    db.prepare('UPDATE routes SET operational_status = ?, updated_at = CURRENT_TIMESTAMP WHERE vehicle_id = ? AND is_active = 1').run(
+      status,
+      vehicleId
+    );
+
+    res.json({ success: true, status, vehicle_id: vehicleId, current_speed: newSpeed });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update vehicle status: ' + err.message });
   }
 });
 
