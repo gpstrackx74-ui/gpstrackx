@@ -93,27 +93,29 @@ const AmPmTimeInput: React.FC<{
       <label className="block text-slate-600 font-bold mb-1">
         {label}
       </label>
-      <div className="flex items-center gap-1.5 p-1 rounded-xl border border-slate-200 bg-white shadow-2xs">
-        <select
-          value={parsed.hour}
-          onChange={(e) => handleHourChange(e.target.value)}
-          className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer px-1 py-1"
-        >
-          {hours.map(h => (
-            <option key={h} value={h}>{h}</option>
-          ))}
-        </select>
-        <span className="font-mono font-bold text-slate-400">:</span>
-        <select
-          value={parsed.minute}
-          onChange={(e) => handleMinuteChange(e.target.value)}
-          className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer px-1 py-1"
-        >
-          {minutes.map(m => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-        <div className="flex items-center bg-slate-100 rounded-lg p-0.5 ml-auto border border-slate-200">
+      <div className="flex items-center justify-between gap-1 p-1 rounded-xl border border-slate-200 bg-white shadow-2xs">
+        <div className="flex items-center gap-0.5 min-w-0">
+          <select
+            value={parsed.hour}
+            onChange={(e) => handleHourChange(e.target.value)}
+            className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer py-1 pl-1"
+          >
+            {hours.map(h => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+          </select>
+          <span className="font-mono font-bold text-slate-400">:</span>
+          <select
+            value={parsed.minute}
+            onChange={(e) => handleMinuteChange(e.target.value)}
+            className="bg-transparent font-mono font-bold text-xs text-slate-800 focus:outline-none cursor-pointer py-1 pl-1"
+          >
+            {minutes.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center shrink-0 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
           <button
             type="button"
             onClick={() => handlePeriodChange('AM')}
@@ -239,7 +241,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
         }),
         isAdmin ? api.getUsers() : Promise.resolve([])
       ]);
-      setVehicles(vehList);
+      const uniqueVehicles = Array.from(new Map((vehList || []).map((v: Vehicle) => [v.id, v])).values());
+      setVehicles(uniqueVehicles);
       setUsers(userList);
     } catch (err) {
       console.error('Failed to load fleet data:', err);
@@ -1612,19 +1615,22 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                        <div>
-                          <label className="block text-slate-600 font-bold mb-1">
-                            Trip Date
-                          </label>
-                          <input
-                            type="date"
-                            value={tripForm.trip_date}
-                            onChange={(e) => setTripForm({ ...tripForm, trip_date: e.target.value })}
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 font-medium text-xs focus:outline-none focus:border-red-500"
-                            required
-                          />
-                        </div>
+                      {/* Trip Date */}
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-1">
+                          Trip Date
+                        </label>
+                        <input
+                          type="date"
+                          value={tripForm.trip_date}
+                          onChange={(e) => setTripForm({ ...tripForm, trip_date: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 font-medium text-xs focus:outline-none focus:border-red-500"
+                          required
+                        />
+                      </div>
+
+                      {/* Start Time & End Time in 2-Column Grid (Zero Overflow for AM/PM buttons) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <AmPmTimeInput
                           label="Start Time"
                           value={tripForm.start_trip_time}

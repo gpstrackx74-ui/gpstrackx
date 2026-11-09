@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { 
-  Bell, 
   Search, 
   ChevronDown, 
   LogOut, 
@@ -40,7 +39,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   const [demoUsers, setDemoUsers] = useState<any[]>([]);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
   // Global Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,7 +53,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const notifRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,9 +62,6 @@ export const Header: React.FC<HeaderProps> = ({
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setShowUserDropdown(false);
       }
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setShowNotifDropdown(false);
-      }
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
         setIsSearchOpen(false);
       }
@@ -76,7 +70,6 @@ export const Header: React.FC<HeaderProps> = ({
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setShowUserDropdown(false);
-        setShowNotifDropdown(false);
         setIsSearchOpen(false);
       }
     };
@@ -460,39 +453,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Notification Bell Button */}
-        <div ref={notifRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setShowNotifDropdown(!showNotifDropdown)}
-            className="relative w-9 h-9 rounded-full hover:bg-slate-100 text-slate-600 hover:text-slate-900 flex items-center justify-center transition border border-slate-200/80 cursor-pointer"
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
-          </button>
 
-          {showNotifDropdown && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2">
-                <span className="text-xs font-bold text-slate-900">System Notifications</span>
-                <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
-                  All Systems Online
-                </span>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="font-bold text-slate-800">Google Maps Platform Active</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Real road routes, geocoding & toll engine connected.</p>
-                </div>
-                <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="font-bold text-slate-800">Commercial Fleet Sync</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">163 vehicles ready for manual route assignment.</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* User Profile Capsule (Ref: Reference Image 2 "Jhontosan" Style) */}
         <div ref={userMenuRef} className="relative">

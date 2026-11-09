@@ -57,7 +57,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         api.getVehicles()
       ]);
       setStats(statsData.stats);
-      setVehicles(vehList || []);
+      const uniqueVehList = Array.from(new Map((vehList || []).map((v: Vehicle) => [v.id, v])).values());
+      setVehicles(uniqueVehList);
 
       // If user has allocated vehicles, fetch trips for date-wise history showcase
       if (!isAdmin && vehList && vehList.length > 0) {
@@ -375,57 +376,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {/* Section 2: Fleet Vehicles Section (Visible for Admin OR when user is on 'vehicle' tab) */}
         {(isAdmin || userActiveTab === 'vehicle') && (
           <>
-            {/* Live Interactive Road Map (Fleet Overview for Admin & Live Vehicle View for User) */}
-            <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/20 space-y-3.5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-2xl bg-[#E60012]/10 text-[#E60012] flex items-center justify-center font-bold">
-                    <MapPin className="w-4 h-4 text-[#E60012]" />
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                      <span>{isAdmin ? 'Live Fleet Road Map & Active Corridors' : `${vehicles[0]?.registration_no || 'Vehicle'} • Live Road Telemetry`}</span>
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    </h3>
-                    <p className="text-[11px] text-slate-500 font-medium">
-                      {isAdmin
-                        ? `${moving} in transit • ${active} available • ${dashboardRoutes.length} active road corridors`
-                        : `${vehicles[0]?.name_model || 'Fleet Vehicle'} • Speed: ${vehicles[0]?.current_speed || 0} km/h • Status: ${vehicles[0]?.status?.toUpperCase() || 'LIVE'}`
-                      }
-                    </p>
-                  </div>
-                </div>
-
-                {vehicles.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onViewVehicle(vehicles[0].id)}
-                    className="px-3.5 py-1.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-extrabold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
-                    title="Open Full Screen Tracking & Route Playback"
-                  >
-                    <Compass className="w-3.5 h-3.5 text-red-200" />
-                    <span>Open Live Telemetry & Playback</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Map Canvas */}
-              <div className="rounded-2xl overflow-hidden border border-slate-200/90 shadow-2xs">
-                <ErrorBoundary title="Dashboard Fleet Map">
-                  <InteractiveMap
-                    height="380px"
-                    center={mapCenter}
-                    zoom={isAdmin ? 7 : 8}
-                    routes={dashboardRoutes}
-                    selectedRouteId={dashboardRoutes[0]?.id || ''}
-                    vehiclePosition={userVehiclePosition}
-                    startPoint={userStartPoint}
-                    endPoint={userEndPoint}
-                  />
-                </ErrorBoundary>
-              </div>
-            </div>
-
             {/* Section Controls Bar */}
             <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/40">
               <div className="flex items-center gap-2">

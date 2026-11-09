@@ -288,6 +288,128 @@ const supabaseService = {
         }
       }
 
+      // 4. Sync Vehicle Allocations
+      try {
+        const allocRes = await pool.query('SELECT * FROM vehicle_allocations');
+        if (allocRes && allocRes.rows.length > 0) {
+          const insertAlloc = localDb.prepare(`
+            INSERT OR REPLACE INTO vehicle_allocations (
+              id, vehicle_id, user_id, allocated_by, route_id, allocation_status, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `);
+          for (const a of allocRes.rows) {
+            insertAlloc.run(
+              a.id, a.vehicle_id, a.user_id, a.allocated_by,
+              a.route_id, a.allocation_status || 'ACTIVE',
+              a.notes || 'Admin vehicle & route corridor allotment'
+            );
+          }
+        }
+      } catch (e) {
+        console.warn('[Allocations Sync Warning]:', e.message);
+      }
+
+      // 5. Sync FASTag Transactions from Supabase into SQLite
+      try {
+        const fastagRes = await pool.query('SELECT * FROM fastag_transactions');
+        if (fastagRes && fastagRes.rows.length > 0) {
+          const insertTx = localDb.prepare(`
+            INSERT OR REPLACE INTO fastag_transactions (
+              id, transaction_id, netc_reference_no, tag_id, vehicle_id, vehicle_registration_no,
+              vehicle_class, route_id, toll_plaza_name, highway_name, lat, lng, amount,
+              base_toll_fee, gst_amount, concessionaire_name, gstin, lane_direction,
+              payment_status, crossing_time, wallet_balance_before, wallet_balance_after
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+          for (const tx of fastagRes.rows) {
+            insertTx.run(
+              tx.id, tx.transaction_id, tx.netc_reference_no, tx.tag_id,
+              tx.vehicle_id, tx.vehicle_registration_no,
+              tx.vehicle_class || 'Commercial Truck (HCV / 3-Axle Truck)', tx.route_id,
+              tx.toll_plaza_name, tx.highway_name || '',
+              Number(tx.lat || 0), Number(tx.lng || 0), Number(tx.amount || 0),
+              Number(tx.base_toll_fee || tx.amount || 0), Number(tx.gst_amount || 0),
+              tx.concessionaire_name || 'National Highways Authority of India (NHAI)',
+              tx.gstin || '22AAACN0123M1Z5',
+              tx.lane_direction || 'Lane 04 - Dedicated FASTag ETC',
+              tx.payment_status || 'SUCCESS',
+              tx.crossing_time ? new Date(tx.crossing_time).toISOString() : new Date().toISOString(),
+              Number(tx.wallet_balance_before || 15000), Number(tx.wallet_balance_after || 14000)
+            );
+          }
+          console.log(`>>> [Supabase -> SQLite] Hydrated ${fastagRes.rows.length} FASTag transactions.`);
+        }
+      } catch (e) {
+        console.warn('[FASTag Sync Warning]:', e.message);
+      }
+
+      // 6. Self-Healing FASTag Persistence:
+      // If routes have toll_gates_json but no corresponding fastag_transactions, auto-generate & sync them!
+      try {
+        const routesWithTolls = localDb.prepare("SELECT * FROM routes WHERE toll_gates_json IS NOT NULL AND toll_gates_json != '[]'").all();
+        for (const r of routesWithTolls) {
+          const txForRoute = localDb.prepare('SELECT COUNT(*) as count FROM fastag_transactions WHERE route_id = ?').get(r.id).count;
+          if (txForRoute === 0) {
+            try {
+              const tolls = JSON.parse(r.toll_gates_json || '[]');
+              if (Array.isArray(tolls) && tolls.length > 0) {
+                const veh = localDb.prepare('SELECT registration_no FROM vehicles WHERE id = ?').get(r.vehicle_id);
+                const regNo = veh?.registration_no || `TRUCK-${r.vehicle_id || 1}`;
+                const insertTx = localDb.prepare(`
+                  INSERT INTO fastag_transactions (
+                    transaction_id, netc_reference_no, tag_id, vehicle_id, vehicle_registration_no,
+                    vehicle_class, route_id, toll_plaza_name, highway_name, lat, lng,
+                    amount, base_toll_fee, gst_amount, concessionaire_name, gstin,
+                    lane_direction, payment_status, crossing_time, wallet_balance_before, wallet_balance_after
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `);
+                tolls.forEach((tg, idx) => {
+                  const fee = Number(tg.charges) || 170;
+                  const txnId = `TXN-FTG-${Date.now()}-${idx + 1}-${r.id}`;
+                  const netcRef = `NETC${Date.now()}${idx + 1}`;
+                  const tagId = `607418-TAG-${regNo.replace(/[^A-Za-z0-9]/g, '')}`;
+                  const crossingTime = r.trip_date ? `${r.trip_date}T${r.start_trip_time || '08:00'}:00.000Z` : new Date().toISOString();
+                  
+                  insertTx.run(
+                    txnId, netcRef, tagId, r.vehicle_id, regNo,
+                    'Commercial Truck (HCV / 3-Axle Truck)', r.id, tg.name || `NH Toll Plaza #${idx + 1}`,
+                    'National Highway FASTag Corridor', Number(tg.lat || 0), Number(tg.lng || 0),
+                    fee, fee, 0, 'National Highways Authority of India (NHAI)', '22AAACN0123M1Z5',
+                    `Lane 0${(idx % 4) + 1} - Dedicated FASTag ETC`, 'SUCCESS',
+                    crossingTime, 25000 - (idx * fee), 25000 - ((idx + 1) * fee)
+                  );
+
+                  this.syncFastagTransaction({
+                    transaction_id: txnId,
+                    netc_reference_no: netcRef,
+                    tag_id: tagId,
+                    vehicle_id: r.vehicle_id,
+                    vehicle_registration_no: regNo,
+                    vehicle_class: 'Commercial Truck (HCV / 3-Axle Truck)',
+                    route_id: r.id,
+                    toll_plaza_name: tg.name || `NH Toll Plaza #${idx + 1}`,
+                    highway_name: 'National Highway FASTag Corridor',
+                    lat: Number(tg.lat || 0),
+                    lng: Number(tg.lng || 0),
+                    amount: fee,
+                    base_toll_fee: fee,
+                    gst_amount: 0,
+                    concessionaire_name: 'National Highways Authority of India (NHAI)',
+                    gstin: '22AAACN0123M1Z5',
+                    lane_direction: `Lane 0${(idx % 4) + 1} - Dedicated FASTag ETC`,
+                    payment_status: 'SUCCESS',
+                    wallet_balance_before: 25000 - (idx * fee),
+                    wallet_balance_after: 25000 - ((idx + 1) * fee)
+                  });
+                });
+              }
+            } catch (e) {}
+          }
+        }
+      } catch (e) {
+        console.warn('[Self-Healing FASTag Warning]:', e.message);
+      }
+
       console.log(`>>> [Supabase -> SQLite] Hydration complete: ${usersRes.rows.length} users, ${vehRes.rows.length} vehicles, ${routeRes.rows.length} routes.`);
     } catch (err) {
       console.error('[Supabase -> SQLite Sync Error]:', err.message);
