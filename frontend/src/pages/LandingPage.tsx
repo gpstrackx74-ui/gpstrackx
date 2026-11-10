@@ -295,7 +295,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             loop
             muted
             playsInline
-            src="/hero-video.mp4"
+            src="/hero-video.mp4?v=20261110"
             onCanPlay={(e) => {
               const v = e.currentTarget;
               v.muted = true;
@@ -303,7 +303,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             }}
             className="w-full h-full object-cover opacity-90 scale-105 transition-opacity duration-700"
           >
-            <source src="/hero-video.mp4" type="video/mp4" />
+            <source src="/hero-video.mp4?v=20261110" type="video/mp4" />
           </video>
           {/* Lightened, High-Clarity Overlay to make background video vivid & clearly visible */}
           <div className="absolute inset-0 bg-gradient-to-r from-[#101828]/75 via-[#101828]/40 to-transparent" />

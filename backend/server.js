@@ -22,12 +22,44 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Serve static frontend files if built
 const fs = require('fs');
 const distPath = path.join(__dirname, '../frontend/dist');
+const publicPath = path.join(__dirname, '../frontend/public');
+
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 }
+if (fs.existsSync(publicPath)) {
+  app.use(express.static(publicPath));
+}
 
-// Health Check for Cloud Platforms (Render, Railway, etc.)
+// Dedicated static streaming endpoints for hero and logo videos
+app.get(['/hero-video.mp4', '/hero-video'], (req, res) => {
+  const distFile = path.join(distPath, 'hero-video.mp4');
+  const pubFile = path.join(publicPath, 'hero-video.mp4');
+  const target = fs.existsSync(distFile) ? distFile : (fs.existsSync(pubFile) ? pubFile : null);
+  if (target) {
+    res.setHeader('Content-Type', 'video/mp4');
+    return res.sendFile(target);
+  }
+  res.status(404).send('Hero video not found');
+});
+
+app.get(['/logoweb.mp4', '/logoweb'], (req, res) => {
+  const distFile = path.join(distPath, 'logoweb.mp4');
+  const pubFile = path.join(publicPath, 'logoweb.mp4');
+  const target = fs.existsSync(distFile) ? distFile : (fs.existsSync(pubFile) ? pubFile : null);
+  if (target) {
+    res.setHeader('Content-Type', 'video/mp4');
+    return res.sendFile(target);
+  }
+  res.status(404).send('Logo video not found');
+});
+
+// Root route: Serve frontend index.html if dist exists, or health JSON if backend-only
 app.get('/', (req, res) => {
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
   res.status(200).json({ status: 'ok', service: 'GpsTrackX Backend API', timestamp: new Date().toISOString() });
 });
 
