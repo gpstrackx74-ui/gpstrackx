@@ -1044,6 +1044,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                   endPoint={isLiveMovingMode ? null : memoizedEnd}
                   stoppages={isLiveMovingMode ? [] : stoppagesWithTimings}
                   tollGates={isLiveMovingMode ? [] : routeTolls}
+                  hideEditTools={true}
+                  hideBreadcrumbs={true}
                 />
               </ErrorBoundary>
             </div>

@@ -35,6 +35,8 @@ interface InteractiveMapProps {
   customWaypoints?: Array<{ lat: number; lng: number; name?: string }>;
   isManualDrawing?: boolean;
   isDraggableRoute?: boolean;
+  hideEditTools?: boolean;
+  hideBreadcrumbs?: boolean;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }

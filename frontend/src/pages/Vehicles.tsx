@@ -170,6 +170,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const [vehicleTrips, setVehicleTrips] = useState<any[]>([]);
   const [savedCorridorsForTrip, setSavedCorridorsForTrip] = useState<any[]>([]);
   const [selectedCorridorForTripId, setSelectedCorridorForTripId] = useState<string>('');
+  const [selectedOriginalWaypoints, setSelectedOriginalWaypoints] = useState<any[]>([]);
+  const [selectedOriginalTolls, setSelectedOriginalTolls] = useState<any[]>([]);
   const [loadingTrips, setLoadingTrips] = useState<boolean>(false);
 
   // Dedicated Vehicle Trip History States (Admin & User)
@@ -271,6 +273,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
     setTripModalVehicle(v);
     setTripExcelSummary(null);
     setTripExcelPoints([]);
+    setSelectedOriginalWaypoints([]);
+    setSelectedOriginalTolls([]);
     setLoadingTrips(true);
     try {
       const [trips, corridors] = await Promise.all([
@@ -283,26 +287,27 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       setTripForm({
         route_name: `Trip #${tripNum}: ${v.registration_no} Corridor`,
         trip_date: new Date().toISOString().split('T')[0],
-        start_trip_time: '08:00',
-        end_trip_time: '18:00',
+        start_trip_time: '08:00 AM',
+        end_trip_time: '06:00 PM',
         start_location_name: '',
         end_location_name: '',
         total_distance_km: '',
-        total_toll_fee: '340',
-        toll_gates_count: '2',
-        stoppages_count: '2'
+        total_toll_fee: '0',
+        toll_gates_count: '0',
+        stoppages_count: '0'
       });
 
       setSelectedCorridorForTripId('');
 
       // Pre-populate corridor if vehicle has assigned route or previous corridor exists
-      if (corridors && corridors.length > 0) {
-        const matching = corridors.find((c: any) =>
+      const allSources = [...(trips || []), ...(corridors || [])];
+      if (allSources.length > 0) {
+        const matching = allSources.find((c: any) =>
           (v.route_name && c.route_name && c.route_name.includes(v.route_name)) ||
           (c.route_name && c.route_name.includes(v.registration_no))
-        ) || corridors[0];
+        ) || allSources[0];
         if (matching) {
-          handleSelectSavedCorridorForTrip(String(matching.id), corridors);
+          handleSelectSavedCorridorForTrip(String(matching.id), allSources);
         }
       }
     } catch (e) {
@@ -316,15 +321,26 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const handleSelectSavedCorridorForTrip = (val: string, list?: any[]) => {
     if (!val || !tripModalVehicle) return;
     const cleanVal = String(val).trim();
-    const sourceList = list && list.length > 0 ? list : savedCorridorsForTrip;
-    const found = sourceList.find((c: any) =>
-      String(c.id) === cleanVal ||
-      c.route_name === val ||
-      (c.route_name && c.route_name.replace(/\r?\n/g, ' ').trim() === cleanVal.replace(/\r?\n/g, ' ').trim())
+    const sourceList = list && list.length > 0 ? list : [...vehicleTrips, ...savedCorridorsForTrip];
+
+    let found = sourceList.find((c: any) =>
+      cleanVal.startsWith('trip-') && String(c.id) === cleanVal.replace('trip-', '')
     );
+    if (!found) {
+      found = sourceList.find((c: any) =>
+        cleanVal.startsWith('corridor-') && String(c.id) === cleanVal.replace('corridor-', '')
+      );
+    }
+    if (!found) {
+      found = sourceList.find((c: any) =>
+        String(c.id) === cleanVal ||
+        c.route_name === val ||
+        (c.route_name && c.route_name.replace(/\r?\n/g, ' ').trim() === cleanVal.replace(/\r?\n/g, ' ').trim())
+      );
+    }
     if (!found) return;
 
-    setSelectedCorridorForTripId(String(found.id));
+    setSelectedCorridorForTripId(cleanVal.startsWith('trip-') || cleanVal.startsWith('corridor-') ? cleanVal : String(found.id));
 
     let poly: [number, number][] = [];
     if (found.overview_polyline) {
@@ -378,11 +394,39 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
 
     setTripExcelSummary({
       vehicleReg: cleanRouteName.split(':')[0] || tripModalVehicle.registration_no,
-      distanceKm: Number(found.total_distance_km || 0),
+      distanceKm: Number(found.total_distance_km || found.distance_km || 0),
       avgSpeed: 45,
       runningTime: '03:30',
       haltedTime: '00:30'
     });
+
+    // Parse exact original waypoints / stoppages from selected trip or saved corridor
+    let rawWaypoints: any[] = [];
+    if (found.waypoints && Array.isArray(found.waypoints) && found.waypoints.length > 0) {
+      rawWaypoints = found.waypoints;
+    } else if (found.waypoints_json) {
+      try {
+        const wp = typeof found.waypoints_json === 'string' ? JSON.parse(found.waypoints_json) : found.waypoints_json;
+        if (Array.isArray(wp) && wp.length > 0) rawWaypoints = wp;
+      } catch (_) {}
+    }
+
+    // Parse exact original toll gates from selected trip or saved corridor
+    let rawTolls: any[] = [];
+    if (found.toll_gates && Array.isArray(found.toll_gates) && found.toll_gates.length > 0) {
+      rawTolls = found.toll_gates;
+    } else if (found.toll_gates_json) {
+      try {
+        const tg = typeof found.toll_gates_json === 'string' ? JSON.parse(found.toll_gates_json) : found.toll_gates_json;
+        if (Array.isArray(tg) && tg.length > 0) rawTolls = tg;
+      } catch (_) {}
+    }
+
+    setSelectedOriginalWaypoints(rawWaypoints);
+    setSelectedOriginalTolls(rawTolls);
+
+    const calculatedTotalToll = rawTolls.reduce((sum: number, t: any) => sum + (Number(t.charges) || 0), 0);
+    const finalTollFee = calculatedTotalToll > 0 ? calculatedTotalToll : (Number(found.total_toll_fee) || Number(found.total_tolls_amount) || 0);
 
     const tripNum = vehicleTrips.length + 1;
     setTripForm(prev => ({
@@ -390,18 +434,12 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       route_name: cleanRouteName || `Trip #${tripNum}: ${found.start_location_name || 'Origin'} to ${found.end_location_name || 'Destination'}`,
       start_location_name: found.start_location_name || '',
       end_location_name: found.end_location_name || '',
-      total_distance_km: String(found.total_distance_km || ''),
-      total_toll_fee: String(
-        found.toll_gates && Array.isArray(found.toll_gates)
-          ? found.toll_gates.reduce((s: number, t: any) => s + (Number(t.charges) || 0), 0)
-          : 340
-      ),
-      toll_gates_count: String(
-        found.toll_gates && Array.isArray(found.toll_gates) ? found.toll_gates.length : 2
-      ),
-      stoppages_count: String(
-        found.waypoints && Array.isArray(found.waypoints) ? found.waypoints.length : 2
-      )
+      total_distance_km: String(found.total_distance_km || found.distance_km || ''),
+      total_toll_fee: String(finalTollFee),
+      toll_gates_count: String(rawTolls.length),
+      stoppages_count: String(rawWaypoints.length),
+      start_trip_time: found.start_trip_time || prev.start_trip_time || '08:00 AM',
+      end_trip_time: found.end_trip_time || prev.end_trip_time || '06:00 PM'
     }));
   };
 
@@ -409,6 +447,10 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const handleTripExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !tripModalVehicle) return;
+
+    setSelectedOriginalWaypoints([]);
+    setSelectedOriginalTolls([]);
+    setSelectedCorridorForTripId('');
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -680,7 +722,22 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
 
   const modalStoppages = React.useMemo(() => {
     const count = Math.max(0, parseInt(tripForm.stoppages_count) || 0);
-    if (tripExcelPoints.length < 2 || count <= 0) return [];
+    if (count <= 0) return [];
+
+    // If exact original waypoints exist from re-used completed trip or corridor and count matches, preserve them 100%!
+    if (selectedOriginalWaypoints.length > 0 && selectedOriginalWaypoints.length === count) {
+      return selectedOriginalWaypoints.map((w, idx) => ({
+        id: w.id || idx + 1,
+        sequence_order: w.sequence_order || idx + 1,
+        name: w.name || `Transit Halt #${idx + 1}`,
+        address: w.address || `Highway Stoppage at ${Number(w.lat).toFixed(4)}, ${Number(w.lng).toFixed(4)}`,
+        lat: Number(w.lat),
+        lng: Number(w.lng),
+        stop_duration_mins: w.stop_duration_mins || w.duration || 20
+      }));
+    }
+
+    if (tripExcelPoints.length < 2) return [];
     const list = [];
     for (let i = 0; i < count; i++) {
       const ratio = (i + 1) / (count + 1);
@@ -697,13 +754,28 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       });
     }
     return list;
-  }, [tripExcelPoints, tripForm.stoppages_count]);
+  }, [selectedOriginalWaypoints, tripExcelPoints, tripForm.stoppages_count]);
 
   const modalTolls = React.useMemo(() => {
     const count = Math.max(0, parseInt(tripForm.toll_gates_count) || 0);
     const totalFee = Number(tripForm.total_toll_fee) || 0;
     const feePerToll = count > 0 ? Math.round(totalFee / count) : 0;
-    if (tripExcelPoints.length < 2 || count <= 0) return [];
+    if (count <= 0) return [];
+
+    // If exact original tolls exist from re-used completed trip or corridor and count matches, preserve them 100%!
+    if (selectedOriginalTolls.length > 0 && selectedOriginalTolls.length === count) {
+      return selectedOriginalTolls.map((t, idx) => ({
+        id: t.id || idx + 1,
+        name: t.name || `FASTag Toll Plaza #${idx + 1}`,
+        lat: Number(t.lat),
+        lng: Number(t.lng),
+        charges: Number(t.charges) || feePerToll,
+        toll_type: t.toll_type || 'FASTag ETC',
+        is_manual: t.is_manual ?? true
+      }));
+    }
+
+    if (tripExcelPoints.length < 2) return [];
     const list = [];
     for (let i = 0; i < count; i++) {
       const ratio = (i + 1) / (count + 1);
@@ -720,7 +792,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       });
     }
     return list;
-  }, [tripExcelPoints, tripForm.toll_gates_count, tripForm.total_toll_fee]);
+  }, [selectedOriginalTolls, tripExcelPoints, tripForm.toll_gates_count, tripForm.total_toll_fee]);
 
   const previewRoutes = React.useMemo(() => {
     if (previewPolyline.length < 2) return [];
@@ -846,45 +918,28 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
         ? tripExcelPoints.map(p => [p.lat, p.lng])
         : [[startCoord.lat, startCoord.lng], [endCoord.lat, endCoord.lng]];
 
-      // Build ONLY user-requested number of stoppages (NOT raw GPS coordinates!)
-      const stopsCount = Math.max(0, parseInt(tripForm.stoppages_count) || 0);
-      const waypoints = [];
-      if (stopsCount > 0 && polyline.length >= 2) {
-        for (let i = 0; i < stopsCount; i++) {
-          const ratio = (i + 1) / (stopsCount + 1);
-          const pIdx = Math.min(polyline.length - 1, Math.max(0, Math.floor(polyline.length * ratio)));
-          const pt = polyline[pIdx] || [startCoord.lat, startCoord.lng];
-          waypoints.push({
-            sequence_order: i + 1,
-            name: `Transit Halt #${i + 1}`,
-            address: `Highway Stoppage at ${pt[0].toFixed(4)}, ${pt[1].toFixed(4)}`,
-            lat: pt[0],
-            lng: pt[1],
-            duration: 20
-          });
-        }
-      }
+      // Use exact configured stoppages and toll plazas (preserves 100% of previous trip or generated points)
+      const waypoints = modalStoppages.map((s, idx) => ({
+        sequence_order: s.sequence_order || idx + 1,
+        name: s.name || `Transit Halt #${idx + 1}`,
+        address: s.address || `Highway Stoppage at ${Number(s.lat).toFixed(4)}, ${Number(s.lng).toFixed(4)}`,
+        lat: Number(s.lat),
+        lng: Number(s.lng),
+        duration: s.stop_duration_mins || 20
+      }));
 
-      // Build toll gates
       const tollsCount = Math.max(0, parseInt(tripForm.toll_gates_count) || 0);
       const totalFee = Number(tripForm.total_toll_fee) || 0;
       const feePerToll = tollsCount > 0 ? Math.round(totalFee / tollsCount) : 0;
-      const generatedTolls = [];
-      if (tollsCount > 0 && polyline.length >= 2) {
-        for (let i = 0; i < tollsCount; i++) {
-          const ratio = (i + 1) / (tollsCount + 1);
-          const pIdx = Math.min(polyline.length - 1, Math.max(0, Math.floor(polyline.length * ratio)));
-          const pt = polyline[pIdx] || [startCoord.lat, startCoord.lng];
-          generatedTolls.push({
-            name: `FASTag Toll Plaza #${i + 1}`,
-            lat: pt[0],
-            lng: pt[1],
-            charges: feePerToll,
-            is_manual: false,
-            toll_type: 'FASTag ETC'
-          });
-        }
-      }
+
+      const generatedTolls = modalTolls.map((t, idx) => ({
+        name: t.name || `FASTag Toll Plaza #${idx + 1}`,
+        lat: Number(t.lat),
+        lng: Number(t.lng),
+        charges: Number(t.charges) || feePerToll,
+        is_manual: t.is_manual ?? true,
+        toll_type: t.toll_type || 'FASTag ETC'
+      }));
 
       await api.addVehicleTrip(tripModalVehicle.id, {
         route_name: routeName,
@@ -1622,12 +1677,25 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                         onChange={(e) => handleSelectSavedCorridorForTrip(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-xs focus:outline-none focus:border-red-500 text-slate-700 truncate cursor-pointer shadow-2xs"
                       >
-                        <option value="">-- Choose Previously Saved Route --</option>
-                        {savedCorridorsForTrip.map((c: any, idx: number) => (
-                          <option key={c.id || idx} value={String(c.id)}>
-                            {(c.route_name || `Route #${c.id}`).replace(/\r?\n/g, ' ')} ({c.total_distance_km || c.distance_km || 0} KM)
-                          </option>
-                        ))}
+                        <option value="">-- Choose Completed Trip or Saved Route --</option>
+                        {vehicleTrips.length > 0 && (
+                          <optgroup label="Completed Trips for this Vehicle">
+                            {vehicleTrips.map((t: any, idx: number) => (
+                              <option key={`veh-trip-${t.id || idx}`} value={`trip-${t.id}`}>
+                                {(t.route_name || `Trip #${t.id}`).replace(/\r?\n/g, ' ')} ({t.total_distance_km || 0} KM{t.trip_date ? ` • ${t.trip_date}` : ''})
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {savedCorridorsForTrip.length > 0 && (
+                          <optgroup label="Saved Corridors & Master Routes">
+                            {savedCorridorsForTrip.map((c: any, idx: number) => (
+                              <option key={`saved-${c.id || idx}`} value={`corridor-${c.id}`}>
+                                {(c.route_name || `Route #${c.id}`).replace(/\r?\n/g, ' ')} ({c.total_distance_km || c.distance_km || 0} KM)
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
 
@@ -1762,6 +1830,62 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                           />
                         </div>
                       </div>
+
+                      {/* Configured Route Stoppages & Toll Plazas Preview Cards */}
+                      {(modalStoppages.length > 0 || modalTolls.length > 0) && (
+                        <div className="space-y-2 pt-1">
+                          {modalStoppages.length > 0 && (
+                            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                                  Route Stoppages
+                                </span>
+                                <span className="text-[9px] font-bold px-2 py-0.5 bg-white text-slate-600 rounded-full border border-slate-200 shadow-2xs">
+                                  {modalStoppages.length} Halts
+                                </span>
+                              </div>
+                              <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
+                                {modalStoppages.map((s, idx) => (
+                                  <div key={idx} className="p-1.5 bg-white rounded-lg border border-slate-100 flex items-center justify-between text-[11px] shadow-2xs">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <span className="w-4 h-4 rounded-full bg-slate-900 text-white font-black text-[9px] flex items-center justify-center shrink-0">
+                                        {idx + 1}
+                                      </span>
+                                      <span className="font-bold text-slate-800 truncate">{s.name}</span>
+                                    </div>
+                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 shrink-0">
+                                      {s.stop_duration_mins || 20}m Halt
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {modalTolls.length > 0 && (
+                            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                                  Toll Plazas & Charges
+                                </span>
+                                <span className="text-[9px] font-bold px-2 py-0.5 bg-white text-slate-600 rounded-full border border-slate-200 shadow-2xs">
+                                  {modalTolls.length} Plazas
+                                </span>
+                              </div>
+                              <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
+                                {modalTolls.map((t, idx) => (
+                                  <div key={idx} className="p-1.5 bg-white rounded-lg border border-slate-100 flex items-center justify-between text-[11px] shadow-2xs">
+                                    <span className="font-bold text-slate-800 truncate">{t.name}</span>
+                                    <span className="text-[11px] font-black text-slate-900 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-100 shrink-0">
+                                      ₹{t.charges}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
@@ -1828,6 +1952,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                       stoppages={modalStoppages}
                       tollGates={modalTolls}
                       isDraggableRoute={false}
+                      hideEditTools={true}
                       onRouteChange={handleModalRouteDrag}
                     />
 

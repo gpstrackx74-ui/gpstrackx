@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LogoIntro } from '../components/LogoIntro';
 import {
   Shield,
@@ -34,6 +34,28 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
   const [selectedDeviceForBuy, setSelectedDeviceForBuy] = useState<any | null>(null);
   const [buyOrderSuccess, setBuyOrderSuccess] = useState(false);
   const [buyerForm, setBuyerForm] = useState({ name: '', phone: '', address: '', quantity: '1' });
+  const heroVideoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = heroVideoRef.current;
+    if (video) {
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          const tryPlay = () => {
+            if (video) video.play();
+            window.removeEventListener('click', tryPlay);
+            window.removeEventListener('touchstart', tryPlay);
+          };
+          window.addEventListener('click', tryPlay, { once: true });
+          window.addEventListener('touchstart', tryPlay, { once: true });
+        });
+      }
+    }
+  }, []);
 
   const headlineLine1 = [
     { text: 'Smarter', highlight: true },
@@ -268,14 +290,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
         {/* Background Video Layer */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
           <video
+            ref={heroVideoRef}
             autoPlay
             loop
             muted
             playsInline
+            src="/hero-video.mp4"
             className="w-full h-full object-cover opacity-90 scale-105 transition-opacity duration-700"
-            poster="https://images.unsplash.com/photo-1519003722824-194d4455a60c?auto=format&fit=crop&w=1920&q=80"
           >
-            <source src="/hero-video.mp4?v=2" type="video/mp4" />
             <source src="/hero-video.mp4" type="video/mp4" />
           </video>
           {/* Lightened, High-Clarity Overlay to make background video vivid & clearly visible */}

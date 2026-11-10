@@ -50,6 +50,8 @@ interface GoogleMapsViewProps {
   customWaypoints?: Array<{ lat: number; lng: number; name?: string }>;
   isManualDrawing?: boolean;
   isDraggableRoute?: boolean;
+  hideEditTools?: boolean;
+  hideBreadcrumbs?: boolean;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -77,6 +79,8 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   customWaypoints = EMPTY_WAYPOINTS,
   isManualDrawing = false,
   isDraggableRoute = false,
+  hideEditTools = false,
+  hideBreadcrumbs = false,
   onRouteChange,
   height = '520px'
 }) => {
@@ -560,12 +564,12 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         strokeWeight: isSelected ? 6 : 4.5,
         map,
         zIndex: isSelected ? 30 : 15,
-        editable: Boolean(isSelected && (isDraggableRoute || isTrimMode)),
+        editable: Boolean(isSelected && !hideEditTools && (isDraggableRoute || isTrimMode)),
         draggable: false
       });
 
       // Interactive polyline vertex drag and right-click delete
-      if (isSelected && (isDraggableRoute || isTrimMode)) {
+      if (isSelected && !hideEditTools && (isDraggableRoute || isTrimMode)) {
         const mvcPath = polyline.getPath();
         const onPathChange = () => {
           const updatedCoords: [number, number][] = [];
@@ -622,7 +626,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       polylinesRef.current.push(polyline);
 
       // --- Telematic Breadcrumbs Dots Layer (Matching authentic GPS telematics) ---
-      if (showBreadcrumbs && isSelected && !isTrimMode && validCoords.length > 0) {
+      if (!hideBreadcrumbs && showBreadcrumbs && isSelected && !isTrimMode && validCoords.length > 0) {
         const step = validCoords.length > 500 ? Math.ceil(validCoords.length / 380) : 1;
         for (let i = 0; i < validCoords.length; i += step) {
           const [bLat, bLng] = validCoords[i];
@@ -645,7 +649,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       }
 
       // --- Interactive Trim / Point Deletion Markers ---
-      if (isTrimMode && isSelected && validCoords.length > 0) {
+      if (!hideEditTools && isTrimMode && isSelected && validCoords.length > 0) {
         const step = validCoords.length > 400 ? Math.ceil(validCoords.length / 300) : 1;
         for (let i = 0; i < validCoords.length; i += step) {
           const coordIdx = i;
@@ -929,7 +933,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       {/* Top Map Action Bar (Toolbar) */}
       <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 bg-white/95 backdrop-blur-md p-1.5 rounded-xl border border-slate-200 shadow-md">
         {/* Polyline Trim / Delete Wrong Line Button */}
-        {activeCoords.length > 2 && (
+        {!hideEditTools && activeCoords.length > 2 && (
           <button
             type="button"
             onClick={() => {
@@ -950,21 +954,23 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         )}
 
         {/* Telematic Breadcrumbs Dots Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowBreadcrumbs(!showBreadcrumbs)}
-          className={`flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-            showBreadcrumbs
-              ? 'bg-red-50 text-[#E60012] border border-red-200'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-          title={showBreadcrumbs ? 'Breadcrumb dots: Visible' : 'Breadcrumb dots: Hidden'}
-        >
-          <CircleDot className="w-3.5 h-3.5" />
-          <span className="hidden md:inline text-[11px]">Dots</span>
-        </button>
+        {!hideEditTools && !hideBreadcrumbs && (
+          <button
+            type="button"
+            onClick={() => setShowBreadcrumbs(!showBreadcrumbs)}
+            className={`flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              showBreadcrumbs
+                ? 'bg-red-50 text-[#E60012] border border-red-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+            title={showBreadcrumbs ? 'Breadcrumb dots: Visible' : 'Breadcrumb dots: Hidden'}
+          >
+            <CircleDot className="w-3.5 h-3.5" />
+            <span className="hidden md:inline text-[11px]">Dots</span>
+          </button>
+        )}
 
-        <div className="h-4 w-px bg-slate-200 mx-0.5" />
+        {!hideEditTools && !hideBreadcrumbs && <div className="h-4 w-px bg-slate-200 mx-0.5" />}
 
         {/* Working Zoom In (+) */}
         <button
@@ -1050,7 +1056,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       </div>
 
       {/* Floating Trim / Delete Route Line Control Bar */}
-      {isTrimMode && (
+      {!hideEditTools && isTrimMode && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 max-w-xl w-[92%] bg-slate-900/95 text-white backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl border border-slate-700 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top duration-200">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1 bg-slate-800 p-0.5 rounded-lg border border-slate-700">

@@ -712,34 +712,41 @@ app.get('/api/vehicles/:id/trips', authenticateToken, (req, res) => {
     `).all(vehicleId);
 
     const formattedTrips = trips.map(t => {
-      let stopsCount = t.sql_stoppages_count || 0;
-      if (stopsCount === 0 && t.waypoints_json) {
+      let waypoints = [];
+      if (t.waypoints_json) {
         try {
           const wp = typeof t.waypoints_json === 'string' ? JSON.parse(t.waypoints_json) : t.waypoints_json;
-          if (Array.isArray(wp) && wp.length > 0) {
-            stopsCount = wp.length;
-          }
+          if (Array.isArray(wp) && wp.length > 0) waypoints = wp;
         } catch (_) {}
       }
-      if (stopsCount === 0 && t.veh_stoppages_count) {
-        stopsCount = t.veh_stoppages_count;
+      if (waypoints.length === 0) {
+        try {
+          const sqlStops = db.prepare('SELECT * FROM stoppages WHERE route_id = ? ORDER BY sequence_order ASC').all(t.id);
+          if (sqlStops && sqlStops.length > 0) waypoints = sqlStops;
+        } catch (_) {}
       }
 
-      let tollsAmount = t.sql_tolls_amount || 0;
-      if (tollsAmount === 0 && t.toll_gates_json) {
+      let tollGates = [];
+      if (t.toll_gates_json) {
         try {
           const tg = typeof t.toll_gates_json === 'string' ? JSON.parse(t.toll_gates_json) : t.toll_gates_json;
-          if (Array.isArray(tg) && tg.length > 0) {
-            tollsAmount = tg.reduce((sum, item) => sum + (Number(item.charges) || 0), 0);
-          }
+          if (Array.isArray(tg) && tg.length > 0) tollGates = tg;
         } catch (_) {}
       }
-      if (tollsAmount === 0 && t.veh_total_toll_fee) {
-        tollsAmount = t.veh_total_toll_fee;
+      if (tollGates.length === 0) {
+        try {
+          const sqlTolls = db.prepare('SELECT * FROM manual_toll_gates WHERE route_id = ?').all(t.id);
+          if (sqlTolls && sqlTolls.length > 0) tollGates = sqlTolls;
+        } catch (_) {}
       }
+
+      const stopsCount = waypoints.length || t.sql_stoppages_count || t.veh_stoppages_count || 0;
+      const tollsAmount = tollGates.reduce((sum, item) => sum + (Number(item.charges) || 0), 0) || t.sql_tolls_amount || t.veh_total_toll_fee || 0;
 
       return {
         ...t,
+        waypoints,
+        toll_gates: tollGates,
         stoppages_count: stopsCount,
         total_tolls_amount: tollsAmount
       };
@@ -1717,8 +1724,8 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
         INSERT INTO manual_toll_gates (route_id, name, lat, lng, charges, toll_type)
         VALUES (?, ?, ?, ?, ?, ?)
       `);
-      toll_gates.filter(t => t.is_manual).forEach(t => {
-        manualStmt.run(routeId, t.name, t.lat, t.lng, t.charges || 0, t.toll_type || 'Manual Toll Gate');
+      toll_gates.forEach(t => {
+        manualStmt.run(routeId, t.name, t.lat, t.lng, t.charges || 0, t.toll_type || 'FASTag ETC');
       });
     }
 
@@ -1910,13 +1917,21 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
     for (const c of dedicatedCorridors) {
       if (!seenNames.has(c.route_name)) {
         seenNames.add(c.route_name);
-        combined.push(c);
+        let wp = [];
+        let tg = [];
+        try { if (c.waypoints_json) wp = typeof c.waypoints_json === 'string' ? JSON.parse(c.waypoints_json) : c.waypoints_json; } catch (_) {}
+        try { if (c.toll_gates_json) tg = typeof c.toll_gates_json === 'string' ? JSON.parse(c.toll_gates_json) : c.toll_gates_json; } catch (_) {}
+        combined.push({ ...c, waypoints: wp, toll_gates: tg });
       }
     }
     for (const r of routesCorridors) {
       if (!seenNames.has(r.route_name)) {
         seenNames.add(r.route_name);
-        combined.push(r);
+        let wp = [];
+        let tg = [];
+        try { if (r.waypoints_json) wp = typeof r.waypoints_json === 'string' ? JSON.parse(r.waypoints_json) : r.waypoints_json; } catch (_) {}
+        try { if (r.toll_gates_json) tg = typeof r.toll_gates_json === 'string' ? JSON.parse(r.toll_gates_json) : r.toll_gates_json; } catch (_) {}
+        combined.push({ ...r, waypoints: wp, toll_gates: tg });
       }
     }
 

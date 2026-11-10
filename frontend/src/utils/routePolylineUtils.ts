@@ -254,3 +254,4 @@ function sampleWaypoints(pts: [number, number][], maxPoints: number): [number, n
   result.push(pts[pts.length - 1]);
   return result;
 }
+

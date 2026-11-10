@@ -38,6 +38,8 @@ interface LeafletRouteMapProps {
   clickMode?: 'start' | 'end' | 'stop' | 'parking' | 'toll' | 'manual-route' | 'none';
   customWaypoints?: Array<{ lat: number; lng: number; name?: string }>;
   isManualDrawing?: boolean;
+  hideEditTools?: boolean;
+  hideBreadcrumbs?: boolean;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -62,6 +64,8 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   clickMode = 'none',
   customWaypoints = EMPTY_WAYPOINTS,
   isManualDrawing = false,
+  hideEditTools = false,
+  hideBreadcrumbs = false,
   onRouteChange,
   height = '500px'
 }) => {
@@ -451,7 +455,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       polyline.addTo(group);
 
       // Telematic Breadcrumb Dots
-      if (showBreadcrumbs && isSelected && !isTrimMode && validCoords.length > 0) {
+      if (!hideBreadcrumbs && showBreadcrumbs && isSelected && !isTrimMode && validCoords.length > 0) {
         const step = validCoords.length > 400 ? Math.ceil(validCoords.length / 300) : 1;
         for (let i = 0; i < validCoords.length; i += step) {
           const ll = L.latLng(validCoords[i][0], validCoords[i][1]);
@@ -467,7 +471,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       }
 
       // Trim Mode Clickable Markers
-      if (isTrimMode && isSelected && validCoords.length > 0) {
+      if (!hideEditTools && isTrimMode && isSelected && validCoords.length > 0) {
         const step = validCoords.length > 350 ? Math.ceil(validCoords.length / 250) : 1;
         for (let i = 0; i < validCoords.length; i += step) {
           const coordIdx = i;
@@ -586,7 +590,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       {/* Map Header Toolbar */}
       <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 bg-white/95 backdrop-blur-md p-1.5 rounded-xl border border-slate-200 shadow-md">
         {/* Trim Polyline Button */}
-        {activeCoords.length > 2 && (
+        {!hideEditTools && activeCoords.length > 2 && (
           <button
             type="button"
             onClick={() => {
@@ -607,21 +611,23 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
         )}
 
         {/* Telematic Breadcrumbs Dots Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowBreadcrumbs(!showBreadcrumbs)}
-          className={`flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-            showBreadcrumbs
-              ? 'bg-red-50 text-[#E60012] border border-red-200'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-          title={showBreadcrumbs ? 'Breadcrumb dots: Visible' : 'Breadcrumb dots: Hidden'}
-        >
-          <CircleDot className="w-3.5 h-3.5" />
-          <span className="hidden md:inline text-[11px]">Dots</span>
-        </button>
+        {!hideEditTools && !hideBreadcrumbs && (
+          <button
+            type="button"
+            onClick={() => setShowBreadcrumbs(!showBreadcrumbs)}
+            className={`flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              showBreadcrumbs
+                ? 'bg-red-50 text-[#E60012] border border-red-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+            title={showBreadcrumbs ? 'Breadcrumb dots: Visible' : 'Breadcrumb dots: Hidden'}
+          >
+            <CircleDot className="w-3.5 h-3.5" />
+            <span className="hidden md:inline text-[11px]">Dots</span>
+          </button>
+        )}
 
-        <div className="h-4 w-px bg-slate-200 mx-0.5" />
+        {!hideEditTools && !hideBreadcrumbs && <div className="h-4 w-px bg-slate-200 mx-0.5" />}
 
         {/* Working Zoom In (+) */}
         <button
@@ -707,7 +713,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       </div>
 
       {/* Floating Trim / Delete Route Line Control Bar */}
-      {isTrimMode && (
+      {!hideEditTools && isTrimMode && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 max-w-xl w-[92%] bg-slate-900/95 text-white backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl border border-slate-700 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top duration-200">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1 bg-slate-800 p-0.5 rounded-lg border border-slate-700">
