@@ -287,7 +287,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
 
       {/* 2. Hero Section – Looping Background Video & First Impression */}
       <section className="relative min-h-[580px] lg:min-h-[660px] flex items-center border-b border-[#E5E7EB] overflow-hidden bg-[#101828]">
-        {/* Background Video Layer */}
+        {/* Background Video Layer - Full HD 1080p Crystal Clear Rendering */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
           <video
             ref={heroVideoRef}
@@ -295,19 +295,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             loop
             muted
             playsInline
-            src="/hero-video.mp4?v=20261110"
+            preload="auto"
+            src="/hero-video.mp4?v=hd_20261110_final"
             onCanPlay={(e) => {
               const v = e.currentTarget;
               v.muted = true;
               v.play().catch(() => {});
             }}
-            className="w-full h-full object-cover opacity-90 scale-105 transition-opacity duration-700"
+            className="w-full h-full object-cover opacity-100 transition-opacity duration-700"
+            style={{ objectFit: 'cover' }}
           >
-            <source src="/hero-video.mp4?v=20261110" type="video/mp4" />
+            <source src="/hero-video.mp4?v=hd_20261110_final" type="video/mp4" />
           </video>
-          {/* Lightened, High-Clarity Overlay to make background video vivid & clearly visible */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#101828]/75 via-[#101828]/40 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/50 via-transparent to-transparent opacity-40" />
+          {/* Subtle Contrast Gradient so HD Video details remain 100% sharp & vivid */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#101828]/65 via-[#101828]/25 to-transparent pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/40 via-transparent to-transparent pointer-events-none" />
         </div>
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 w-full">
