@@ -15,7 +15,6 @@ import {
   Cpu,
   Layers,
   ChevronRight,
-  Flag,
   ShoppingCart,
   Phone,
   Check
@@ -585,33 +584,51 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             </p>
           </div>
 
-          {/* Wide Map-Based Visual */}
-          <div className="bg-white rounded-3xl border border-[#E5E7EB] overflow-hidden shadow-md">
+          {/* Premium Landscape 3D Fleet Route Corridor Visual */}
+          <div className="bg-white rounded-3xl border border-[#E5E7EB] overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300">
             {/* Toolbar */}
-            <div className="p-4 border-b border-[#E5E7EB] bg-white flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="p-4 sm:px-6 border-b border-[#E5E7EB] bg-gradient-to-r from-white via-slate-50/50 to-white flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-3">
-                <span className="font-bold text-[#101828]">Active Commercial Route Corridor: Bilaspur → Kasdol Leg</span>
-                <span className="text-[#101828]/30 hidden sm:inline">|</span>
-                <span className="font-mono text-[#101828]/70 hidden sm:inline">Accurate GPS Route & Stoppage Tracking</span>
+                <span className="font-bold text-[#101828] text-sm flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  National Freight Corridors & Multi-Axle Fleet Navigation
+                </span>
+                <span className="text-[#101828]/30 hidden md:inline">|</span>
+                <span className="font-mono text-[#101828]/70 hidden md:inline">3D Telematics • Live Highway GPS • Automated Toll Gates</span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1.5 text-xs text-[#101828] font-medium bg-[#F5F6F8] px-2.5 py-1 rounded-lg border border-[#E5E7EB]">
-                  <Flag className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" /> Start (Bilaspur)
+                <span className="flex items-center gap-1.5 text-xs text-[#101828] font-semibold bg-[#F5F6F8] px-3 py-1 rounded-lg border border-[#E5E7EB]">
+                  <span className="w-2 h-2 rounded-full bg-[#E60012]" /> Real-Time GPS Tracking
                 </span>
-                <span className="flex items-center gap-1.5 text-xs text-[#101828] font-medium bg-[#F5F6F8] px-2.5 py-1 rounded-lg border border-[#E5E7EB]">
-                  <Flag className="w-3.5 h-3.5 text-[#E60012] fill-[#E60012]" /> Destination (Kasdol)
+                <span className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
+                  Active Fleet Highway Network
                 </span>
               </div>
             </div>
 
-            {/* Static Route Map Image Display */}
-            <div className="relative w-full bg-[#F8FAFC] flex items-center justify-center p-4 sm:p-8 overflow-hidden">
-              <img
-                src="/images/route-map-preview.jpg"
-                alt="GPSTrackX Accurate Live Route Corridor & Highway Stoppages"
-                className="max-h-[640px] w-auto max-w-full rounded-2xl shadow-lg border border-slate-200/90 object-contain hover:shadow-2xl transition-shadow duration-300"
-              />
+            {/* HD Landscape Image Showcase */}
+            <div className="relative w-full bg-gradient-to-b from-slate-900/5 to-slate-900/10 flex items-center justify-center p-3 sm:p-5 overflow-hidden">
+              <div className="w-full relative rounded-2xl overflow-hidden shadow-lg border border-slate-200/80 group">
+                <img
+                  src="/images/fleet-route-corridor-hd.jpg"
+                  alt="GPSTrackX 3D Commercial Fleet Route Corridor & Telematics Map"
+                  className="w-full h-auto object-cover rounded-2xl transform transition-transform duration-700 group-hover:scale-[1.01]"
+                  loading="lazy"
+                />
+                {/* Subtle Premium Bottom Overlay */}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-4 sm:p-6 flex flex-wrap items-center justify-between gap-3 text-white pointer-events-none">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="text-xs sm:text-sm font-bold tracking-wide text-white drop-shadow-md">
+                      Intelligent Route Corridors & Commercial Highway Fleet Management
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-white/95 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
+                    GPSTrackX High-Precision Telemetry
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

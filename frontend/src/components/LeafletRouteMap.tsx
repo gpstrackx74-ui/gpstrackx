@@ -412,8 +412,11 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     const group = layersRef.current['routeLayers'] as L.LayerGroup;
     const boundsPoints: L.LatLng[] = [];
 
-    // 1. Draw Routes
-    routes.forEach((route) => {
+    // 1. Draw Routes - ONLY render the selected/primary route (Alternative routes are strictly hidden from map)
+    const activeRouteToDraw = routes.find(r => r.id === selectedRouteId) || routes[0];
+    const routesToRender = activeRouteToDraw ? [activeRouteToDraw] : [];
+
+    routesToRender.forEach((route) => {
       if (!route.coordinates || route.coordinates.length < 2) return;
       const isSelected = route.id === selectedRouteId || routes.length === 1;
       const validCoords = (route.coordinates || [])

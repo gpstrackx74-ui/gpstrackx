@@ -526,8 +526,11 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
     const bounds = new google.maps.LatLngBounds();
     let hasPoints = false;
 
-    // 1. Draw Routes
-    routes.forEach((route) => {
+    // 1. Draw Routes - ONLY render the selected/primary route (Alternative routes are strictly hidden from map)
+    const activeRouteToDraw = routes.find(r => r.id === selectedRouteId) || routes[0];
+    const routesToRender = activeRouteToDraw ? [activeRouteToDraw] : [];
+
+    routesToRender.forEach((route) => {
       if (!route.coordinates || route.coordinates.length < 2) return;
       const validCoords = (route.coordinates || [])
         .map(c => Array.isArray(c) ? [Number(c[0]), Number(c[1])] : (c && typeof c === 'object' ? [Number((c as any).lat), Number((c as any).lng)] : null))

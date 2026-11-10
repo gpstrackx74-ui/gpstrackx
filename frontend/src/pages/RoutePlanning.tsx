@@ -701,22 +701,104 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     setStartPoint(newStart);
     setEndPoint(newEnd);
     setCorridorNameInput(found.route_name || '');
+    setExcelFileName(null);
 
-    if (found.waypoints) {
+    // 1. Parse Waypoints / Stoppages from Saved Route
+    let parsedWaypoints: Stoppage[] = [];
+    const rawWp = found.waypoints || (found as any).waypoints_json;
+    if (rawWp) {
       try {
-        const wps = typeof found.waypoints === 'string' ? JSON.parse(found.waypoints) : found.waypoints;
+        const wps = typeof rawWp === 'string' ? JSON.parse(rawWp) : rawWp;
         if (Array.isArray(wps) && wps.length > 0) {
+          parsedWaypoints = wps;
           setStoppages(wps);
           setStopsInput(String(wps.length));
+        } else {
+          setStoppages([]);
+          setStopsInput('0');
         }
-      } catch (e) { }
+      } catch (e) {
+        setStoppages([]);
+        setStopsInput('0');
+      }
+    } else {
+      setStoppages([]);
+      setStopsInput('0');
     }
 
-    if (found.total_distance_km) {
-      setCustomDistanceKm(Number(found.total_distance_km));
+    // 2. Parse Toll Gates from Saved Route
+    let parsedTolls: TollGate[] = [];
+    const rawT = found.toll_gates || (found as any).toll_gates_json;
+    if (rawT) {
+      try {
+        const tg = typeof rawT === 'string' ? JSON.parse(rawT) : rawT;
+        if (Array.isArray(tg) && tg.length > 0) {
+          parsedTolls = tg;
+          setCustomTollsAdded(tg);
+        } else {
+          setCustomTollsAdded([]);
+        }
+      } catch (e) {
+        setCustomTollsAdded([]);
+      }
+    } else {
+      setCustomTollsAdded([]);
     }
 
-    handleCalculateRoutes(newStart, newEnd);
+    // 3. Set Total Distance and Travel Duration
+    const dist = Number(found.total_distance_km) || 0;
+    if (dist > 0) {
+      setCustomDistanceKm(dist);
+      setModifiedDistanceKm(dist);
+    }
+    const mins = Number(found.estimated_travel_time_min) || 0;
+    if (mins > 0) {
+      setTravelHours(Math.floor(mins / 60));
+      setTravelMinutes(mins % 60);
+      setModifiedDurationMins(mins);
+    }
+
+    // 4. Parse Overview Polyline Coordinates
+    let polyCoords: [number, number][] = [];
+    if (found.overview_polyline) {
+      try {
+        const rawPoly = typeof found.overview_polyline === 'string' ? JSON.parse(found.overview_polyline) : found.overview_polyline;
+        if (Array.isArray(rawPoly) && rawPoly.length >= 2) {
+          polyCoords = rawPoly.map((pt: any) => {
+            if (Array.isArray(pt)) return [Number(pt[0]), Number(pt[1])];
+            if (pt && typeof pt === 'object') return [Number(pt.lat), Number(pt.lng)];
+            return null;
+          }).filter((pt): pt is [number, number] => pt !== null && !isNaN(pt[0]) && !isNaN(pt[1]));
+        }
+      } catch (e) {}
+    }
+
+    if (polyCoords.length >= 2) {
+      // EXACT ONE SINGLE SAVED ROUTE - NO ALTERNATIVE ROUTES!
+      const singleSavedRoute: AlternativeRoute = {
+        id: `saved-route-${found.id || 'single'}`,
+        name: found.route_name || `${newStart.name} to ${newEnd.name}`,
+        distanceKm: dist,
+        timeMinutes: mins,
+        tollGatesCount: parsedTolls.length,
+        stopsCount: parsedWaypoints.length,
+        summary: `Saved Route Corridor: ${found.route_name || 'Highway Route'} (${dist} km)`,
+        color: '#1A73E8',
+        coordinates: polyCoords,
+        tollGates: parsedTolls,
+        source: 'Saved Corridor'
+      };
+
+      setRoutes([singleSavedRoute]);
+      setSelectedRouteId(singleSavedRoute.id);
+      setModifiedPolyline(polyCoords);
+      setIsRouteModifiedByDrag(false);
+      setIsDraggableRoute(true);
+      setIsExcelRouteActive(true);
+    } else {
+      // Legacy fallback: single calculated route only (no alternative routes)
+      handleCalculateRoutes(newStart, newEnd, parsedWaypoints);
+    }
   };
 
   const handleSelectAxle = (newAxle: TruckAxleType) => {
@@ -911,24 +993,19 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           });
         };
 
-        // Execute queries in parallel for instant (<400ms) discovery of all alternative highways
-        const q1 = new Promise<any[]>((res) => {
-          ds.route({ origin, destination, travelMode: (window as any).google.maps.TravelMode.DRIVING, provideRouteAlternatives: true }, (r: any, s: any) => res(s === 'OK' && r?.routes ? r.routes : []));
-        });
-        const q2 = new Promise<any[]>((res) => {
-          ds.route({ origin, destination, travelMode: (window as any).google.maps.TravelMode.DRIVING, provideRouteAlternatives: true, avoidTolls: true }, (r: any, s: any) => res(s === 'OK' && r?.routes ? r.routes : []));
-        });
-        const q3 = new Promise<any[]>((res) => {
-          ds.route({ origin, destination, travelMode: (window as any).google.maps.TravelMode.DRIVING, provideRouteAlternatives: true, avoidHighways: true }, (r: any, s: any) => res(s === 'OK' && r?.routes ? r.routes : []));
-        });
-
-        Promise.all([q1, q2, q3]).then(([res1, res2, res3]) => {
-          addRoutes(res1);
-          addRoutes(res2, 'Toll-Free Route');
-          addRoutes(res3, 'State Arterial Highway');
-          resolve(collected.length > 0 ? collected.slice(0, 4) : null);
-        }).catch(() => {
-          resolve(collected.length > 0 ? collected.slice(0, 4) : null);
+        // Execute single direct query for fastest highway corridor (provideRouteAlternatives: false - NO alternative routes)
+        ds.route({
+          origin,
+          destination,
+          travelMode: (window as any).google.maps.TravelMode.DRIVING,
+          provideRouteAlternatives: false
+        }, (r: any, s: any) => {
+          if (s === 'OK' && r?.routes && r.routes.length > 0) {
+            addRoutes([r.routes[0]]);
+            resolve(collected.length > 0 ? [collected[0]] : null);
+          } else {
+            resolve(null);
+          }
         });
       } catch (e) {
         resolve(null);
@@ -987,45 +1064,19 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       // 3. Combine ONLY GENUINELY DIFFERENT physical road corridors
       const combined: AlternativeRoute[] = [];
 
-      function isDifferentFromCombined(coords: [number, number][], distKm: number) {
-        if (!coords || coords.length < 2) return false;
-        for (const ex of combined) {
-          if (Math.abs(ex.distanceKm - distKm) < 2.0) {
-            const exMid = ex.coordinates[Math.floor(ex.coordinates.length / 2)];
-            const candMid = coords[Math.floor(coords.length / 2)];
-            const dLat = (exMid[0] - candMid[0]) * 111;
-            const dLng = (exMid[1] - candMid[1]) * 111 * Math.cos((exMid[0] * Math.PI) / 180);
-            const dist = Math.sqrt(dLat * dLat + dLng * dLng);
-            if (dist < 4.0) return false; // same road corridor
-          }
-        }
-        return true;
-      }
-
-      // Add Google routes first
+      // Add single Google route first
       if (googleRoutes && googleRoutes.length > 0) {
-        for (const gr of googleRoutes) {
-          if (combined.length >= 4) break;
-          if (isDifferentFromCombined(gr.coordinates, gr.distanceKm)) {
-            combined.push(gr);
-          }
-        }
+        combined.push(googleRoutes[0]);
+      } else if (backendRoutes && backendRoutes.length > 0) {
+        combined.push(backendRoutes[0]);
       }
 
-      // Add backend snapped distinct highway corridors for remaining options up to 4
-      for (const br of backendRoutes) {
-        if (combined.length >= 4) break;
-        if (isDifferentFromCombined(br.coordinates, br.distanceKm)) {
-          combined.push(br);
-        }
-      }
-
-      // Re-index clean names and distinct theme colors
-      const finalRoutes = combined.map((r, i) => ({
+      // Single Authentic Route ONLY - Never generate or display alternative routes!
+      const finalRoutes = combined.slice(0, 1).map((r) => ({
         ...r,
-        id: `route-opt-${i + 1}`,
-        name: i === 0 ? r.name.replace(/\(.*?\)/, '').trim() + ' (Fastest / Recommended)' : r.name,
-        color: GOOGLE_ROUTE_COLORS[i % GOOGLE_ROUTE_COLORS.length]
+        id: 'route-opt-1',
+        name: r.name.replace(/\(.*?\)/, '').trim(),
+        color: '#1A73E8'
       }));
 
       if (finalRoutes.length > 0) {
