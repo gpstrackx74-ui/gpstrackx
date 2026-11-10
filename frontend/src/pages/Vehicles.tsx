@@ -472,16 +472,44 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
 
         function splitLatLong(str: string): { lat: number; lng: number } | null {
           if (!str) return null;
-          const parts = str.split(',').map(p => p.trim());
-          if (parts.length >= 2) {
-            const lat = parseFloat(parts[0]);
-            const lng = parseFloat(parts[1]);
-            if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+          const clean = String(str).replace(/°/g, '').trim();
+          const parts = clean.split(/[,;\/]+/).map(p => parseFloat(p.replace(/[^\d.\-+]/g, '').trim()));
+          if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            return { lat: parts[0], lng: parts[1] };
           }
           return null;
         }
 
-        const validPoints: Array<{ lat: number; lng: number; name: string }> = [];
+        function parseSingleCoord(val: any): number | null {
+          if (val === undefined || val === null) return null;
+          if (typeof val === 'number') return isFinite(val) ? val : null;
+          const clean = String(val).replace(/°/g, '').replace(/[^\d.,\-+]/g, '').trim();
+          const num = parseFloat(clean);
+          return !isNaN(num) && isFinite(num) ? num : null;
+        }
+
+        const rawPoints: Array<{ lat: number; lng: number; name: string }> = [];
+
+        const addPointIfValid = (lat: number | null, lng: number | null, name?: string) => {
+          if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) return;
+          if (lat < 6 || lat > 38 || lng < 68 || lng > 98) return;
+
+          const roundedLat = parseFloat(lat.toFixed(6));
+          const roundedLng = parseFloat(lng.toFixed(6));
+
+          if (rawPoints.length > 0) {
+            const last = rawPoints[rawPoints.length - 1];
+            if (Math.abs(last.lat - roundedLat) < 0.00003 && Math.abs(last.lng - roundedLng) < 0.00003) {
+              return;
+            }
+          }
+
+          rawPoints.push({
+            lat: roundedLat,
+            lng: roundedLng,
+            name: name || `Point #${rawPoints.length + 1}`
+          });
+        };
 
         rawRows.forEach((row, i) => {
           let startLat: number | null = null, startLng: number | null = null, startLoc = '';
@@ -492,59 +520,87 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
             const k = key.toLowerCase().trim();
             const val = row[key];
 
-            if (k.includes('start') && (k.includes('lat') || k.includes('coord'))) {
-              const coords = splitLatLong(parseCoordString(val));
+            if (k.includes('start') && (k.includes('lat') || k.includes('coord') || k.includes('point'))) {
+              const coords = splitLatLong(val);
               if (coords) {
                 startLat = coords.lat;
                 startLng = coords.lng;
               }
-            } else if (k.includes('end') && (k.includes('lat') || k.includes('coord'))) {
-              const coords = splitLatLong(parseCoordString(val));
+            } else if (k.includes('end') && (k.includes('lat') || k.includes('coord') || k.includes('point'))) {
+              const coords = splitLatLong(val);
               if (coords) {
                 endLat = coords.lat;
                 endLng = coords.lng;
               }
-            } else if (k.includes('start') && (k.includes('loc') || k.includes('address') || k.includes('name'))) {
+            } else if (k.includes('start') && (k.includes('loc') || k.includes('address') || k.includes('name') || k.includes('city'))) {
               startLoc = String(val).trim();
-            } else if (k.includes('end') && (k.includes('loc') || k.includes('address') || k.includes('name'))) {
+            } else if (k.includes('end') && (k.includes('loc') || k.includes('address') || k.includes('name') || k.includes('city'))) {
               endLoc = String(val).trim();
-            } else if (['latitude', 'lat', 'y'].includes(k)) {
-              const n = parseFloat(parseCoordString(val));
-              if (!isNaN(n)) singleLat = n;
-            } else if (['longitude', 'lng', 'lon', 'long', 'x'].includes(k)) {
-              const n = parseFloat(parseCoordString(val));
-              if (!isNaN(n)) singleLng = n;
+            } else if (['start_latitude', 'start_lat', 'startlat', 'start latitude', 'from_lat', 'origin_lat'].includes(k)) {
+              startLat = parseSingleCoord(val);
+            } else if (['start_longitude', 'start_lng', 'startlng', 'start longitude', 'from_lng', 'origin_lng', 'start_lon'].includes(k)) {
+              startLng = parseSingleCoord(val);
+            } else if (['end_latitude', 'end_lat', 'endlat', 'end latitude', 'to_lat', 'dest_lat'].includes(k)) {
+              endLat = parseSingleCoord(val);
+            } else if (['end_longitude', 'end_lng', 'endlng', 'end longitude', 'to_lng', 'dest_lng', 'end_lon'].includes(k)) {
+              endLng = parseSingleCoord(val);
+            } else if (['latitude', 'lat', 'y', 'lat.'].includes(k)) {
+              singleLat = parseSingleCoord(val);
+            } else if (['longitude', 'lng', 'lon', 'long', 'x', 'long.'].includes(k)) {
+              singleLng = parseSingleCoord(val);
             } else if (['location', 'location name', 'address', 'name', 'city'].includes(k)) {
               singleLoc = String(val).trim();
             }
           }
 
           if (startLat !== null && startLng !== null) {
-            validPoints.push({
-              lat: parseFloat(startLat.toFixed(6)),
-              lng: parseFloat(startLng.toFixed(6)),
-              name: startLoc || `Leg #${validPoints.length + 1} Origin`
-            });
-            if (i === rawRows.length - 1 && endLat !== null && endLng !== null) {
-              validPoints.push({
-                lat: parseFloat(endLat.toFixed(6)),
-                lng: parseFloat(endLng.toFixed(6)),
-                name: endLoc || `Trip Destination`
-              });
+            addPointIfValid(startLat, startLng, startLoc || `Point #${rawPoints.length + 1}`);
+            if (endLat !== null && endLng !== null) {
+              addPointIfValid(endLat, endLng, endLoc || (i === rawRows.length - 1 ? 'Destination' : `Point #${rawPoints.length + 1}`));
             }
           } else if (singleLat !== null && singleLng !== null) {
-            validPoints.push({
-              lat: parseFloat(singleLat.toFixed(6)),
-              lng: parseFloat(singleLng.toFixed(6)),
-              name: singleLoc || `Point #${validPoints.length + 1}`
-            });
+            addPointIfValid(singleLat, singleLng, singleLoc || `Point #${rawPoints.length + 1}`);
           }
         });
+
+        // Filter isolated GPS drift spikes
+        const validPoints: typeof rawPoints = [];
+        for (let i = 0; i < rawPoints.length; i++) {
+          const curr = rawPoints[i];
+          if (i > 0 && i < rawPoints.length - 1) {
+            const prev = rawPoints[i - 1];
+            const next = rawPoints[i + 1];
+            const distToPrev = Math.hypot(curr.lat - prev.lat, curr.lng - prev.lng);
+            const distToNext = Math.hypot(curr.lat - next.lat, curr.lng - next.lng);
+            const distDirect = Math.hypot(next.lat - prev.lat, next.lng - prev.lng);
+            if (distToPrev > 0.15 && distToNext > 0.15 && distDirect < 0.05) {
+              continue;
+            }
+          }
+          validPoints.push(curr);
+        }
 
         if (validPoints.length < 2) {
           alert('Could not detect coordinates in ' + detailsSheetName);
           return;
         }
+
+        // Calculate accurate distance
+        let computedDist = 0;
+        for (let i = 0; i < validPoints.length - 1; i++) {
+          const p1 = validPoints[i];
+          const p2 = validPoints[i + 1];
+          const R = 6371;
+          const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+          const dLon = (p2.lng - p1.lng) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          const cc = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          computedDist += R * cc;
+        }
+
+        const calculatedDistKm = summaryMeta.distanceKm > 0 ? summaryMeta.distanceKm : parseFloat(computedDist.toFixed(1));
 
         setTripExcelSummary(summaryMeta);
         setTripExcelPoints(validPoints);
@@ -559,7 +615,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
           route_name: `Trip #${tripNum}: ${startLoc} to ${endLoc}`,
           start_location_name: validPoints[0].name,
           end_location_name: validPoints[validPoints.length - 1].name,
-          total_distance_km: String(summaryMeta.distanceKm || (Math.round(validPoints.length * 14.5))),
+          total_distance_km: String(calculatedDistKm),
           stoppages_count: prev.stoppages_count || '2',
           trip_date: summaryMeta.startDate ? summaryMeta.startDate.split(',')[0].trim() : prev.trip_date
         }));
@@ -653,7 +709,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       distanceKm: Number(tripForm.total_distance_km) || 0,
       timeMinutes: 180,
       coordinates: previewPolyline,
-      color: '#E60012',
+      color: '#1A73E8',
       isPrimary: true,
       summary: 'Trip Corridor',
       tollGatesCount: modalTolls.length,
@@ -1750,7 +1806,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                       endPoint={modalEndPoint}
                       stoppages={modalStoppages}
                       tollGates={modalTolls}
-                      isDraggableRoute={true}
+                      isDraggableRoute={false}
                       onRouteChange={handleModalRouteDrag}
                     />
 

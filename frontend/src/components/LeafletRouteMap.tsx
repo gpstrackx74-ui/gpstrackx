@@ -232,10 +232,12 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
 
       // Outer outline for selected route for crisp contrast
       if (isSelected) {
+        const isBlue = route.color === '#1A73E8' || route.color === '#2563EB' || route.color === '#3B82F6' || !route.color;
+        const glowColor = isBlue ? '#93C5FD' : '#FEE2E2';
         const glow = L.polyline(latLngs, {
-          color: '#FEE2E2',
-          weight: 10,
-          opacity: 0.9,
+          color: glowColor,
+          weight: 9,
+          opacity: 0.6,
           lineCap: 'round',
           lineJoin: 'round'
         });
@@ -243,7 +245,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       }
 
       const polyline = L.polyline(latLngs, {
-        color: isSelected ? (route.color || '#EF4444') : (route.color || '#94A3B8'),
+        color: isSelected ? (route.color || '#1A73E8') : (route.color || '#94A3B8'),
         weight: isSelected ? 6 : 4,
         opacity: isSelected ? 1.0 : 0.65,
         dashArray: isSelected ? undefined : '6, 8',

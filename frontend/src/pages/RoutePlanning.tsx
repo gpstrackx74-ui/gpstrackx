@@ -287,16 +287,46 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
           function splitLatLong(str: string): { lat: number; lng: number } | null {
             if (!str) return null;
-            const parts = str.split(',').map(p => p.trim());
-            if (parts.length >= 2) {
-              const lat = parseFloat(parts[0]);
-              const lng = parseFloat(parts[1]);
-              if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+            const clean = String(str).replace(/°/g, '').trim();
+            const parts = clean.split(/[,;\/]+/).map(p => parseFloat(p.replace(/[^\d.\-+]/g, '').trim()));
+            if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+              return { lat: parts[0], lng: parts[1] };
             }
             return null;
           }
 
-          const validPoints: Array<{ lat: number; lng: number; name: string }> = [];
+          function parseSingleCoord(val: any): number | null {
+            if (val === undefined || val === null) return null;
+            if (typeof val === 'number') return isFinite(val) ? val : null;
+            const clean = String(val).replace(/°/g, '').replace(/[^\d.,\-+]/g, '').trim();
+            const num = parseFloat(clean);
+            return !isNaN(num) && isFinite(num) ? num : null;
+          }
+
+          const rawPoints: Array<{ lat: number; lng: number; name: string }> = [];
+
+          const addPointIfValid = (lat: number | null, lng: number | null, name?: string) => {
+            if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) return;
+            // Coordinate sanity bounds for India (lat 6-38, lng 68-98)
+            if (lat < 6 || lat > 38 || lng < 68 || lng > 98) return;
+
+            const roundedLat = parseFloat(lat.toFixed(6));
+            const roundedLng = parseFloat(lng.toFixed(6));
+
+            if (rawPoints.length > 0) {
+              const last = rawPoints[rawPoints.length - 1];
+              // Skip micro-duplicates within ~2 meters
+              if (Math.abs(last.lat - roundedLat) < 0.00003 && Math.abs(last.lng - roundedLng) < 0.00003) {
+                return;
+              }
+            }
+
+            rawPoints.push({
+              lat: roundedLat,
+              lng: roundedLng,
+              name: name || `Point #${rawPoints.length + 1}`
+            });
+          };
 
           rawRows.forEach((row, i) => {
             let startLat: number | null = null, startLng: number | null = null, startLoc = '';
@@ -307,56 +337,68 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               const k = key.toLowerCase().trim();
               const val = row[key];
 
-              // Single column with 'Start lat, lng' e.g. 22.07513200°, 82.28094000°
-              if (k.includes('start') && (k.includes('lat') || k.includes('coord'))) {
-                const coords = splitLatLong(parseCoordString(val));
+              // Combined Start Lat/Lng column: 'start lat, lng', 'start lat,lng', 'from lat, lng'
+              if (k.includes('start') && (k.includes('lat') || k.includes('coord') || k.includes('point'))) {
+                const coords = splitLatLong(val);
                 if (coords) {
                   startLat = coords.lat;
                   startLng = coords.lng;
                 }
-              } else if (k.includes('end') && (k.includes('lat') || k.includes('coord'))) {
-                const coords = splitLatLong(parseCoordString(val));
+              } else if (k.includes('end') && (k.includes('lat') || k.includes('coord') || k.includes('point'))) {
+                const coords = splitLatLong(val);
                 if (coords) {
                   endLat = coords.lat;
                   endLng = coords.lng;
                 }
-              } else if (k.includes('start') && (k.includes('loc') || k.includes('address') || k.includes('name'))) {
+              } else if (k.includes('start') && (k.includes('loc') || k.includes('address') || k.includes('name') || k.includes('city'))) {
                 startLoc = String(val).trim();
-              } else if (k.includes('end') && (k.includes('loc') || k.includes('address') || k.includes('name'))) {
+              } else if (k.includes('end') && (k.includes('loc') || k.includes('address') || k.includes('name') || k.includes('city'))) {
                 endLoc = String(val).trim();
-              } else if (['latitude', 'lat', 'y'].includes(k)) {
-                const n = parseFloat(parseCoordString(val));
-                if (!isNaN(n)) singleLat = n;
-              } else if (['longitude', 'lng', 'lon', 'long', 'x'].includes(k)) {
-                const n = parseFloat(parseCoordString(val));
-                if (!isNaN(n)) singleLng = n;
+              } else if (['start_latitude', 'start_lat', 'startlat', 'start latitude', 'from_lat', 'origin_lat'].includes(k)) {
+                startLat = parseSingleCoord(val);
+              } else if (['start_longitude', 'start_lng', 'startlng', 'start longitude', 'from_lng', 'origin_lng', 'start_lon'].includes(k)) {
+                startLng = parseSingleCoord(val);
+              } else if (['end_latitude', 'end_lat', 'endlat', 'end latitude', 'to_lat', 'dest_lat'].includes(k)) {
+                endLat = parseSingleCoord(val);
+              } else if (['end_longitude', 'end_lng', 'endlng', 'end longitude', 'to_lng', 'dest_lng', 'end_lon'].includes(k)) {
+                endLng = parseSingleCoord(val);
+              } else if (['latitude', 'lat', 'y', 'lat.'].includes(k)) {
+                singleLat = parseSingleCoord(val);
+              } else if (['longitude', 'lng', 'lon', 'long', 'x', 'long.'].includes(k)) {
+                singleLng = parseSingleCoord(val);
               } else if (['location', 'location name', 'address', 'name', 'city'].includes(k)) {
                 singleLoc = String(val).trim();
               }
             }
 
+            // Both Start AND End of each segment are added to guarantee NO turning points are lost!
             if (startLat !== null && startLng !== null) {
-              validPoints.push({
-                lat: parseFloat(startLat.toFixed(6)),
-                lng: parseFloat(startLng.toFixed(6)),
-                name: startLoc || `Leg #${validPoints.length + 1} Origin`
-              });
-              // If last row, also append the final Destination point
-              if (i === rawRows.length - 1 && endLat !== null && endLng !== null) {
-                validPoints.push({
-                  lat: parseFloat(endLat.toFixed(6)),
-                  lng: parseFloat(endLng.toFixed(6)),
-                  name: endLoc || `Trip Final Destination`
-                });
+              addPointIfValid(startLat, startLng, startLoc || `Point #${rawPoints.length + 1}`);
+              if (endLat !== null && endLng !== null) {
+                addPointIfValid(endLat, endLng, endLoc || (i === rawRows.length - 1 ? 'Destination' : `Point #${rawPoints.length + 1}`));
               }
             } else if (singleLat !== null && singleLng !== null) {
-              validPoints.push({
-                lat: parseFloat(singleLat.toFixed(6)),
-                lng: parseFloat(singleLng.toFixed(6)),
-                name: singleLoc || `Point #${validPoints.length + 1}`
-              });
+              addPointIfValid(singleLat, singleLng, singleLoc || `Point #${rawPoints.length + 1}`);
             }
           });
+
+          // Clean isolated GPS drift spikes (transient jumps that return immediately)
+          const validPoints: typeof rawPoints = [];
+          for (let i = 0; i < rawPoints.length; i++) {
+            const curr = rawPoints[i];
+            if (i > 0 && i < rawPoints.length - 1) {
+              const prev = rawPoints[i - 1];
+              const next = rawPoints[i + 1];
+              const distToPrev = Math.hypot(curr.lat - prev.lat, curr.lng - prev.lng);
+              const distToNext = Math.hypot(curr.lat - next.lat, curr.lng - next.lng);
+              const distDirect = Math.hypot(next.lat - prev.lat, next.lng - prev.lng);
+              // Outlier spike: shoots > 15 km away while previous and next points are close (< 5 km)
+              if (distToPrev > 0.15 && distToNext > 0.15 && distDirect < 0.05) {
+                continue; // Skip spike point
+              }
+            }
+            validPoints.push(curr);
+          }
 
           if (validPoints.length < 2) {
             alert('Could not detect valid GPS coordinates in ' + detailsSheetName + '. Please verify the Excel format has Start lat, lng or Latitude/Longitude.');
@@ -377,7 +419,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             address: `GPS: ${validPoints[validPoints.length - 1].lat}, ${validPoints[validPoints.length - 1].lng}`
           };
 
-          // 100% Accurate Distance Calculation using all raw imported coordinates
+          // 100% Accurate Cumulative Road Distance Calculation using all imported coordinates
           let computedDist = 0;
           for (let i = 0; i < validPoints.length - 1; i++) {
             const p1 = validPoints[i];
@@ -402,56 +444,48 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             }
           }
 
-          // SMART DOWNSAMPLING: Keep road geometry 100% accurate while limiting map vertices to max 350 points.
-          // This ensures 0% latency, 60fps buttery-smooth map rendering, and 0 browser memory lag!
-          const maxMapPoints = 350;
-          let displayPolyline: [number, number][];
-          if (validPoints.length <= maxMapPoints) {
-            displayPolyline = validPoints.map(p => [p.lat, p.lng]);
-          } else {
-            const stride = Math.ceil(validPoints.length / maxMapPoints);
-            displayPolyline = [];
-            for (let i = 0; i < validPoints.length; i += stride) {
-              displayPolyline.push([validPoints[i].lat, validPoints[i].lng]);
+          // Full-fidelity polyline: preserve 100% of vertices so all turns and curves are followed accurately
+          let displayPolyline: [number, number][] = validPoints.map(p => [p.lat, p.lng]);
+          if (validPoints.length > 3000) {
+            const step = Math.ceil(validPoints.length / 2500);
+            const filtered: [number, number][] = [];
+            for (let i = 0; i < validPoints.length; i += step) {
+              filtered.push([validPoints[i].lat, validPoints[i].lng]);
             }
-            const lastPt = validPoints[validPoints.length - 1];
-            if (
-              displayPolyline[displayPolyline.length - 1][0] !== lastPt.lat ||
-              displayPolyline[displayPolyline.length - 1][1] !== lastPt.lng
-            ) {
-              displayPolyline.push([lastPt.lat, lastPt.lng]);
-            }
+            const last = validPoints[validPoints.length - 1];
+            filtered.push([last.lat, last.lng]);
+            displayPolyline = filtered;
           }
 
           setStartPoint(start);
           setEndPoint(end);
 
-          // Automatically place 2 realistic transit halts along the route corridor
-          const autoStops: Stoppage[] = [
-            {
-              sequence_order: 1,
-              name: `${start.name.split(',')[0]} Transit Halt & Fuel Bay`,
-              address: `Midway Highway Rest Bay`,
-              lat: parseFloat((start.lat + (end.lat - start.lat) * 0.35).toFixed(6)),
-              lng: parseFloat((start.lng + (end.lng - start.lng) * 0.35).toFixed(6)),
-              duration: 20,
-              stop_duration_mins: 20
-            },
-            {
-              sequence_order: 2,
-              name: `Industrial Express Rest Point & Dhaba`,
-              address: `Commercial Highway Logistics Rest Area`,
-              lat: parseFloat((start.lat + (end.lat - start.lat) * 0.70).toFixed(6)),
-              lng: parseFloat((start.lng + (end.lng - start.lng) * 0.70).toFixed(6)),
-              duration: 20,
-              stop_duration_mins: 20
-            }
-          ];
+          // Place 2-3 stoppages directly along the actual road polyline so they sit accurately on the road
+          const stopsCount = Math.max(1, Math.min(5, parseInt(stopsInput) || 2));
+          const autoStops: Stoppage[] = [];
+          for (let i = 0; i < stopsCount; i++) {
+            const ratio = (i + 1) / (stopsCount + 1);
+            const pIdx = Math.min(displayPolyline.length - 1, Math.max(0, Math.floor(displayPolyline.length * ratio)));
+            const pt = displayPolyline[pIdx] || [start.lat, start.lng];
+            const ptName = validPoints[pIdx]?.name && !validPoints[pIdx].name.startsWith('Point #') && !validPoints[pIdx].name.startsWith('Leg #')
+              ? validPoints[pIdx].name
+              : `Transit Halt #${i + 1}`;
+            autoStops.push({
+              id: i + 1,
+              sequence_order: i + 1,
+              name: ptName,
+              address: `Highway Stoppage at ${pt[0].toFixed(4)}, ${pt[1].toFixed(4)}`,
+              lat: pt[0],
+              lng: pt[1],
+              duration: 25,
+              stop_duration_mins: 25
+            });
+          }
 
           setStoppages(autoStops);
-          setStopsInput('2');
+          setStopsInput(String(autoStops.length));
           setImportedWaypointsCount(validPoints.length);
-          setIsDraggableRoute(true);
+          setIsDraggableRoute(false);
 
           if (summaryMeta.distanceKm > 0) {
             setCustomDistanceKm(summaryMeta.distanceKm);
@@ -492,41 +526,21 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           const autoCorridorName = `${summaryMeta.vehicleReg ? summaryMeta.vehicleReg + ': ' : ''}${start.name.split(',')[0]} to ${end.name.split(',')[0]}`;
           setCorridorNameInput(autoCorridorName);
 
-          // Calculate genuine curved highway driving route (Single Excel Route ONLY - No alternate routes!)
-          let highwayCoords: [number, number][] = displayPolyline;
-          let highwayDist = finalDistKm;
-          let highwayMins = totalMins;
+          // Build genuine curved road route directly from actual Excel GPS breadcrumbs (Single Excel Route ONLY - No alternate routes!)
+          // CRITICAL: DO NOT overwrite with Google Maps Directions or OSRM!
+          // Google Directions calculates a generic highway path (e.g. via Pamgarh) and throws away the actual GPS coordinates!
+          const highwayCoords: [number, number][] = displayPolyline;
+          const highwayDist = finalDistKm;
+          const highwayMins = totalMins;
 
-          // Try Google Maps driving route for real highway road curve
-          const googleRoutes = await calculateWithGoogleMaps(start, end, autoStops);
-          if (googleRoutes && googleRoutes.length > 0) {
-            highwayCoords = googleRoutes[0].coordinates;
-            highwayDist = summaryMeta.distanceKm > 0 ? summaryMeta.distanceKm : googleRoutes[0].distanceKm;
-            highwayMins = summaryMeta.runningTime ? totalMins : (googleRoutes[0].timeMinutes || totalMins);
-          } else {
-            try {
-              const res = await api.calculateRoutes({
-                origin: start,
-                destination: end,
-                waypoints: autoStops,
-                manualTolls: manualTolls
-              });
-              if (res.routes && res.routes.length > 0 && res.routes[0].coordinates?.length > 1) {
-                highwayCoords = res.routes[0].coordinates;
-                highwayDist = summaryMeta.distanceKm > 0 ? summaryMeta.distanceKm : (res.routes[0].distanceKm || highwayDist);
-                highwayMins = summaryMeta.runningTime ? totalMins : (res.routes[0].timeMinutes || highwayMins);
-              }
-            } catch (e) {}
-          }
-
-          // Detect all FASTag tolls on this route corridor
+          // Detect all FASTag tolls on this actual route corridor
           const detectedTolls = detectRealTollsOnRoute(highwayCoords, 1.2, selectedAxle);
           const realTolls = detectedTolls.map(t => ({
             ...t,
             charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
           }));
 
-          // EXACTLY ONE SINGLE EXCEL ROUTE - NO ALTERNATIVE ROUTES!
+          // EXACTLY ONE SINGLE EXCEL ROUTE - AUTHENTIC BLUE ROUTE (MATCHING IMAGE 1)
           const singleExcelRoute: AlternativeRoute = {
             id: 'excel-exact-gps-route',
             name: autoCorridorName,
@@ -535,7 +549,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             tollGatesCount: realTolls.length,
             stopsCount: autoStops.length,
             summary: `Excel Highway Route (${validPoints.length} Points, ${realTolls.length} Tolls)`,
-            color: '#E60012',
+            color: '#1A73E8', // Royal Google Maps Blue (matching Image 1)
             coordinates: highwayCoords,
             tollGates: realTolls
           };
@@ -547,7 +561,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           setTravelHours(Math.floor(highwayMins / 60));
           setTravelMinutes(highwayMins % 60);
           setModifiedPolyline(highwayCoords);
-          setIsDraggableRoute(true);
+          setIsDraggableRoute(false); // Clean crisp polyline without draggable circle clutter!
         } catch (err: any) {
           alert('Failed to read Excel file: ' + err.message);
         } finally {

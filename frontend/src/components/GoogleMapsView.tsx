@@ -309,12 +309,14 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       bounds.extend(path[path.length - 1]);
 
       if (isSelected) {
-        // Glow behind selected preferred route
+        // Subtle glow / contrast border behind selected route
+        const isBlue = route.color === '#1A73E8' || route.color === '#2563EB' || route.color === '#3B82F6' || !route.color;
+        const glowColor = isBlue ? '#93C5FD' : '#FEE2E2';
         const glow = new google.maps.Polyline({
           path,
-          strokeColor: '#FEE2E2',
-          strokeOpacity: 0.9,
-          strokeWeight: 11,
+          strokeColor: glowColor,
+          strokeOpacity: 0.6,
+          strokeWeight: 9,
           map,
           zIndex: 10
         });
@@ -323,9 +325,9 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
 
       const polyline = new google.maps.Polyline({
         path,
-        strokeColor: route.color || (isSelected ? '#E60012' : '#3B82F6'),
+        strokeColor: route.color || (isSelected ? '#1A73E8' : '#3B82F6'),
         strokeOpacity: isSelected ? 1.0 : 0.85,
-        strokeWeight: isSelected ? 7 : 5,
+        strokeWeight: isSelected ? 6 : 4.5,
         map,
         zIndex: isSelected ? 30 : 15,
         editable: Boolean(isSelected && isDraggableRoute),

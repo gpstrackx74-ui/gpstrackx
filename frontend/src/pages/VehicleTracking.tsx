@@ -392,7 +392,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       tollGatesCount: routeTolls.length,
       stopsCount: stoppages.length,
       summary: cleanRouteName,
-      color: activeRoute.route_color || '#EF4444',
+      color: activeRoute.route_color || '#1A73E8',
       coordinates: parsedCoordinates,
       tollGates: routeTolls
     }];
