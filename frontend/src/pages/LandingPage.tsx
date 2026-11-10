@@ -20,7 +20,6 @@ import {
   Phone,
   Check
 } from 'lucide-react';
-import { InteractiveMap } from '../components/InteractiveMap';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -296,7 +295,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             muted
             playsInline
             preload="auto"
-            src="/hero-video.mp4?v=hd_20261110_final"
+            src="/hero-video.mp4?v=hd_1026mb_update"
             onCanPlay={(e) => {
               const v = e.currentTarget;
               v.muted = true;
@@ -305,7 +304,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             className="w-full h-full object-cover opacity-100 transition-opacity duration-700"
             style={{ objectFit: 'cover' }}
           >
-            <source src="/hero-video.mp4?v=hd_20261110_final" type="video/mp4" />
+            <source src="/hero-video.mp4?v=hd_1026mb_update" type="video/mp4" />
           </video>
           {/* Subtle Contrast Gradient so HD Video details remain 100% sharp & vivid */}
           <div className="absolute inset-0 bg-gradient-to-r from-[#101828]/65 via-[#101828]/25 to-transparent pointer-events-none" />
@@ -591,67 +590,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             {/* Toolbar */}
             <div className="p-4 border-b border-[#E5E7EB] bg-white flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-3">
-                <span className="font-bold text-[#101828]">Active Road Corridor: Mumbai Port → Pune Swargate</span>
-                <span className="text-[#101828]/30">|</span>
-                <span className="font-mono text-[#101828]/70">148.2 km • ~3h 45m</span>
+                <span className="font-bold text-[#101828]">Active Commercial Route Corridor: Bilaspur → Kasdol Leg</span>
+                <span className="text-[#101828]/30 hidden sm:inline">|</span>
+                <span className="font-mono text-[#101828]/70 hidden sm:inline">Accurate GPS Route & Stoppage Tracking</span>
               </div>
 
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1.5 text-xs text-[#101828] font-medium bg-[#F5F6F8] px-2.5 py-1 rounded-lg border border-[#E5E7EB]">
-                  <Flag className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" /> Start (Green Flag)
+                  <Flag className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" /> Start (Bilaspur)
                 </span>
                 <span className="flex items-center gap-1.5 text-xs text-[#101828] font-medium bg-[#F5F6F8] px-2.5 py-1 rounded-lg border border-[#E5E7EB]">
-                  <Flag className="w-3.5 h-3.5 text-[#E60012] fill-[#E60012]" /> Destination (Red Flag)
+                  <Flag className="w-3.5 h-3.5 text-[#E60012] fill-[#E60012]" /> Destination (Kasdol)
                 </span>
               </div>
             </div>
 
-            {/* Embedded Interactive Map */}
-            <div className="relative">
-              <InteractiveMap
-                height="450px"
-                center={[18.9220, 73.3500]}
-                zoom={9}
-                routes={[
-                  {
-                    id: 'landing-preview-1',
-                    name: 'Mumbai Port to Pune Swargate Express Corridor',
-                    distanceKm: 148.2,
-                    timeMinutes: 225,
-                    tollGatesCount: 3,
-                    stopsCount: 2,
-                    summary: 'Direct Highway Corridor via Mumbai-Pune Expressway',
-                    color: '#E60012',
-                    coordinates: [
-                      [18.9400, 72.8350],
-                      [18.9800, 72.8800],
-                      [19.0330, 73.0297],
-                      [19.0144, 73.1030],
-                      [18.8950, 73.2300],
-                      [18.7500, 73.4000],
-                      [18.6500, 73.7500],
-                      [18.5204, 73.8567]
-                    ]
-                  }
-                ]}
-                selectedRouteId="landing-preview-1"
-                startPoint={{ lat: 18.9400, lng: 72.8350, name: 'Mumbai CST Freight Terminal' }}
-                endPoint={{ lat: 18.5204, lng: 73.8567, name: 'Pune Swargate Logistics Depot' }}
-                stoppages={[
-                  { id: 1, sequence_order: 1, name: 'Navi Mumbai Hub', lat: 19.0330, lng: 73.0297, stop_duration_mins: 20 },
-                  { id: 2, sequence_order: 2, name: 'Lonavala Ghat Rest Bay', lat: 18.7500, lng: 73.4000, stop_duration_mins: 30 }
-                ]}
-                tollGates={[
-                  { id: 1, name: 'Khalapur Toll Plaza', lat: 18.8950, lng: 73.2300, charges: 340, is_manual: false, toll_type: 'FASTag ETC' },
-                  { id: 2, name: 'Talegaon Toll Plaza', lat: 18.6500, lng: 73.7500, charges: 215, is_manual: false, toll_type: 'FASTag ETC' }
-                ]}
-                vehiclePosition={{
-                  lat: 18.8950,
-                  lng: 73.2300,
-                  plate: 'MH12-RN-4589',
-                  speed: 61,
-                  status: 'moving'
-                }}
+            {/* Static Route Map Image Display */}
+            <div className="relative w-full bg-[#F8FAFC] flex items-center justify-center p-4 sm:p-8 overflow-hidden">
+              <img
+                src="/images/route-map-preview.jpg"
+                alt="GPSTrackX Accurate Live Route Corridor & Highway Stoppages"
+                className="max-h-[640px] w-auto max-w-full rounded-2xl shadow-lg border border-slate-200/90 object-contain hover:shadow-2xl transition-shadow duration-300"
               />
             </div>
           </div>
