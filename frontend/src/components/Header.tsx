@@ -181,7 +181,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div 
             onClick={() => onNavigateTab?.(isAdmin ? 'vehicle-tracking' : 'dashboard')}
             className="flex items-center gap-2 shrink-0 cursor-pointer hover:opacity-90 transition py-0.5"
-            title="GpsTrackX Fleet Platform"
+            title="GPSTrackX"
           >
             <img 
               src="/gpstrackx-brand.png" 

@@ -20,7 +20,7 @@ import {
 
 interface DashboardProps {
   onNavigateTab: (tab: string) => void;
-  onViewVehicle: (vehicleId: number, trip?: any) => void;
+  onViewVehicle: (vehicleId: number, trip?: any, source?: 'assigned-vehicle' | 'trip-history') => void;
   initialUserTab?: 'vehicle' | 'history';
   isLiveUserView?: boolean;
 }
@@ -165,7 +165,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const handleViewHistoricalTripOnMap = (trip: any, targetVehicleId: number) => {
     setHistoryModalVehicle(null);
-    onViewVehicle(targetVehicleId, trip);
+    onViewVehicle(targetVehicleId, trip, 'trip-history');
   };
 
   // Group trips date-wise for user dashboard view
@@ -561,7 +561,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             {v.route_name ? (
                               <button
                                 type="button"
-                                onClick={() => onViewVehicle(v.id)}
+                                onClick={() => onViewVehicle(v.id, null, 'assigned-vehicle')}
                                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] border border-red-200 transition cursor-pointer max-w-[210px] text-left"
                                 title="Click to view route on map"
                               >
@@ -578,7 +578,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => onViewVehicle(v.id)}
+                                onClick={() => onViewVehicle(v.id, null, 'assigned-vehicle')}
                                 className="px-2.5 py-1.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs transition border border-transparent flex items-center gap-1.5 cursor-pointer shadow-2xs"
                                 title="View Live Map & Route Details"
                               >

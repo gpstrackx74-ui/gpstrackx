@@ -23,6 +23,7 @@ const AppContent: React.FC = () => {
   const [userVehicles, setUserVehicles] = useState<any[]>([]);
   const [adminMapViewVehicleId, setAdminMapViewVehicleId] = useState<number | null>(null);
   const [selectedHistoricalTrip, setSelectedHistoricalTrip] = useState<any | null>(null);
+  const [viewSource, setViewSource] = useState<'assigned-vehicle' | 'trip-history'>('assigned-vehicle');
 
   // Automatically fetch accessible vehicles so Map View & Route Telemetry always have a target vehicle
   useEffect(() => {
@@ -84,10 +85,11 @@ const AppContent: React.FC = () => {
   }
 
   // Handle viewing vehicle details & live tracking
-  const handleViewVehicle = (id: number, trip?: any) => {
+  const handleViewVehicle = (id: number, trip?: any, source?: 'assigned-vehicle' | 'trip-history') => {
     setPreviousTab(currentTab === 'vehicles' ? 'vehicles' : currentTab === 'history' ? 'history' : 'dashboard');
     setSelectedVehicleId(id);
     setSelectedHistoricalTrip(trip || null);
+    setViewSource(source || (trip ? 'trip-history' : 'assigned-vehicle'));
     setCurrentTab('vehicle-tracking');
   };
 
@@ -151,6 +153,7 @@ const AppContent: React.FC = () => {
           ) : (
             <VehicleTracking
               vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
+              viewSource={viewSource}
               onBack={() => setCurrentTab('dashboard')}
               onSwitchVehicle={(vId) => setSelectedVehicleId(vId)}
             />
@@ -164,6 +167,7 @@ const AppContent: React.FC = () => {
                 <VehicleTracking
                   vehicleId={adminMapViewVehicleId}
                   historicalTrip={selectedHistoricalTrip}
+                  viewSource={viewSource}
                   onBack={() => {
                     setAdminMapViewVehicleId(null);
                     setSelectedHistoricalTrip(null);
@@ -175,9 +179,10 @@ const AppContent: React.FC = () => {
             ) : (
               <Dashboard
                 onNavigateTab={(tab) => setCurrentTab(tab)}
-                onViewVehicle={(vId, trip) => {
+                onViewVehicle={(vId, trip, source) => {
                   setAdminMapViewVehicleId(vId);
                   setSelectedHistoricalTrip(trip || null);
+                  setViewSource(source || (trip ? 'trip-history' : 'assigned-vehicle'));
                 }}
                 initialUserTab="vehicle"
                 isLiveUserView={true}
@@ -188,6 +193,7 @@ const AppContent: React.FC = () => {
               <VehicleTracking
                 vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
                 historicalTrip={selectedHistoricalTrip}
+                viewSource={viewSource}
                 onBack={() => {
                   setSelectedHistoricalTrip(null);
                   setCurrentTab(previousTab);

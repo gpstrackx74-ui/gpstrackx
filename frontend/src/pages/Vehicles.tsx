@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 interface VehiclesProps {
-  onViewVehicle: (vehicleId: number) => void;
+  onViewVehicle: (vehicleId: number, trip?: any, source?: 'assigned-vehicle' | 'trip-history') => void;
   onPlanRouteForVehicle?: (vehicleId: number) => void;
 }
 
@@ -741,11 +741,11 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       }
       const vehicleId = historyModalVehicle.id;
       setHistoryModalVehicle(null);
-      onViewVehicle(vehicleId);
+      onViewVehicle(vehicleId, trip, 'trip-history');
     } catch (err: any) {
       const vehicleId = historyModalVehicle.id;
       setHistoryModalVehicle(null);
-      onViewVehicle(vehicleId);
+      onViewVehicle(vehicleId, trip, 'trip-history');
     }
   };
 
@@ -1175,7 +1175,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() => onViewVehicle(v.id)}
+                            onClick={() => onViewVehicle(v.id, null, 'assigned-vehicle')}
                             className="px-3 py-1.5 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
                             title="Open Live User View & Route Telemetry"
                           >
