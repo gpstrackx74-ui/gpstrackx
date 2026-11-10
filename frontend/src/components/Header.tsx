@@ -185,7 +185,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <img 
               src="/gpstrackx-brand.png" 
-              alt="GpsTrackX" 
+              alt="GPSTrackX" 
               className="h-8 w-auto object-contain hidden sm:block" 
             />
             <div className="flex items-center gap-1.5 sm:hidden">

@@ -6,6 +6,10 @@ import { api } from '../api/client';
 import { Vehicle, User } from '../types';
 import { DMYDateInput } from '../components/DMYDateInput';
 import {
+  enhanceRouteWithRoadGeometry,
+  calculateCumulativeDistanceKm
+} from '../utils/routePolylineUtils';
+import {
   FileSpreadsheet,
   Navigation,
   History,
@@ -605,6 +609,23 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
         setTripExcelSummary(summaryMeta);
         setTripExcelPoints(validPoints);
         setSelectedCorridorForTripId('');
+
+        // Road curve smoothing for any sparse points so route hugs real road curves
+        const rawCoords: [number, number][] = validPoints.map(p => [p.lat, p.lng]);
+        enhanceRouteWithRoadGeometry(rawCoords).then(enhanced => {
+          if (enhanced && enhanced.length > 0) {
+            const finalPoints = enhanced.map((c, idx) => ({
+              name: idx === 0 ? validPoints[0].name : idx === enhanced.length - 1 ? validPoints[validPoints.length - 1].name : `Point #${idx + 1}`,
+              lat: c[0],
+              lng: c[1]
+            }));
+            setTripExcelPoints(finalPoints);
+            const accurateDist = calculateCumulativeDistanceKm(enhanced);
+            if (accurateDist > 0 && !summaryMeta.distanceKm) {
+              setTripForm(prev => ({ ...prev, total_distance_km: String(accurateDist) }));
+            }
+          }
+        });
 
         const startLoc = validPoints[0].name.split(',')[0];
         const endLoc = validPoints[validPoints.length - 1].name.split(',')[0];

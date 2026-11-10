@@ -272,11 +272,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             loop
             muted
             playsInline
-            className="w-full h-full object-cover opacity-85 scale-105"
+            className="w-full h-full object-cover opacity-90 scale-105 transition-opacity duration-700"
             poster="https://images.unsplash.com/photo-1519003722824-194d4455a60c?auto=format&fit=crop&w=1920&q=80"
           >
+            <source src="/hero-video.mp4?v=2" type="video/mp4" />
             <source src="/hero-video.mp4" type="video/mp4" />
-            <source src="/videos/hero-bg.mp4" type="video/mp4" />
           </video>
           {/* Lightened, High-Clarity Overlay to make background video vivid & clearly visible */}
           <div className="absolute inset-0 bg-gradient-to-r from-[#101828]/75 via-[#101828]/40 to-transparent" />

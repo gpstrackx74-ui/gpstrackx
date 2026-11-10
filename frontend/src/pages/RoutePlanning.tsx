@@ -12,6 +12,11 @@ import {
   AXLE_CONFIGURATIONS
 } from '../utils/realTolls';
 import {
+  enhanceRouteWithRoadGeometry,
+  calculateCumulativeDistanceKm,
+  calculateDurationMinutes
+} from '../utils/routePolylineUtils';
+import {
   MapPin,
   Trash2,
   Check,
@@ -434,16 +439,6 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             computedDist += R * cc;
           }
 
-          const finalDistKm = summaryMeta.distanceKm > 0 ? summaryMeta.distanceKm : parseFloat(computedDist.toFixed(1));
-
-          let totalMins = Math.round((finalDistKm / (summaryMeta.avgSpeed || 40)) * 60) || 120;
-          if (summaryMeta.runningTime) {
-            const tParts = summaryMeta.runningTime.split(':').map(Number);
-            if (tParts.length >= 2 && !isNaN(tParts[0]) && !isNaN(tParts[1])) {
-              totalMins = tParts[0] * 60 + tParts[1];
-            }
-          }
-
           // Full-fidelity polyline: preserve 100% of vertices so all turns and curves are followed accurately
           let displayPolyline: [number, number][] = validPoints.map(p => [p.lat, p.lng]);
           if (validPoints.length > 3000) {
@@ -455,6 +450,22 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             const last = validPoints[validPoints.length - 1];
             filtered.push([last.lat, last.lng]);
             displayPolyline = filtered;
+          }
+
+          // Natural road snapping & micro-curve smoothing: ensure route hugs real road curves without straight lines
+          const enhancedPolyline = await enhanceRouteWithRoadGeometry(displayPolyline);
+          displayPolyline = enhancedPolyline;
+
+          const accurateDist = calculateCumulativeDistanceKm(displayPolyline);
+          const finalDistKm = summaryMeta.distanceKm > 0 ? summaryMeta.distanceKm : (accurateDist > 0 ? accurateDist : parseFloat(computedDist.toFixed(1)));
+          let totalMins = Math.round((finalDistKm / (summaryMeta.avgSpeed || 40)) * 60) || 120;
+          if (summaryMeta.runningTime) {
+            const tParts = summaryMeta.runningTime.split(':').map(Number);
+            if (tParts.length >= 2 && !isNaN(tParts[0]) && !isNaN(tParts[1])) {
+              totalMins = tParts[0] * 60 + tParts[1];
+            }
+          } else {
+            totalMins = calculateDurationMinutes(finalDistKm, summaryMeta.avgSpeed || 42);
           }
 
           setStartPoint(start);
