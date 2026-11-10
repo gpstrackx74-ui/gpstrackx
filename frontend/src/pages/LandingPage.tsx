@@ -55,7 +55,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
         });
       }
     }
-  }, []);
+  }, [showIntro]);
 
   const headlineLine1 = [
     { text: 'Smarter', highlight: true },
@@ -296,6 +296,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             muted
             playsInline
             src="/hero-video.mp4"
+            onCanPlay={(e) => {
+              const v = e.currentTarget;
+              v.muted = true;
+              v.play().catch(() => {});
+            }}
             className="w-full h-full object-cover opacity-90 scale-105 transition-opacity duration-700"
           >
             <source src="/hero-video.mp4" type="video/mp4" />
