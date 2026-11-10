@@ -111,6 +111,88 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
 
   const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Sync Google Maps mapTypeId when mapType changes
+  useEffect(() => {
+    if (!mapInstanceRef.current || typeof (window as any).google?.maps === 'undefined') return;
+    try {
+      // Use HYBRID for satellite mode so roads, highway names, and cities remain clearly visible
+      const targetType = mapType === 'satellite' ? google.maps.MapTypeId.HYBRID : google.maps.MapTypeId.ROADMAP;
+      mapInstanceRef.current.setMapTypeId(targetType);
+    } catch (e) {
+      console.warn('Could not set Google Maps mapTypeId:', e);
+    }
+  }, [mapType]);
+
+  const handleToggleMapType = () => {
+    setMapType(prev => (prev === 'roadmap' ? 'satellite' : 'roadmap'));
+  };
+
+  const handleToggleFullscreen = () => {
+    const nextState = !isFullscreen;
+    setIsFullscreen(nextState);
+
+    try {
+      if (nextState) {
+        const el = wrapperRef.current;
+        if (el && el.requestFullscreen && !document.fullscreenElement) {
+          el.requestFullscreen().catch(() => {});
+        }
+      } else {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+    } catch (e) {}
+  };
+
+  // Exit fullscreen on Esc key or browser exit
+  useEffect(() => {
+    const onFsChange = () => {
+      const isDocFs = !!document.fullscreenElement;
+      if (!isDocFs && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isFullscreen]);
+
+  // Handle Google Maps canvas resize when entering or exiting fullscreen
+  useEffect(() => {
+    const t1 = setTimeout(() => {
+      if (mapInstanceRef.current && (window as any).google?.maps) {
+        google.maps.event.trigger(mapInstanceRef.current, 'resize');
+        const c = mapInstanceRef.current.getCenter();
+        if (c) mapInstanceRef.current.setCenter(c);
+      }
+    }, 100);
+
+    const t2 = setTimeout(() => {
+      if (mapInstanceRef.current && (window as any).google?.maps) {
+        google.maps.event.trigger(mapInstanceRef.current, 'resize');
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [isFullscreen]);
 
   // Initialize Map
   useEffect(() => {
@@ -838,36 +920,43 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   }, [vehiclePosition]);
 
   return (
-    <div className={`relative w-full rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs bg-white ${isFullscreen ? 'fixed inset-4 z-50 h-auto' : ''}`}>
+    <div
+      ref={wrapperRef}
+      className={
+        isFullscreen
+          ? 'fixed inset-0 z-[99999] w-screen h-screen rounded-none border-none bg-slate-900 flex flex-col overflow-hidden shadow-2xl'
+          : 'relative w-full rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs bg-white'
+      }
+    >
       {/* Top Map Action Bar */}
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-white/95 backdrop-blur-md p-1.5 rounded-xl border border-slate-200 shadow-sm">
+      <div className="absolute top-3 right-3 z-[100000] flex items-center bg-white/95 backdrop-blur-md p-1 rounded-xl border border-slate-200 shadow-md divide-x divide-slate-100">
         <button
           type="button"
-          onClick={() => {
-            const next = mapType === 'roadmap' ? 'satellite' : 'roadmap';
-            setMapType(next);
-            if (mapInstanceRef.current) mapInstanceRef.current.setMapTypeId(next);
-          }}
-          className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
-            mapType === 'satellite' ? 'bg-red-50 text-red-600 border border-red-200' : 'text-slate-700 hover:bg-slate-100'
+          onClick={handleToggleMapType}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+            mapType === 'satellite'
+              ? 'bg-red-600 text-white shadow-xs'
+              : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 active:scale-95'
           }`}
+          title={mapType === 'satellite' ? 'Active: Satellite Hybrid view (Click to switch to Roadmap)' : 'Active: Roadmap view (Click to switch to Satellite)'}
         >
-          <Layers className="w-3.5 h-3.5" />
+          <Layers className={`w-3.5 h-3.5 ${mapType === 'satellite' ? 'text-white' : 'text-slate-600'}`} />
           <span>{mapType === 'satellite' ? 'Satellite' : 'Roadmap'}</span>
         </button>
 
         <button
           type="button"
-          onClick={() => setIsFullscreen(!isFullscreen)}
-          className="p-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+          onClick={handleToggleFullscreen}
+          className="p-1.5 ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-all active:scale-95 cursor-pointer"
+          title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Expand to Fullscreen'}
         >
-          {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-red-600" /> : <Maximize2 className="w-3.5 h-3.5" />}
         </button>
       </div>
 
       {/* Mode Indicator Overlay */}
       {clickMode !== 'none' && clickMode !== 'manual-route' && (
-        <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200 shadow-md flex items-center gap-2">
+        <div className="absolute top-3 left-3 z-[100000] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200 shadow-md flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-red-600" />
           <span className="text-xs font-bold text-slate-900">
             {clickMode === 'start' && '👉 Click on Google Map to place Start Location (Green Flag)'}
@@ -880,7 +969,11 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       )}
 
       {/* Google Maps Container */}
-      <div ref={containerRef} style={{ height: isFullscreen ? '100%' : height, width: '100%' }} />
+      <div
+        ref={containerRef}
+        style={{ height: isFullscreen ? '100vh' : height, width: '100%' }}
+        className="w-full flex-1"
+      />
     </div>
   );
 };
