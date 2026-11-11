@@ -89,30 +89,33 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
 
   // Operational status resolution
   const isVehicleMovingStatus = (vehicle?.status as string) === 'moving';
-  const isRouteMovingStatus = activeRoute ? (activeRoute.operational_status === 'moving' && Number(activeRoute.is_active) !== 0) : false;
-  const isTripStopOrComplete = activeRoute ? (activeRoute.operational_status === 'stop' || activeRoute.operational_status === 'stopped' || Number(activeRoute.is_active) === 0) : false;
+  const isRouteMovingStatus = (activeRoute?.operational_status === 'moving') || (activeRoute?.is_active && isVehicleMovingStatus);
+  const isTripStopOrComplete = (activeRoute?.operational_status === 'stop' || activeRoute?.operational_status === 'stopped' || Number(activeRoute?.is_active) === 0);
 
   const isMoving = React.useMemo(() => {
+    // If reviewing a specific historical completed trip
     if (historicalTrip) {
       if (Number(historicalTrip.is_active) === 0 || historicalTrip.operational_status === 'stop' || historicalTrip.operational_status === 'stopped') {
         return false;
       }
-      return historicalTrip.operational_status === 'moving';
+      return historicalTrip.operational_status === 'moving' || (Boolean(historicalTrip.is_active) && isVehicleMovingStatus);
     }
+
+    // Active vehicle / new user / new vehicle:
+    // If vehicle status is moving, it is ALWAYS moving!
+    if (isVehicleMovingStatus) return true;
+    if (isRouteMovingStatus) return true;
     if (isTripStopOrComplete) return false;
-    if (activeRoute?.operational_status) return isRouteMovingStatus;
-    return isVehicleMovingStatus;
-  }, [historicalTrip, isTripStopOrComplete, activeRoute?.operational_status, isRouteMovingStatus, isVehicleMovingStatus]);
+    return false;
+  }, [historicalTrip, isTripStopOrComplete, isRouteMovingStatus, isVehicleMovingStatus]);
 
   const isStopped = (vehicle?.status as string) === 'stop' || (vehicle?.status as string) === 'stopped' || (activeRoute?.operational_status === 'stop');
   const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
 
   // LIVE MOVING MODE RULES:
-  // 1. If previous date is selected: ALWAYS show the full route polyline (isLiveMovingMode = false).
-  // 2. If current date is selected:
-  //    - If vehicle status is moving: route must NOT be shown, only moving vehicle (isLiveMovingMode = true).
-  //    - If vehicle status is stop / trip complete: route MUST be shown! (isLiveMovingMode = false).
-  const isLiveMovingMode = isMoving && isToday && !isPreviousDate;
+  // When vehicle is in moving status: NEVER show route polyline, ONLY show moving vehicle!
+  // When vehicle is stopped/inactive: Show full route polyline, pins, and playback simulator.
+  const isLiveMovingMode = isMoving;
 
   const [liveSpeed, setLiveSpeed] = useState<number>(48);
 
@@ -952,8 +955,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
               </div>
             )}
 
-            {/* VEHICLE ROUTE PLAYBACK CONTROLLER BAR (Admin Simulation Tool) */}
-            {isAdmin && activeRoute && parsedCoordinates.length > 0 && (
+            {/* VEHICLE ROUTE PLAYBACK CONTROLLER BAR (Admin Simulation Tool - Only when stopped/inactive, NEVER when moving) */}
+            {!isMoving && !isLiveMovingMode && isAdmin && activeRoute && parsedCoordinates.length > 0 && (
               <div className="mb-3.5 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/90 shadow-2xs space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">

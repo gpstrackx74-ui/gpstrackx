@@ -40,12 +40,13 @@ function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
+      email TEXT NOT NULL,
       password TEXT NOT NULL,
       phone TEXT,
       role TEXT DEFAULT 'user' CHECK(role IN ('admin', 'user')),
       status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
       avatar_color TEXT DEFAULT '#EF4444',
+      company_name TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);

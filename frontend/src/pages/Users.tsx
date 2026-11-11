@@ -438,12 +438,18 @@ export const UsersManagement: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleFormSubmit} autoComplete="off" className="space-y-4 text-xs">
+              {/* Hidden dummy inputs to prevent browser password managers from auto-filling admin credentials */}
+              <input type="text" name="prevent_autofill_user" tabIndex={-1} aria-hidden="true" className="hidden" />
+              <input type="password" name="prevent_autofill_pwd" tabIndex={-1} aria-hidden="true" className="hidden" />
+
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Full Name *</label>
                 <input
                   type="text"
                   required
+                  name="user_full_name"
+                  autoComplete="off"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="e.g. Rajesh Sharma"
@@ -455,6 +461,12 @@ export const UsersManagement: React.FC = () => {
                 <label className="block font-bold text-slate-700 mb-1">Email Address (Optional if Phone entered)</label>
                 <input
                   type="email"
+                  name="user_email_address_field"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  data-lpignore="true"
+                  data-form-type="other"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="e.g. rajesh@logistics.com"
@@ -466,6 +478,8 @@ export const UsersManagement: React.FC = () => {
                 <label className="block font-bold text-slate-700 mb-1">Company Name</label>
                 <input
                   type="text"
+                  name="user_company_name"
+                  autoComplete="off"
                   value={formData.company_name}
                   onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
                   placeholder="e.g. ABC Transports"
@@ -477,6 +491,8 @@ export const UsersManagement: React.FC = () => {
                 <label className="block font-bold text-slate-700 mb-1">Phone Number</label>
                 <input
                   type="text"
+                  name="user_phone_number"
+                  autoComplete="off"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="e.g. +91 98112 34567"
@@ -490,6 +506,10 @@ export const UsersManagement: React.FC = () => {
                 </label>
                 <input
                   type="password"
+                  name="user_new_password_field"
+                  autoComplete="new-password"
+                  data-lpignore="true"
+                  data-form-type="other"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="••••••••"

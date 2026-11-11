@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { InteractiveMap } from '../components/InteractiveMap';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { Vehicle, User } from '../types';
@@ -170,6 +170,44 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const [vehicleTrips, setVehicleTrips] = useState<any[]>([]);
   const [savedCorridorsForTrip, setSavedCorridorsForTrip] = useState<any[]>([]);
   const [selectedCorridorForTripId, setSelectedCorridorForTripId] = useState<string>('');
+
+  // Unified single list of all previous corridors and completed trips (no duplicate sections)
+  const unifiedCorridorsList = useMemo(() => {
+    const list: Array<{ id: string; label: string; raw: any }> = [];
+    const seen = new Set<string>();
+
+    // 1. Vehicle trips
+    (vehicleTrips || []).forEach((t: any, idx: number) => {
+      const name = (t.route_name || `Trip #${t.id || idx}`).replace(/\r?\n/g, ' ').trim();
+      const dist = Number(t.total_distance_km || 0);
+      const key = `${name.toLowerCase()}__${dist}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push({
+          id: `trip-${t.id}`,
+          label: `${name} (${dist} KM${t.trip_date ? ` • ${t.trip_date}` : ''})`,
+          raw: t
+        });
+      }
+    });
+
+    // 2. Saved corridors
+    (savedCorridorsForTrip || []).forEach((c: any, idx: number) => {
+      const name = (c.route_name || `Route #${c.id || idx}`).replace(/\r?\n/g, ' ').trim();
+      const dist = Number(c.total_distance_km || c.distance_km || 0);
+      const key = `${name.toLowerCase()}__${dist}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push({
+          id: `corridor-${c.id}`,
+          label: `${name} (${dist} KM)`,
+          raw: c
+        });
+      }
+    });
+
+    return list;
+  }, [vehicleTrips, savedCorridorsForTrip]);
   const [selectedOriginalWaypoints, setSelectedOriginalWaypoints] = useState<any[]>([]);
   const [selectedOriginalTolls, setSelectedOriginalTolls] = useState<any[]>([]);
   const [loadingTrips, setLoadingTrips] = useState<boolean>(false);
@@ -1695,24 +1733,11 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-xs focus:outline-none focus:border-red-500 text-slate-700 truncate cursor-pointer shadow-2xs"
                       >
                         <option value="">-- Choose Completed Trip or Saved Route --</option>
-                        {vehicleTrips.length > 0 && (
-                          <optgroup label="Completed Trips for this Vehicle">
-                            {vehicleTrips.map((t: any, idx: number) => (
-                              <option key={`veh-trip-${t.id || idx}`} value={`trip-${t.id}`}>
-                                {(t.route_name || `Trip #${t.id}`).replace(/\r?\n/g, ' ')} ({t.total_distance_km || 0} KM{t.trip_date ? ` • ${t.trip_date}` : ''})
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {savedCorridorsForTrip.length > 0 && (
-                          <optgroup label="Saved Corridors & Master Routes">
-                            {savedCorridorsForTrip.map((c: any, idx: number) => (
-                              <option key={`saved-${c.id || idx}`} value={`corridor-${c.id}`}>
-                                {(c.route_name || `Route #${c.id}`).replace(/\r?\n/g, ' ')} ({c.total_distance_km || c.distance_km || 0} KM)
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
+                        {unifiedCorridorsList.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
 

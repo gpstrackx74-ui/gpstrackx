@@ -307,27 +307,54 @@ app.post('/api/auth/login', (req, res) => {
   const clean = cleanPhoneNumber(loginId);
   let user = null;
 
-  // 1. Try finding by email (case-insensitive)
-  user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(loginId);
+  // 1. Try finding by email (case-insensitive) - support multiple users with same email by matching password
+  const emailCandidates = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').all(loginId);
+  if (emailCandidates.length > 0) {
+    user = emailCandidates.find(u => {
+      try {
+        return bcrypt.compareSync(password, u.password) || password === u.password;
+      } catch (e) {
+        return password === u.password;
+      }
+    }) || emailCandidates[0];
+  }
 
-  // 2. If not found by email, try finding by phone number
+  // 2. If not found by email, try finding by phone number among all candidates
   if (!user && clean && clean.length >= 7) {
     const allUsers = db.prepare('SELECT * FROM users').all();
-    user = allUsers.find(u => {
+    const phoneCandidates = allUsers.filter(u => {
       if (!u.phone) return false;
       const uClean = cleanPhoneNumber(u.phone);
       return uClean === clean || uClean.endsWith(clean) || clean.endsWith(uClean);
     });
+    if (phoneCandidates.length > 0) {
+      user = phoneCandidates.find(u => {
+        try {
+          return bcrypt.compareSync(password, u.password) || password === u.password;
+        } catch (e) {
+          return password === u.password;
+        }
+      }) || phoneCandidates[0];
+    }
   }
 
   // 3. Fallback: try direct name or raw phone match
   if (!user) {
-    user = db.prepare(`
+    const nameCandidates = db.prepare(`
       SELECT * FROM users 
       WHERE LOWER(name) = LOWER(?) 
          OR phone = ? 
          OR REPLACE(REPLACE(phone, ' ', ''), '+91', '') = ?
-    `).get(loginId, loginId, clean);
+    `).all(loginId, loginId, clean);
+    if (nameCandidates.length > 0) {
+      user = nameCandidates.find(u => {
+        try {
+          return bcrypt.compareSync(password, u.password) || password === u.password;
+        } catch (e) {
+          return password === u.password;
+        }
+      }) || nameCandidates[0];
+    }
   }
 
   if (!user) {
@@ -1226,19 +1253,7 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
     ? email.trim().toLowerCase()
     : (cleanPhone ? `${cleanPhone}@gpstrackx.in` : `user.${Date.now()}@gpstrackx.in`);
 
-  const existingEmail = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(userEmail);
-  if (existingEmail) {
-    return res.status(400).json({ error: 'User with this email already exists' });
-  }
-
-  if (cleanPhone) {
-    const allUsers = db.prepare('SELECT id, phone FROM users').all();
-    const existingPhone = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
-    if (existingPhone) {
-      return res.status(400).json({ error: 'User with this mobile number already exists' });
-    }
-  }
-
+  // Allow multiple users with same email or phone number as requested
   const colors = ['#EF4444', '#DC2626', '#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'];
   const avatarColor = colors[Math.floor(Math.random() * colors.length)];
   const hash = bcrypt.hashSync(password, 10);
