@@ -29,7 +29,7 @@ interface InteractiveMapProps {
   stoppages?: Stoppage[];
   parkingPoints?: ParkingPoint[];
   tollGates?: TollGate[];
-  vehiclePosition?: { lat: number; lng: number; speed?: number; status?: string; plate?: string } | null;
+  vehiclePosition?: { lat: number; lng: number; speed?: number; status?: string; plate?: string; heading?: number } | null;
   onMapClick?: (lat: number, lng: number, address?: string, mode?: string) => void;
   clickMode?: 'start' | 'end' | 'stop' | 'parking' | 'toll' | 'manual-route' | 'none';
   customWaypoints?: Array<{ lat: number; lng: number; name?: string }>;

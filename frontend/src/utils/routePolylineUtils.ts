@@ -255,3 +255,40 @@ function sampleWaypoints(pts: [number, number][], maxPoints: number): [number, n
   return result;
 }
 
+/**
+ * Calculates compass bearing (heading in degrees from 0° to 360°, where 0° is North)
+ * between two GPS coordinates [lat1, lng1] and [lat2, lng2].
+ */
+export function calculateBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  if (lat1 === lat2 && lng1 === lng2) return 150;
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const lat1Rad = lat1 * (Math.PI / 180);
+  const lat2Rad = lat2 * (Math.PI / 180);
+  const y = Math.sin(dLng) * Math.cos(lat2Rad);
+  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+  const brng = Math.atan2(y, x) * (180 / Math.PI);
+  return (brng + 360) % 360;
+}
+
+/**
+ * Calculates road heading along a path of coordinates at a specific index,
+ * looking ahead 1-3 points for a stable forward tangent.
+ */
+export function getHeadingAlongRoute(coords: [number, number][], currentIndex: number): number {
+  if (!coords || coords.length < 2) return 150;
+  const currIdx = Math.max(0, Math.min(currentIndex, coords.length - 1));
+  const curr = coords[currIdx];
+
+  // Look ahead 2 points for a smooth, stable forward direction tangent
+  const targetIdx = Math.min(currIdx + 2, coords.length - 1);
+  if (targetIdx > currIdx) {
+    const next = coords[targetIdx];
+    return calculateBearing(curr[0], curr[1], next[0], next[1]);
+  } else if (currIdx > 0) {
+    // If at the end of the route, look back to preserve arriving direction
+    const prev = coords[Math.max(0, currIdx - 2)];
+    return calculateBearing(prev[0], prev[1], curr[0], curr[1]);
+  }
+  return 150;
+}
+

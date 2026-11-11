@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { DashboardStats, Vehicle, AlternativeRoute } from '../types';
 import { InteractiveMap } from '../components/InteractiveMap';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { getHeadingAlongRoute } from '../utils/routePolylineUtils';
 import {
   Truck,
   Activity,
@@ -275,23 +276,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     if (coords.length > 0) {
       if (v.status === 'moving') {
-        const pt = coords[animIndex % coords.length];
+        const currIdx = animIndex % coords.length;
+        const pt = coords[currIdx];
+        const heading = getHeadingAlongRoute(coords, currIdx);
         return {
           lat: pt[0],
           lng: pt[1],
           speed: v.current_speed && v.current_speed > 0 ? v.current_speed : 48,
           status: 'moving',
-          plate: v.registration_no
+          plate: v.registration_no,
+          heading
         };
       } else {
         // Vehicle is NOT moving: position truck at the END POINT of the route
         const endPt = coords[coords.length - 1];
+        const heading = getHeadingAlongRoute(coords, coords.length - 1);
         return {
           lat: endPt[0],
           lng: endPt[1],
           speed: 0,
           status: v.status || 'stopped',
-          plate: v.registration_no
+          plate: v.registration_no,
+          heading
         };
       }
     }

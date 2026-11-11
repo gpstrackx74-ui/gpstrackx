@@ -20,8 +20,58 @@ import {
   deleteSinglePoint,
   deletePointRange,
   calculateCumulativeDistanceKm,
-  calculateDurationMinutes
+  calculateDurationMinutes,
+  calculateBearing
 } from '../utils/routePolylineUtils';
+
+// Cached rotated truck icons generator for Google Maps marker
+const rotatedIconCache = new Map<number, string>();
+let preloadedTruckImg: HTMLImageElement | null = null;
+
+function getPreloadedTruckImage(onLoaded?: () => void): HTMLImageElement {
+  if (!preloadedTruckImg) {
+    preloadedTruckImg = new Image();
+    preloadedTruckImg.src = '/images/truck-3d.png';
+  }
+  if (onLoaded && (!preloadedTruckImg.complete || preloadedTruckImg.naturalWidth === 0)) {
+    preloadedTruckImg.addEventListener('load', onLoaded, { once: true });
+  }
+  return preloadedTruckImg;
+}
+
+function getRotatedTruckIconUrl(heading: number, onLoaded?: () => void): string {
+  // Base offset of the 3D truck is 150 deg (pointing South-East)
+  const rotation = Math.round(((heading - 150) % 360 + 360) % 360);
+  // Quantize to nearest 3 degrees to optimize cache performance
+  const stepAngle = Math.round(rotation / 3) * 3;
+  if (rotatedIconCache.has(stepAngle)) {
+    return rotatedIconCache.get(stepAngle)!;
+  }
+
+  const img = getPreloadedTruckImage(onLoaded);
+  if (!img.complete || img.naturalWidth === 0) {
+    return '/images/truck-3d.png';
+  }
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '/images/truck-3d.png';
+
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.translate(32, 32);
+    ctx.rotate((stepAngle * Math.PI) / 180);
+    ctx.drawImage(img, -22, -22, 44, 44);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    rotatedIconCache.set(stepAngle, dataUrl);
+    return dataUrl;
+  } catch (e) {
+    return '/images/truck-3d.png';
+  }
+}
 
 declare const google: any;
 
@@ -44,7 +94,7 @@ interface GoogleMapsViewProps {
   stoppages?: Stoppage[];
   parkingPoints?: ParkingPoint[];
   tollGates?: TollGate[];
-  vehiclePosition?: { lat: number; lng: number; speed?: number; status?: string; plate?: string } | null;
+  vehiclePosition?: { lat: number; lng: number; speed?: number; status?: string; plate?: string; heading?: number } | null;
   onMapClick?: (lat: number, lng: number, address?: string, mode?: string) => void;
   clickMode?: 'start' | 'end' | 'stop' | 'parking' | 'toll' | 'manual-route' | 'none';
   customWaypoints?: Array<{ lat: number; lng: number; name?: string }>;
@@ -95,6 +145,8 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   const markersRef = useRef<any[]>([]);
   const trimMarkersRef = useRef<any[]>([]);
   const vehicleMarkerRef = useRef<any>(null);
+  const prevVehiclePosRef = useRef<{ lat: number; lng: number } | null>(null);
+  const currentHeadingRef = useRef<number>(150);
   const geocoderRef = useRef<any>(null);
   const activeInfoWindowRef = useRef<any>(null);
   const lastFittedKeyRef = useRef<string>('');
@@ -890,15 +942,39 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         vehicleMarkerRef.current.setMap(null);
         vehicleMarkerRef.current = null;
       }
+      prevVehiclePosRef.current = null;
       return;
     }
 
     const pos = new google.maps.LatLng(vehiclePosition.lat, vehiclePosition.lng);
 
+    // Calculate heading / angle along route
+    let heading = 150;
+    if (typeof vehiclePosition.heading === 'number' && !isNaN(vehiclePosition.heading)) {
+      heading = vehiclePosition.heading;
+    } else if (prevVehiclePosRef.current && (prevVehiclePosRef.current.lat !== vehiclePosition.lat || prevVehiclePosRef.current.lng !== vehiclePosition.lng)) {
+      heading = calculateBearing(prevVehiclePosRef.current.lat, prevVehiclePosRef.current.lng, vehiclePosition.lat, vehiclePosition.lng);
+    } else {
+      heading = currentHeadingRef.current;
+    }
+    prevVehiclePosRef.current = { lat: vehiclePosition.lat, lng: vehiclePosition.lng };
+    currentHeadingRef.current = heading;
+
+    const iconUrl = getRotatedTruckIconUrl(heading, () => {
+      if (vehicleMarkerRef.current) {
+        const refreshedUrl = getRotatedTruckIconUrl(currentHeadingRef.current);
+        vehicleMarkerRef.current.setIcon({
+          url: refreshedUrl,
+          scaledSize: new google.maps.Size(46, 46),
+          anchor: new google.maps.Point(23, 23)
+        });
+      }
+    });
+
     const truckIconConfig = {
-      url: '/images/truck-3d.png',
-      scaledSize: new google.maps.Size(44, 44),
-      anchor: new google.maps.Point(22, 28)
+      url: iconUrl,
+      scaledSize: new google.maps.Size(46, 46),
+      anchor: new google.maps.Point(23, 23)
     };
 
     if (vehicleMarkerRef.current) {

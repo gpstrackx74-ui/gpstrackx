@@ -5,6 +5,7 @@ import { Vehicle, RouteDetail, Stoppage, TollGate } from '../types';
 import { InteractiveMap } from '../components/InteractiveMap';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { DMYDateInput, formatToDMY, normalizeToYMD } from '../components/DMYDateInput';
+import { getHeadingAlongRoute } from '../utils/routePolylineUtils';
 import {
   Navigation,
   Plus,
@@ -468,6 +469,15 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
 
   const simulatedSpeed = (activeRoute && (isLiveMovingMode || isPlaying)) ? liveSpeed : 0;
 
+  // Real-time heading along assigned route tangent
+  const currentHeading = React.useMemo(() => {
+    if (!smoothPlaybackCoordinates || smoothPlaybackCoordinates.length <= 1) return 150;
+    if (!isLiveMovingMode && !isPlaying) {
+      return getHeadingAlongRoute(smoothPlaybackCoordinates, smoothPlaybackCoordinates.length - 1);
+    }
+    return getHeadingAlongRoute(smoothPlaybackCoordinates, playbackIndex);
+  }, [smoothPlaybackCoordinates, playbackIndex, isLiveMovingMode, isPlaying]);
+
   const simulatedVehiclePosition = React.useMemo(() => {
     if (!activeRoute || !currentPlaybackPoint || !vehicle) return null;
     return {
@@ -475,9 +485,10 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       lng: currentPlaybackPoint[1],
       speed: simulatedSpeed,
       status: (isLiveMovingMode || isPlaying) ? 'moving' : 'stopped',
-      plate: vehicle.registration_no
+      plate: vehicle.registration_no,
+      heading: currentHeading
     };
-  }, [activeRoute, currentPlaybackPoint, vehicle, simulatedSpeed, isLiveMovingMode, isPlaying]);
+  }, [activeRoute, currentPlaybackPoint, vehicle, simulatedSpeed, isLiveMovingMode, isPlaying, currentHeading]);
 
   // Stoppages with calculated arrival and departure times based on route duration
   const stoppagesWithTimings = React.useMemo(() => {

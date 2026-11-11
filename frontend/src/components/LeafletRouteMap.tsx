@@ -20,7 +20,8 @@ import {
   deleteSinglePoint,
   deletePointRange,
   calculateCumulativeDistanceKm,
-  calculateDurationMinutes
+  calculateDurationMinutes,
+  calculateBearing
 } from '../utils/routePolylineUtils';
 
 interface LeafletRouteMapProps {
@@ -33,7 +34,7 @@ interface LeafletRouteMapProps {
   endPoint?: { lat: number; lng: number; name?: string } | null;
   stoppages?: Stoppage[];
   tollGates?: TollGate[];
-  vehiclePosition?: { lat: number; lng: number; speed?: number; status?: string; plate?: string } | null;
+  vehiclePosition?: { lat: number; lng: number; speed?: number; status?: string; plate?: string; heading?: number } | null;
   onMapClick?: (lat: number, lng: number) => void;
   clickMode?: 'start' | 'end' | 'stop' | 'parking' | 'toll' | 'manual-route' | 'none';
   customWaypoints?: Array<{ lat: number; lng: number; name?: string }>;
@@ -73,6 +74,8 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   const mapRef = useRef<L.Map | null>(null);
   const layersRef = useRef<{ [key: string]: L.Layer }>({});
   const vehicleMarkerRef = useRef<L.Marker | null>(null);
+  const prevVehiclePosRef = useRef<{ lat: number; lng: number } | null>(null);
+  const currentHeadingRef = useRef<number>(150);
   const lastFittedBoundsKeyRef = useRef<string>('');
   const wrapperRef = useRef<HTMLDivElement>(null);
   const onRouteChangeRef = useRef(onRouteChange);
@@ -331,21 +334,39 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
         map.removeLayer(vehicleMarkerRef.current);
         vehicleMarkerRef.current = null;
       }
+      prevVehiclePosRef.current = null;
       return;
     }
 
     const pos = L.latLng(vehiclePosition.lat, vehiclePosition.lng);
 
+    // Calculate heading / road angle
+    let heading = 150;
+    if (typeof vehiclePosition.heading === 'number' && !isNaN(vehiclePosition.heading)) {
+      heading = vehiclePosition.heading;
+    } else if (prevVehiclePosRef.current && (prevVehiclePosRef.current.lat !== vehiclePosition.lat || prevVehiclePosRef.current.lng !== vehiclePosition.lng)) {
+      heading = calculateBearing(prevVehiclePosRef.current.lat, prevVehiclePosRef.current.lng, vehiclePosition.lat, vehiclePosition.lng);
+    } else {
+      heading = currentHeadingRef.current;
+    }
+    prevVehiclePosRef.current = { lat: vehiclePosition.lat, lng: vehiclePosition.lng };
+    currentHeadingRef.current = heading;
+
+    // Natural orientation of the 3D truck is ~150 degrees (pointing South-East)
+    const rotationAngle = Math.round(((heading - 150) % 360 + 360) % 360);
+
     const truckIcon = L.divIcon({
       className: 'custom-vehicle-3d-marker',
       html: `
-        <div style="width: 44px; height: 44px; position: relative; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); transition: transform 0.3s ease-out;">
-          <img src="/images/truck-3d.png" alt="3D Vehicle" style="width: 100%; height: 100%; object-fit: contain; display: block;" />
-          ${vehiclePosition.status === 'moving' ? '<span style="position: absolute; bottom: 2px; right: 2px; width: 10px; height: 10px; background-color: #10B981; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 6px #10B981;"></span>' : ''}
+        <div style="width: 44px; height: 44px; position: relative; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35));">
+          <div style="width: 100%; height: 100%; transform: rotate(${rotationAngle}deg); transform-origin: 50% 50%; transition: transform 0.4s ease-out;">
+            <img src="/images/truck-3d.png" alt="3D Vehicle" style="width: 100%; height: 100%; object-fit: contain; display: block;" />
+          </div>
+          ${vehiclePosition.status === 'moving' ? '<span style="position: absolute; bottom: 0px; right: 0px; width: 10px; height: 10px; background-color: #10B981; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 6px #10B981;"></span>' : ''}
         </div>
       `,
       iconSize: [44, 44],
-      iconAnchor: [22, 28]
+      iconAnchor: [22, 22]
     });
 
     if (vehicleMarkerRef.current) {
