@@ -323,13 +323,13 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
     const cleanVal = String(val).trim();
     const sourceList = list && list.length > 0 ? list : [...vehicleTrips, ...savedCorridorsForTrip];
 
-    let found = sourceList.find((c: any) =>
-      cleanVal.startsWith('trip-') && String(c.id) === cleanVal.replace('trip-', '')
-    );
-    if (!found) {
-      found = sourceList.find((c: any) =>
-        cleanVal.startsWith('corridor-') && String(c.id) === cleanVal.replace('corridor-', '')
-      );
+    let found: any = null;
+    if (cleanVal.startsWith('trip-')) {
+      const targetId = cleanVal.replace('trip-', '');
+      found = vehicleTrips.find((t: any) => String(t.id) === targetId);
+    } else if (cleanVal.startsWith('corridor-')) {
+      const targetId = cleanVal.replace('corridor-', '');
+      found = savedCorridorsForTrip.find((c: any) => String(c.id) === targetId);
     }
     if (!found) {
       found = sourceList.find((c: any) =>
@@ -422,11 +422,28 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       } catch (_) {}
     }
 
+    // Deduplicate any accidental duplicate toll entries
+    const seenTollKeys = new Set<string>();
+    const deduplicatedTolls: any[] = [];
+    for (const t of rawTolls) {
+      const key = `${t.name || ''}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+      if (!seenTollKeys.has(key)) {
+        seenTollKeys.add(key);
+        deduplicatedTolls.push(t);
+      }
+    }
+    rawTolls = deduplicatedTolls;
+
     setSelectedOriginalWaypoints(rawWaypoints);
     setSelectedOriginalTolls(rawTolls);
 
     const calculatedTotalToll = rawTolls.reduce((sum: number, t: any) => sum + (Number(t.charges) || 0), 0);
     const finalTollFee = calculatedTotalToll > 0 ? calculatedTotalToll : (Number(found.total_toll_fee) || Number(found.total_tolls_amount) || 0);
+
+    let finalDistKm = Number(found.total_distance_km || found.distance_km || 0);
+    if ((!finalDistKm || finalDistKm <= 0) && poly.length >= 2) {
+      finalDistKm = calculateCumulativeDistanceKm(poly);
+    }
 
     const tripNum = vehicleTrips.length + 1;
     setTripForm(prev => ({
@@ -434,7 +451,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       route_name: cleanRouteName || `Trip #${tripNum}: ${found.start_location_name || 'Origin'} to ${found.end_location_name || 'Destination'}`,
       start_location_name: found.start_location_name || '',
       end_location_name: found.end_location_name || '',
-      total_distance_km: String(found.total_distance_km || found.distance_km || ''),
+      total_distance_km: finalDistKm > 0 ? String(finalDistKm) : '',
       total_toll_fee: String(finalTollFee),
       toll_gates_count: String(rawTolls.length),
       stoppages_count: String(rawWaypoints.length),

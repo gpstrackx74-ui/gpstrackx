@@ -702,6 +702,13 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     setEndPoint(newEnd);
     setCorridorNameInput(found.route_name || '');
     setExcelFileName(null);
+    setIsRouteModifiedByDrag(false);
+    setModifiedDistanceKm(null);
+    setModifiedDurationMins(null);
+    setNewModifiedRouteName('');
+    setParkingPoints([]);
+    setCustomWaypoints([]);
+    setCustomTollOverrides({});
 
     // 1. Parse Waypoints / Stoppages from Saved Route
     let parsedWaypoints: Stoppage[] = [];
@@ -726,39 +733,29 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       setStopsInput('0');
     }
 
-    // 2. Parse Toll Gates from Saved Route
+    // 2. Parse Toll Gates from Saved Route (DEDUPLICATED & clean)
     let parsedTolls: TollGate[] = [];
     const rawT = found.toll_gates || (found as any).toll_gates_json;
     if (rawT) {
       try {
         const tg = typeof rawT === 'string' ? JSON.parse(rawT) : rawT;
         if (Array.isArray(tg) && tg.length > 0) {
-          parsedTolls = tg;
-          setCustomTollsAdded(tg);
-        } else {
-          setCustomTollsAdded([]);
+          const seenTollKeys = new Set<string>();
+          for (const t of tg) {
+            const key = `${t.name || ''}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+            if (!seenTollKeys.has(key)) {
+              seenTollKeys.add(key);
+              parsedTolls.push(t);
+            }
+          }
         }
-      } catch (e) {
-        setCustomTollsAdded([]);
-      }
-    } else {
-      setCustomTollsAdded([]);
+      } catch (e) {}
     }
+    // CRITICAL: customTollsAdded MUST be empty [] so tolls are never doubled/accumulated!
+    setCustomTollsAdded([]);
+    setTollsInput(String(parsedTolls.length));
 
-    // 3. Set Total Distance and Travel Duration
-    const dist = Number(found.total_distance_km) || 0;
-    if (dist > 0) {
-      setCustomDistanceKm(dist);
-      setModifiedDistanceKm(dist);
-    }
-    const mins = Number(found.estimated_travel_time_min) || 0;
-    if (mins > 0) {
-      setTravelHours(Math.floor(mins / 60));
-      setTravelMinutes(mins % 60);
-      setModifiedDurationMins(mins);
-    }
-
-    // 4. Parse Overview Polyline Coordinates
+    // 3. Parse Overview Polyline Coordinates
     let polyCoords: [number, number][] = [];
     if (found.overview_polyline) {
       try {
@@ -773,16 +770,28 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       } catch (e) {}
     }
 
+    // 4. Set Total Distance and Travel Duration (NO stale accumulation from previous route)
+    const savedDist = Number(found.total_distance_km) || 0;
+    const calcDist = polyCoords.length >= 2 ? calculateCumulativeDistanceKm(polyCoords) : 0;
+    const finalDist = savedDist > 0 ? savedDist : (calcDist > 0 ? calcDist : 0);
+
+    const mins = Number(found.estimated_travel_time_min) || (finalDist > 0 ? Math.round((finalDist / 45) * 60) : 0);
+    setTravelHours(Math.floor(mins / 60));
+    setTravelMinutes(mins % 60);
+
+    // Reset custom distance so it doesn't leak from a previously selected route
+    setCustomDistanceKm(null);
+
     if (polyCoords.length >= 2) {
-      // EXACT ONE SINGLE SAVED ROUTE - NO ALTERNATIVE ROUTES!
+      // EXACT ONE SINGLE SAVED ROUTE - NO ALTERNATIVE ROUTES & NO ACCUMULATED TOLLS!
       const singleSavedRoute: AlternativeRoute = {
         id: `saved-route-${found.id || 'single'}`,
         name: found.route_name || `${newStart.name} to ${newEnd.name}`,
-        distanceKm: dist,
+        distanceKm: finalDist,
         timeMinutes: mins,
         tollGatesCount: parsedTolls.length,
         stopsCount: parsedWaypoints.length,
-        summary: `Saved Route Corridor: ${found.route_name || 'Highway Route'} (${dist} km)`,
+        summary: `Saved Route Corridor: ${found.route_name || 'Highway Route'} (${finalDist} km)`,
         color: '#1A73E8',
         coordinates: polyCoords,
         tollGates: parsedTolls,
@@ -792,7 +801,6 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       setRoutes([singleSavedRoute]);
       setSelectedRouteId(singleSavedRoute.id);
       setModifiedPolyline(polyCoords);
-      setIsRouteModifiedByDrag(false);
       setIsDraggableRoute(true);
       setIsExcelRouteActive(true);
     } else {
@@ -1450,13 +1458,34 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const targetVehicle = vehicles.find(v => String(v.id) === selectedVehicleId);
   const selectedAxleConfig = AXLE_CONFIGURATIONS.find(a => a.id === selectedAxle) || AXLE_CONFIGURATIONS[1];
   const rawTolls = activeRoute?.tollGates || [];
-  const currentTolls: TollGate[] = [
-    ...rawTolls.map(t => ({
-      ...t,
-      charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
-    })),
-    ...customTollsAdded
-  ];
+  const currentTolls: TollGate[] = React.useMemo(() => {
+    const list: TollGate[] = [];
+    const seen = new Set<string>();
+
+    for (const t of rawTolls) {
+      const key = `${t.name || ''}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push({
+          ...t,
+          charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
+        });
+      }
+    }
+
+    for (const t of customTollsAdded) {
+      const key = `${t.name || ''}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push({
+          ...t,
+          charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
+        });
+      }
+    }
+
+    return list;
+  }, [rawTolls, customTollsAdded, customTollOverrides]);
   const totalTruckToll = computeTotalTruckToll(currentTolls);
   const effectiveDistanceKm = customDistanceKm !== null ? customDistanceKm : (activeRoute?.distanceKm || 0);
 

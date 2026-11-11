@@ -1917,42 +1917,63 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
 
     const routesCorridors = db.prepare(`
       SELECT 
-        id, 
-        route_name, 
-        start_location_name, 
-        start_address, 
-        start_lat, 
-        start_lng, 
-        end_location_name, 
-        end_address, 
-        end_lat, 
-        end_lng, 
-        total_distance_km, 
-        estimated_travel_time_min, 
-        overview_polyline, 
-        waypoints_json, 
-        toll_gates_json, 
-        alternative_routes_json,
-        trip_date, 
-        start_trip_time, 
-        end_trip_time,
-        created_at
-      FROM routes
-      WHERE route_name IS NOT NULL AND route_name != ''
-      GROUP BY route_name
-      ORDER BY id DESC
+        r.id, 
+        r.route_name, 
+        r.start_location_name, 
+        r.start_address, 
+        r.start_lat, 
+        r.start_lng, 
+        r.end_location_name, 
+        r.end_address, 
+        r.end_lat, 
+        r.end_lng, 
+        r.total_distance_km, 
+        r.estimated_travel_time_min, 
+        r.overview_polyline, 
+        r.waypoints_json, 
+        r.toll_gates_json, 
+        r.alternative_routes_json,
+        r.trip_date, 
+        r.start_trip_time, 
+        r.end_trip_time,
+        r.created_at
+      FROM routes r
+      INNER JOIN (
+        SELECT MAX(id) as max_id
+        FROM routes
+        WHERE route_name IS NOT NULL AND route_name != ''
+        GROUP BY route_name
+      ) latest ON r.id = latest.max_id
+      ORDER BY r.id DESC
     `).all();
 
     const seenNames = new Set();
     const combined = [];
 
+    const sanitizeTolls = (rawTg) => {
+      let list = [];
+      try {
+        const parsed = typeof rawTg === 'string' ? JSON.parse(rawTg) : rawTg;
+        if (Array.isArray(parsed)) {
+          const seen = new Set();
+          for (const t of parsed) {
+            const k = `${t.name || ''}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+            if (!seen.has(k)) {
+              seen.add(k);
+              list.push(t);
+            }
+          }
+        }
+      } catch (_) {}
+      return list;
+    };
+
     for (const c of dedicatedCorridors) {
       if (!seenNames.has(c.route_name)) {
         seenNames.add(c.route_name);
         let wp = [];
-        let tg = [];
         try { if (c.waypoints_json) wp = typeof c.waypoints_json === 'string' ? JSON.parse(c.waypoints_json) : c.waypoints_json; } catch (_) {}
-        try { if (c.toll_gates_json) tg = typeof c.toll_gates_json === 'string' ? JSON.parse(c.toll_gates_json) : c.toll_gates_json; } catch (_) {}
+        const tg = sanitizeTolls(c.toll_gates_json);
         combined.push({ ...c, waypoints: wp, toll_gates: tg });
       }
     }
@@ -1960,9 +1981,8 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
       if (!seenNames.has(r.route_name)) {
         seenNames.add(r.route_name);
         let wp = [];
-        let tg = [];
         try { if (r.waypoints_json) wp = typeof r.waypoints_json === 'string' ? JSON.parse(r.waypoints_json) : r.waypoints_json; } catch (_) {}
-        try { if (r.toll_gates_json) tg = typeof r.toll_gates_json === 'string' ? JSON.parse(r.toll_gates_json) : r.toll_gates_json; } catch (_) {}
+        const tg = sanitizeTolls(r.toll_gates_json);
         combined.push({ ...r, waypoints: wp, toll_gates: tg });
       }
     }
