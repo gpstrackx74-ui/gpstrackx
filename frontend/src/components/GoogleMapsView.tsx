@@ -1217,6 +1217,15 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         </div>
       )}
 
+      {/* Active Route Distance & Meter Badge directly on Map */}
+      {activeRoute && Number(activeRoute.distanceKm) > 0 && (
+        <div className="absolute bottom-4 left-4 z-20 bg-slate-900/90 text-white backdrop-blur-md px-3.5 py-1.5 rounded-xl shadow-lg border border-slate-700/80 flex items-center gap-2 pointer-events-none">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Distance:</span>
+          <span className="font-mono font-black text-sm text-white tracking-tight">{activeRoute.distanceKm} KM</span>
+        </div>
+      )}
+
       {/* Google Maps Container */}
       <div
         ref={containerRef}

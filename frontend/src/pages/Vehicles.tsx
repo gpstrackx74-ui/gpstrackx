@@ -9,6 +9,7 @@ import {
   enhanceRouteWithRoadGeometry,
   calculateCumulativeDistanceKm
 } from '../utils/routePolylineUtils';
+import { extractAccurateExcelTelemetry } from '../utils/excelTelemetryExtractor';
 import {
   FileSpreadsheet,
   Navigation,
@@ -513,195 +514,27 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
         const data = new Uint8Array(evt.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
 
-        // 1. Look for Summary sheet
-        const summaryMeta: any = {
-          vehicleReg: '',
-          startDate: '',
-          endDate: '',
-          distanceKm: 0,
-          avgSpeed: 0,
-          maxSpeed: 0,
-          runningTime: '',
-          haltedTime: ''
-        };
+        // Extract 100% Accurate Telemetry & Coordinates using Universal Parser
+        const tele = extractAccurateExcelTelemetry(workbook);
+        const validPoints = tele.rawPoints;
 
-        const summarySheetName = workbook.SheetNames.find(s => s.toLowerCase().includes('summary'));
-        if (summarySheetName) {
-          const ws = workbook.Sheets[summarySheetName];
-          const aoa: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-          aoa.forEach((row: any) => {
-            if (!row || !Array.isArray(row)) return;
-            const text = row.map(c => String(c || '').trim()).join(' ');
-            const reportMatch = text.match(/report for\s+([A-Za-z0-9\-]+)\s+from\s+(.+?)\s+to\s+(.+)/i);
-            if (reportMatch) {
-              summaryMeta.vehicleReg = reportMatch[1].trim();
-              summaryMeta.startDate = reportMatch[2].trim();
-              summaryMeta.endDate = reportMatch[3].trim();
-            }
-            if (row[0] && row[1] !== undefined) {
-              const k = String(row[0]).toLowerCase();
-              const v = row[1];
-              if (k.includes('distance')) summaryMeta.distanceKm = parseFloat(v) || 0;
-              if (k.includes('avg speed')) summaryMeta.avgSpeed = parseFloat(v) || 0;
-              if (k.includes('max speed')) summaryMeta.maxSpeed = parseFloat(v) || 0;
-              if (k.includes('running')) summaryMeta.runningTime = String(v);
-              if (k.includes('halted')) summaryMeta.haltedTime = String(v);
-            }
-          });
-        }
-
-        // 2. Look for Details sheet
-        let detailsSheetName = workbook.SheetNames.find(s =>
-          s.toLowerCase().includes('trip') ||
-          s.toLowerCase().includes('detail') ||
-          s.toLowerCase().includes('history') ||
-          s.toLowerCase().includes('points') ||
-          s.toLowerCase().includes('track')
-        );
-
-        if (!detailsSheetName) {
-          detailsSheetName = workbook.SheetNames.find(s => !s.toLowerCase().includes('summary')) || workbook.SheetNames[0];
-        }
-
-        const wsDetails = workbook.Sheets[detailsSheetName];
-        const rawRows: any[] = XLSX.utils.sheet_to_json(wsDetails);
-
-        function parseCoordString(val: any): string {
-          if (!val) return '';
-          return String(val).replace(/°/g, '').replace(/[^\d.,\-+ ]/g, '').trim();
-        }
-
-        function splitLatLong(str: string): { lat: number; lng: number } | null {
-          if (!str) return null;
-          const clean = String(str).replace(/°/g, '').trim();
-          const parts = clean.split(/[,;\/]+/).map(p => parseFloat(p.replace(/[^\d.\-+]/g, '').trim()));
-          if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-            return { lat: parts[0], lng: parts[1] };
-          }
-          return null;
-        }
-
-        function parseSingleCoord(val: any): number | null {
-          if (val === undefined || val === null) return null;
-          if (typeof val === 'number') return isFinite(val) ? val : null;
-          const clean = String(val).replace(/°/g, '').replace(/[^\d.,\-+]/g, '').trim();
-          const num = parseFloat(clean);
-          return !isNaN(num) && isFinite(num) ? num : null;
-        }
-
-        const rawPoints: Array<{ lat: number; lng: number; name: string }> = [];
-
-        const addPointIfValid = (lat: number | null, lng: number | null, name?: string) => {
-          if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) return;
-          if (lat < 6 || lat > 38 || lng < 68 || lng > 98) return;
-
-          const roundedLat = parseFloat(lat.toFixed(6));
-          const roundedLng = parseFloat(lng.toFixed(6));
-
-          if (rawPoints.length > 0) {
-            const last = rawPoints[rawPoints.length - 1];
-            if (Math.abs(last.lat - roundedLat) < 0.00003 && Math.abs(last.lng - roundedLng) < 0.00003) {
-              return;
-            }
-          }
-
-          rawPoints.push({
-            lat: roundedLat,
-            lng: roundedLng,
-            name: name || `Point #${rawPoints.length + 1}`
-          });
-        };
-
-        rawRows.forEach((row, i) => {
-          let startLat: number | null = null, startLng: number | null = null, startLoc = '';
-          let endLat: number | null = null, endLng: number | null = null, endLoc = '';
-          let singleLat: number | null = null, singleLng: number | null = null, singleLoc = '';
-
-          for (const key of Object.keys(row)) {
-            const k = key.toLowerCase().trim();
-            const val = row[key];
-
-            if (k.includes('start') && (k.includes('lat') || k.includes('coord') || k.includes('point'))) {
-              const coords = splitLatLong(val);
-              if (coords) {
-                startLat = coords.lat;
-                startLng = coords.lng;
-              }
-            } else if (k.includes('end') && (k.includes('lat') || k.includes('coord') || k.includes('point'))) {
-              const coords = splitLatLong(val);
-              if (coords) {
-                endLat = coords.lat;
-                endLng = coords.lng;
-              }
-            } else if (k.includes('start') && (k.includes('loc') || k.includes('address') || k.includes('name') || k.includes('city'))) {
-              startLoc = String(val).trim();
-            } else if (k.includes('end') && (k.includes('loc') || k.includes('address') || k.includes('name') || k.includes('city'))) {
-              endLoc = String(val).trim();
-            } else if (['start_latitude', 'start_lat', 'startlat', 'start latitude', 'from_lat', 'origin_lat'].includes(k)) {
-              startLat = parseSingleCoord(val);
-            } else if (['start_longitude', 'start_lng', 'startlng', 'start longitude', 'from_lng', 'origin_lng', 'start_lon'].includes(k)) {
-              startLng = parseSingleCoord(val);
-            } else if (['end_latitude', 'end_lat', 'endlat', 'end latitude', 'to_lat', 'dest_lat'].includes(k)) {
-              endLat = parseSingleCoord(val);
-            } else if (['end_longitude', 'end_lng', 'endlng', 'end longitude', 'to_lng', 'dest_lng', 'end_lon'].includes(k)) {
-              endLng = parseSingleCoord(val);
-            } else if (['latitude', 'lat', 'y', 'lat.'].includes(k)) {
-              singleLat = parseSingleCoord(val);
-            } else if (['longitude', 'lng', 'lon', 'long', 'x', 'long.'].includes(k)) {
-              singleLng = parseSingleCoord(val);
-            } else if (['location', 'location name', 'address', 'name', 'city'].includes(k)) {
-              singleLoc = String(val).trim();
-            }
-          }
-
-          if (startLat !== null && startLng !== null) {
-            addPointIfValid(startLat, startLng, startLoc || `Point #${rawPoints.length + 1}`);
-            if (endLat !== null && endLng !== null) {
-              addPointIfValid(endLat, endLng, endLoc || (i === rawRows.length - 1 ? 'Destination' : `Point #${rawPoints.length + 1}`));
-            }
-          } else if (singleLat !== null && singleLng !== null) {
-            addPointIfValid(singleLat, singleLng, singleLoc || `Point #${rawPoints.length + 1}`);
-          }
-        });
-
-        // Filter isolated GPS drift spikes
-        const validPoints: typeof rawPoints = [];
-        for (let i = 0; i < rawPoints.length; i++) {
-          const curr = rawPoints[i];
-          if (i > 0 && i < rawPoints.length - 1) {
-            const prev = rawPoints[i - 1];
-            const next = rawPoints[i + 1];
-            const distToPrev = Math.hypot(curr.lat - prev.lat, curr.lng - prev.lng);
-            const distToNext = Math.hypot(curr.lat - next.lat, curr.lng - next.lng);
-            const distDirect = Math.hypot(next.lat - prev.lat, next.lng - prev.lng);
-            if (distToPrev > 0.15 && distToNext > 0.15 && distDirect < 0.05) {
-              continue;
-            }
-          }
-          validPoints.push(curr);
-        }
-
-        if (validPoints.length < 2) {
-          alert('Could not detect coordinates in ' + detailsSheetName);
+        if (!validPoints || validPoints.length < 2) {
+          alert('Could not detect coordinates in ' + tele.detailsSheetName);
           return;
         }
 
-        // Calculate accurate distance
-        let computedDist = 0;
-        for (let i = 0; i < validPoints.length - 1; i++) {
-          const p1 = validPoints[i];
-          const p2 = validPoints[i + 1];
-          const R = 6371;
-          const dLat = (p2.lat - p1.lat) * Math.PI / 180;
-          const dLon = (p2.lng - p1.lng) * Math.PI / 180;
-          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                    Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
-                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-          const cc = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          computedDist += R * cc;
-        }
+        const calculatedDistKm = tele.distanceKm;
 
-        const calculatedDistKm = summaryMeta.distanceKm > 0 ? summaryMeta.distanceKm : parseFloat(computedDist.toFixed(1));
+        const summaryMeta: any = {
+          vehicleReg: tele.vehicleReg,
+          startDate: tele.startDate,
+          endDate: tele.endDate,
+          distanceKm: calculatedDistKm,
+          avgSpeed: tele.avgSpeed,
+          maxSpeed: tele.maxSpeed,
+          runningTime: tele.runningTime,
+          haltedTime: tele.haltedTime
+        };
 
         setTripExcelSummary(summaryMeta);
         setTripExcelPoints(validPoints);
@@ -717,8 +550,9 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
               lng: c[1]
             }));
             setTripExcelPoints(finalPoints);
+            // CRITICAL: Only overwrite if NO meter reading was found in Excel
             const accurateDist = calculateCumulativeDistanceKm(enhanced);
-            if (accurateDist > 0 && !summaryMeta.distanceKm) {
+            if (accurateDist > 0 && !tele.isAccurateMeterFound) {
               setTripForm(prev => ({ ...prev, total_distance_km: String(accurateDist) }));
             }
           }
