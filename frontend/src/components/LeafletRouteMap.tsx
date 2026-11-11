@@ -336,30 +336,26 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
 
     const pos = L.latLng(vehiclePosition.lat, vehiclePosition.lng);
 
+    const truckIcon = L.divIcon({
+      className: 'custom-vehicle-3d-marker',
+      html: `
+        <div style="width: 44px; height: 44px; position: relative; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); transition: transform 0.3s ease-out;">
+          <img src="/images/truck-3d.png" alt="3D Vehicle" style="width: 100%; height: 100%; object-fit: contain; display: block;" />
+          ${vehiclePosition.status === 'moving' ? '<span style="position: absolute; bottom: 2px; right: 2px; width: 10px; height: 10px; background-color: #10B981; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 6px #10B981;"></span>' : ''}
+        </div>
+      `,
+      iconSize: [44, 44],
+      iconAnchor: [22, 28]
+    });
+
     if (vehicleMarkerRef.current) {
       vehicleMarkerRef.current.setLatLng(pos);
+      vehicleMarkerRef.current.setIcon(truckIcon);
     } else {
-      const truckIcon = L.divIcon({
-        className: 'custom-map-icon',
-        html: `
-          <div style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));">
-            <svg width="44" height="44" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="24" cy="24" r="20" fill="#0F172A" stroke="#FFFFFF" stroke-width="3"/>
-              <path d="M14 26V18C14 17.45 14.45 17 15 17H27V26H14Z" fill="#FFFFFF"/>
-              <path d="M27 20H32C32.3 20 32.6 20.15 32.8 20.4L35.2 23.6C35.4 23.85 35.5 24.15 35.5 24.5V26H27V20Z" fill="#EF4444"/>
-              <circle cx="18" cy="27" r="2.5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.5"/>
-              <circle cx="31" cy="27" r="2.5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.5"/>
-            </svg>
-          </div>
-        `,
-        iconSize: [44, 44],
-        iconAnchor: [22, 22]
-      });
-
       const marker = L.marker(pos, { icon: truckIcon, zIndexOffset: 1000 }).addTo(map);
       marker.bindPopup(`
         <div class="p-2">
-          <span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded bg-red-100 text-red-800 uppercase tracking-wide">Vehicle Telemetry</span>
+          <span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800 uppercase tracking-wide">Vehicle Telemetry</span>
           <h4 class="font-black text-slate-900 text-sm mt-1 font-mono">${vehiclePosition.plate || 'Vehicle'}</h4>
           <div class="flex items-center gap-2 mt-1 text-xs text-slate-600">
             <span>Status: <strong class="text-slate-900">${vehiclePosition.status?.toUpperCase() || 'LIVE'}</strong></span>

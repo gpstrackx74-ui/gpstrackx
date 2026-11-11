@@ -243,16 +243,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const [animIndex, setAnimIndex] = useState(0);
 
-  // Animate moving vehicles smoothly along route coordinates
+  // Animate moving vehicles smoothly along route coordinates (random 3-4s interval)
   useEffect(() => {
     const hasMoving = vehicles.some(v => v.status === 'moving');
     if (!hasMoving) return;
 
-    const interval = setInterval(() => {
-      setAnimIndex(prev => prev + 1);
-    }, 1500);
+    let timeoutId: any = null;
+    let isCancelled = false;
 
-    return () => clearInterval(interval);
+    const tick = () => {
+      const delayMs = Math.floor(3000 + Math.random() * 1000); // 3 to 4 seconds
+      timeoutId = setTimeout(() => {
+        if (isCancelled) return;
+        setAnimIndex(prev => prev + 1);
+        tick();
+      }, delayMs);
+    };
+
+    tick();
+
+    return () => {
+      isCancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [vehicles]);
 
   const userVehiclePosition = useMemo(() => {

@@ -336,6 +336,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     if (!vehicle) return;
     if (isLiveMovingMode) {
       setIsPlaying(true);
+      // Start moving smoothly along the allocated route from beginning if at the end
+      setPlaybackIndex(prev => (prev >= smoothPlaybackCoordinates.length - 1 ? 0 : prev));
     } else {
       setIsPlaying(false);
       if (smoothPlaybackCoordinates.length > 0) {
@@ -344,32 +346,46 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     }
   }, [vehicle?.id, isLiveMovingMode, smoothPlaybackCoordinates.length]);
 
-  // Playback timer ticker - smoothly and calmly moves vehicle along smoothPlaybackCoordinates
+  // Playback timer ticker - moves vehicle along assigned route smoothly with random 3-4s intervals
   useEffect(() => {
     if (!isPlaying || smoothPlaybackCoordinates.length <= 1) return;
 
-    // Calm real-time movement (advances along route every 5 seconds) when vehicle is in live moving status
-    const intervalMs = isLiveMovingMode
-      ? Math.max(1000, Math.round(5000 / playbackSpeed))
-      : Math.max(100, Math.round(250 / playbackSpeed));
+    let timeoutId: any = null;
+    let isCancelled = false;
 
-    const interval = setInterval(() => {
-      setPlaybackIndex(prev => {
-        const step = 1;
-        const next = prev + step;
-        if (next >= smoothPlaybackCoordinates.length - 1) {
-          // If vehicle is actively set to live moving mode, loop continuously along the route
-          if (isLiveMovingMode) {
-            return 0;
+    const tick = () => {
+      // In live moving mode: random delay between 3000ms and 4000ms (3 to 4 sec)
+      // In historical replay: snappy replay (~250ms scaled by playback speed)
+      const delayMs = isLiveMovingMode
+        ? Math.floor((3000 + Math.random() * 1000) / (playbackSpeed || 1))
+        : Math.max(100, Math.round(250 / (playbackSpeed || 1)));
+
+      timeoutId = setTimeout(() => {
+        if (isCancelled) return;
+        setPlaybackIndex(prev => {
+          // In live moving mode, advance smoothly along the route coordinates
+          const step = isLiveMovingMode ? Math.max(1, Math.ceil(smoothPlaybackCoordinates.length / 500)) : 1;
+          const next = prev + step;
+          if (next >= smoothPlaybackCoordinates.length - 1) {
+            // Loop continuously along the assigned route in live moving mode
+            if (isLiveMovingMode) {
+              return 0;
+            }
+            setIsPlaying(false);
+            return smoothPlaybackCoordinates.length - 1;
           }
-          setIsPlaying(false);
-          return smoothPlaybackCoordinates.length - 1;
-        }
-        return next;
-      });
-    }, intervalMs);
+          return next;
+        });
+        tick();
+      }, delayMs);
+    };
 
-    return () => clearInterval(interval);
+    tick();
+
+    return () => {
+      isCancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length, isLiveMovingMode]);
 
   const handleResetPlayback = () => {

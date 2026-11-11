@@ -895,30 +895,26 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
 
     const pos = new google.maps.LatLng(vehiclePosition.lat, vehiclePosition.lng);
 
+    const truckIconConfig = {
+      url: '/images/truck-3d.png',
+      scaledSize: new google.maps.Size(44, 44),
+      anchor: new google.maps.Point(22, 28)
+    };
+
     if (vehicleMarkerRef.current) {
       vehicleMarkerRef.current.setPosition(pos);
-      vehicleMarkerRef.current.setTitle(`${vehiclePosition.plate || 'Vehicle'} • ${vehiclePosition.speed || 0} km/h`);
+      vehicleMarkerRef.current.setIcon(truckIconConfig);
+      vehicleMarkerRef.current.setTitle(
+        `${vehiclePosition.plate || 'Vehicle'} • ${vehiclePosition.speed || 0} km/h • ${vehiclePosition.status?.toUpperCase() || 'MOVING'}`
+      );
     } else {
-      const truckSvg = `data:image/svg+xml;utf-8,${encodeURIComponent(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-          <circle cx="24" cy="24" r="17" fill="#0F172A" stroke="#FFFFFF" stroke-width="2.5"/>
-          <path d="M14 26V18C14 17.45 14.45 17 15 17H27V26H14Z" fill="#FFFFFF"/>
-          <path d="M27 20H32C32.3 20 32.6 20.15 32.8 20.4L35.2 23.6C35.4 23.85 35.5 24.15 35.5 24.5V26H27V20Z" fill="#EF4444"/>
-          <circle cx="18" cy="27" r="2.5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.5"/>
-          <circle cx="31" cy="27" r="2.5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.5"/>
-        </svg>
-      `)}`;
-
       const vMarker = new google.maps.Marker({
         position: pos,
         map,
-        title: `${vehiclePosition.plate || 'Vehicle'} • ${vehiclePosition.speed || 0} km/h`,
-        icon: {
-          url: truckSvg,
-          scaledSize: new google.maps.Size(46, 46),
-          anchor: new google.maps.Point(23, 23)
-        },
-        zIndex: 100
+        title: `${vehiclePosition.plate || 'Vehicle'} • ${vehiclePosition.speed || 0} km/h • ${vehiclePosition.status?.toUpperCase() || 'MOVING'}`,
+        icon: truckIconConfig,
+        optimized: false,
+        zIndex: 200
       });
       vehicleMarkerRef.current = vMarker;
     }
