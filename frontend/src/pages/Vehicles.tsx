@@ -126,8 +126,8 @@ const AmPmTimeInput: React.FC<{
             type="button"
             onClick={() => handlePeriodChange('AM')}
             className={`px-1.5 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer shrink-0 ${parsed.period === 'AM'
-                ? 'bg-[#E60012] text-white shadow-2xs'
-                : 'text-slate-500 hover:text-slate-800'
+              ? 'bg-[#E60012] text-white shadow-2xs'
+              : 'text-slate-500 hover:text-slate-800'
               }`}
           >
             AM
@@ -136,8 +136,8 @@ const AmPmTimeInput: React.FC<{
             type="button"
             onClick={() => handlePeriodChange('PM')}
             className={`px-1.5 py-0.5 text-[10px] font-black rounded-md transition cursor-pointer shrink-0 ${parsed.period === 'PM'
-                ? 'bg-[#E60012] text-white shadow-2xs'
-                : 'text-slate-500 hover:text-slate-800'
+              ? 'bg-[#E60012] text-white shadow-2xs'
+              : 'text-slate-500 hover:text-slate-800'
               }`}
           >
             PM
@@ -447,7 +447,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       try {
         const wp = typeof found.waypoints_json === 'string' ? JSON.parse(found.waypoints_json) : found.waypoints_json;
         if (Array.isArray(wp) && wp.length > 0) rawWaypoints = wp;
-      } catch (_) {}
+      } catch (_) { }
     }
 
     // Parse exact original toll gates from selected trip or saved corridor
@@ -458,7 +458,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       try {
         const tg = typeof found.toll_gates_json === 'string' ? JSON.parse(found.toll_gates_json) : found.toll_gates_json;
         if (Array.isArray(tg) && tg.length > 0) rawTolls = tg;
-      } catch (_) {}
+      } catch (_) { }
     }
 
     // Deduplicate any accidental duplicate toll entries
@@ -1174,17 +1174,16 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                       </td>
 
                       <td className="py-3.5 px-4">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          v.status === 'moving'
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${v.status === 'moving'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : (v.status === 'stop' || v.status === 'stopped')
-                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                            : v.status === 'parking'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : v.status === 'active'
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200'
-                        }`}>
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : v.status === 'parking'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : v.status === 'active'
+                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                          }`}>
                           {v.status === 'moving' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>}
                           {v.status === 'stop' && <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>}
                           {v.status === 'parking' && <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>}
@@ -1930,8 +1929,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                         <div
                           key={trip.id || idx}
                           className={`p-3 rounded-2xl border transition-all ${isActive
-                              ? 'bg-emerald-50/40 border-emerald-300 shadow-2xs'
-                              : 'bg-white border-slate-200/90 hover:border-slate-300'
+                            ? 'bg-emerald-50/40 border-emerald-300 shadow-2xs'
+                            : 'bg-white border-slate-200/90 hover:border-slate-300'
                             }`}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
@@ -1958,15 +1957,14 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                                     value={opStatus}
                                     disabled={updatingTripStatusId === trip.id}
                                     onChange={(e) => handleUpdateTripOperationalStatus(trip.id, e.target.value)}
-                                    className={`text-[10px] font-bold bg-transparent cursor-pointer focus:outline-none ${
-                                      opStatus === 'moving'
+                                    className={`text-[10px] font-bold bg-transparent cursor-pointer focus:outline-none ${opStatus === 'moving'
                                         ? 'text-emerald-700 font-black'
                                         : opStatus === 'stop'
-                                        ? 'text-rose-700 font-black'
-                                        : opStatus === 'parking'
-                                        ? 'text-amber-700 font-black'
-                                        : 'text-slate-700'
-                                    }`}
+                                          ? 'text-rose-700 font-black'
+                                          : opStatus === 'parking'
+                                            ? 'text-amber-700 font-black'
+                                            : 'text-slate-700'
+                                      }`}
                                   >
                                     <option value="moving">Moving</option>
                                     <option value="stop">Stop</option>
@@ -1974,13 +1972,12 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                                   </select>
                                 </div>
                               ) : (
-                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${
-                                  opStatus === 'moving'
+                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${opStatus === 'moving'
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                     : opStatus === 'stop'
-                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                                }`}>
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
                                   {opStatus}
                                 </span>
                               )}
@@ -2040,7 +2037,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                                     try {
                                       const wp = typeof trip.waypoints_json === 'string' ? JSON.parse(trip.waypoints_json) : trip.waypoints_json;
                                       if (Array.isArray(wp) && wp.length > 0) return wp.length;
-                                    } catch (_) {}
+                                    } catch (_) { }
                                   }
                                   return 0;
                                 })()} Stops

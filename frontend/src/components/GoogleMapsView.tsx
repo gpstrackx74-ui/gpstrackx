@@ -14,7 +14,8 @@ import {
   Trash2,
   Map as MapIcon,
   Globe,
-  Mountain
+  Mountain,
+  ArrowLeft
 } from 'lucide-react';
 import {
   deleteSinglePoint,
@@ -150,6 +151,13 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   const geocoderRef = useRef<any>(null);
   const activeInfoWindowRef = useRef<any>(null);
   const lastFittedKeyRef = useRef<string>('');
+  const overlayRef = useRef<any>(null);
+  const streetViewServiceRef = useRef<any>(null);
+
+  // Street View States (Pegman Drag & Drop / Direct Click)
+  const [isStreetViewActive, setIsStreetViewActive] = useState<boolean>(false);
+  const [isDraggingPegman, setIsDraggingPegman] = useState<boolean>(false);
+  const [streetViewMsg, setStreetViewMsg] = useState<string | null>(null);
 
   // Map controls state
   const [mapType, setMapType] = useState<'roadmap' | 'hybrid' | 'terrain'>('roadmap');
@@ -404,6 +412,111 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
     }
   };
 
+  // Open Street View at specified GPS coordinates
+  const openStreetViewAt = (lat: number, lng: number) => {
+    const map = mapInstanceRef.current;
+    if (!map || !(window as any).google?.maps) return;
+
+    const sv = streetViewServiceRef.current || new google.maps.StreetViewService();
+    const panorama = map.getStreetView();
+
+    setStreetViewMsg('Locating 360° Street View...');
+    sv.getPanorama(
+      {
+        location: { lat, lng },
+        radius: 1000,
+        preference: google.maps.StreetViewPreference?.NEAREST || 'nearest'
+      },
+      (data: any, status: any) => {
+        if (status === 'OK' && data && data.location) {
+          setStreetViewMsg(null);
+          panorama.setPano(data.location.pano);
+          panorama.setPov({
+            heading: 270,
+            pitch: 0
+          });
+          panorama.setVisible(true);
+          setIsStreetViewActive(true);
+        } else {
+          setStreetViewMsg('No Street View imagery available nearby (within 1 KM)');
+          setTimeout(() => setStreetViewMsg(null), 3500);
+        }
+      }
+    );
+  };
+
+  // Direct Click on Pegman: open Street View at Vehicle Standing Position (or Route Start / Center)
+  const handlePegmanClick = () => {
+    let targetLat = 0;
+    let targetLng = 0;
+
+    if (vehiclePosition?.lat && vehiclePosition?.lng) {
+      targetLat = Number(vehiclePosition.lat);
+      targetLng = Number(vehiclePosition.lng);
+    } else if (startPoint?.lat && startPoint?.lng) {
+      targetLat = Number(startPoint.lat);
+      targetLng = Number(startPoint.lng);
+    } else if (activeRoute?.coordinates && activeRoute.coordinates.length > 0) {
+      const firstCoord = activeRoute.coordinates[0];
+      if (Array.isArray(firstCoord)) {
+        targetLat = Number(firstCoord[0]);
+        targetLng = Number(firstCoord[1]);
+      } else if (firstCoord && typeof firstCoord === 'object') {
+        targetLat = Number((firstCoord as any).lat);
+        targetLng = Number((firstCoord as any).lng);
+      }
+    } else if (mapInstanceRef.current) {
+      const c = mapInstanceRef.current.getCenter();
+      if (c) {
+        targetLat = c.lat();
+        targetLng = c.lng();
+      }
+    }
+
+    if (targetLat && targetLng) {
+      openStreetViewAt(targetLat, targetLng);
+    }
+  };
+
+  // Handle Drag & Drop of Pegman onto Map
+  const handleDropOnMap = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingPegman(false);
+    const map = mapInstanceRef.current;
+    if (!map || !containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    let targetLat: number | null = null;
+    let targetLng: number | null = null;
+
+    if (overlayRef.current && overlayRef.current.getProjection()) {
+      const point = new google.maps.Point(x, y);
+      const latLng = overlayRef.current.getProjection().fromContainerPixelToLatLng(point);
+      if (latLng) {
+        targetLat = latLng.lat();
+        targetLng = latLng.lng();
+      }
+    }
+
+    // Fallback using map bounds if overlay projection is not yet computed
+    if (targetLat === null || targetLng === null) {
+      const bounds = map.getBounds();
+      if (bounds) {
+        const ne = bounds.getNorthEast();
+        const sw = bounds.getSouthWest();
+        targetLat = ne.lat() - (y / rect.height) * (ne.lat() - sw.lat());
+        targetLng = sw.lng() + (x / rect.width) * (ne.lng() - sw.lng());
+      }
+    }
+
+    if (targetLat !== null && targetLng !== null) {
+      openStreetViewAt(targetLat, targetLng);
+    }
+  };
+
   // Initialize Map
   useEffect(() => {
     if (!containerRef.current) return;
@@ -428,6 +541,25 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         { featureType: 'transit', stylers: [{ visibility: 'simplified' }] }
       ]
     });
+
+    // Initialize OverlayView for screen-pixel to GPS conversion on drop
+    try {
+      const overlay = new google.maps.OverlayView();
+      overlay.draw = () => {};
+      overlay.setMap(map);
+      overlayRef.current = overlay;
+    } catch (e) {}
+
+    // Initialize StreetViewService & Panorama visibility tracking
+    try {
+      streetViewServiceRef.current = new google.maps.StreetViewService();
+      const panorama = map.getStreetView();
+      if (panorama) {
+        panorama.addListener('visible_changed', () => {
+          setIsStreetViewActive(Boolean(panorama.getVisible()));
+        });
+      }
+    } catch (e) {}
 
     const triggerClick = (lat: number, lng: number) => {
       const currentMode = clickModeRef.current;
@@ -999,6 +1131,11 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   return (
     <div
       ref={wrapperRef}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }}
+      onDrop={handleDropOnMap}
       className={
         isFullscreen
           ? 'fixed inset-0 z-[99999] w-screen h-screen rounded-none border-none bg-slate-900 flex flex-col overflow-hidden shadow-2xl'
@@ -1217,12 +1354,67 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         </div>
       )}
 
-      {/* Active Route Distance & Meter Badge directly on Map */}
-      {activeRoute && Number(activeRoute.distanceKm) > 0 && (
-        <div className="absolute bottom-4 left-4 z-20 bg-slate-900/90 text-white backdrop-blur-md px-3.5 py-1.5 rounded-xl shadow-lg border border-slate-700/80 flex items-center gap-2 pointer-events-none">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Distance:</span>
-          <span className="font-mono font-black text-sm text-white tracking-tight">{activeRoute.distanceKm} KM</span>
+      {/* Street View Active Back Button */}
+      {isStreetViewActive && (
+        <button
+          type="button"
+          onClick={() => {
+            const map = mapInstanceRef.current;
+            if (map) {
+              const panorama = map.getStreetView();
+              if (panorama) {
+                panorama.setVisible(false);
+              }
+            }
+            setIsStreetViewActive(false);
+          }}
+          className="absolute top-4 left-4 z-40 flex items-center gap-2 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-900 text-white rounded-xl shadow-xl font-bold text-xs backdrop-blur-md transition-all border border-slate-700/80 cursor-pointer active:scale-95"
+        >
+          <ArrowLeft className="w-4 h-4 text-amber-400" />
+          <span>Exit 360° Street View</span>
+        </button>
+      )}
+
+      {/* Street View Status Notification Toast */}
+      {streetViewMsg && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-2xl border border-slate-700/80 flex items-center gap-2 backdrop-blur-md pointer-events-none">
+          <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          <span>{streetViewMsg}</span>
+        </div>
+      )}
+
+      {/* Street View Pegman Floating Action in Bottom-Right Corner */}
+      {!isStreetViewActive && (
+        <div
+          className="absolute bottom-5 right-4 z-30 group"
+          title="Direct Click: 360° Street View at Vehicle Position | Drag & Drop: Street View anywhere on map"
+        >
+          <div
+            draggable={true}
+            onDragStart={(e) => {
+              setIsDraggingPegman(true);
+              e.dataTransfer.setData('text/plain', 'pegman');
+              e.dataTransfer.effectAllowed = 'copyMove';
+            }}
+            onDragEnd={() => setIsDraggingPegman(false)}
+            onClick={handlePegmanClick}
+            className={`w-10 h-10 bg-white/95 hover:bg-white active:scale-95 rounded-xl shadow-lg border border-slate-200/90 flex items-center justify-center cursor-grab active:cursor-grabbing transition-all select-none hover:shadow-xl ${
+              isDraggingPegman ? 'scale-110 ring-2 ring-amber-500 shadow-amber-500/20' : ''
+            }`}
+          >
+            <img
+              src="/images/pegman.png"
+              alt="Street View Pegman"
+              className="w-6 h-6 object-contain pointer-events-none drop-shadow-xs"
+              onError={(e) => {
+                (e.currentTarget as HTMLElement).style.display = 'none';
+              }}
+            />
+          </div>
+          {/* Tooltip on hover */}
+          <div className="absolute right-12 bottom-1/2 translate-y-1/2 hidden group-hover:flex items-center whitespace-nowrap bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg shadow-lg border border-slate-700 pointer-events-none transition-all">
+            Click: Vehicle Street View | Drag: Drop on Map
+          </div>
         </div>
       )}
 

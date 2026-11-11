@@ -333,7 +333,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 const iso = d.toISOString().split('T')[0];
                 setTripDate(iso);
               }
-            } catch (e) {}
+            } catch (e) { }
           }
           if (summaryMeta.endDate) {
             try {
@@ -342,7 +342,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 const iso = d.toISOString().split('T')[0];
                 setEndTripDate(iso);
               }
-            } catch (e) {}
+            } catch (e) { }
           }
 
           // Auto-match vehicle if registration plate was parsed in Summary sheet!
@@ -570,7 +570,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     // CRITICAL: customTollsAdded MUST be empty [] so tolls are never doubled/accumulated!
     setCustomTollsAdded([]);
@@ -588,7 +588,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             return null;
           }).filter((pt): pt is [number, number] => pt !== null && !isNaN(pt[0]) && !isNaN(pt[1]));
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 4. Set Total Distance and Travel Duration (NO stale accumulation from previous route)
@@ -1611,880 +1611,869 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     </button>
                   )}
                 </div>
+              </div>
 
-                {importedWaypointsCount > 0 && (
-                  <div className="space-y-2 pt-1">
-                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-800 font-bold">
-                      <span>✓ {importedWaypointsCount} GPS Legs Imported from {excelFileName}</span>
-                      <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-emerald-200">
-                        Auto-Routed
+              {/* Route / Corridor Name */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                  Route / Corridor Name *
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={corridorNameInput}
+                    onChange={(e) => setCorridorNameInput(e.target.value)}
+                    placeholder="e.g. Raipur to Bilaspur Industrial Highway"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveCorridorToDropdown}
+                    disabled={!startPoint || saving}
+                    className="px-3 py-2 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer disabled:opacity-40"
+                    title="Save this Route into Dropdown for Future Re-use"
+                  >
+                    Save Route
+                  </button>
+                </div>
+              </div>
+
+              {/* OR Use Existing Saved Route Selector */}
+              <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="h-px bg-slate-200 flex-1" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
+                    OR Select Previously Saved Route
+                  </span>
+                  <div className="h-px bg-slate-200 flex-1" />
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                  <Route className="w-4 h-4 text-[#E60012] shrink-0" />
+                  <select
+                    value={selectedCorridorId}
+                    onChange={(e) => handleSelectExistingCorridor(e.target.value)}
+                    className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer truncate"
+                  >
+                    <option value="">-- Select from {savedCorridors.length} Saved Routes / Corridors --</option>
+                    {savedCorridors.map((c, idx) => (
+                      <option key={idx} value={c.route_name}>
+                        {c.route_name} ({c.total_distance_km} KM)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Compact Save Modified Route Bar */}
+              {isRouteModifiedByDrag && (
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-50 border border-amber-200 text-xs">
+                  <input
+                    type="text"
+                    value={newModifiedRouteName}
+                    onChange={(e) => setNewModifiedRouteName(e.target.value)}
+                    placeholder="Save modified route name..."
+                    className="flex-1 px-2.5 py-1 text-xs rounded-lg border border-amber-300 bg-white font-medium focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveModifiedAsNewRoute}
+                    disabled={saving}
+                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shrink-0 transition cursor-pointer disabled:opacity-40"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRouteModifiedByDrag(false);
+                      setNewModifiedRouteName('');
+                    }}
+                    className="px-1.5 py-1 text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[#E60012]/10" />
+
+            {/* Custom Manual Route Drawer / Creator */}
+            <div className="space-y-2.5">
+              <div className="pt-1">
+                {!isManualDrawing ? (
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsManualDrawing(true);
+                        setClickMode('manual-route');
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
+                      title="Draw custom road route by clicking points between Start and End"
+                    >
+                      <Route className="w-4 h-4 text-red-600" />
+                      <span>+ Draw / Create Custom Route (Click Points)</span>
+                    </button>
+
+                    {routes.some(r => r.id.startsWith('custom-manual-')) && (
+                      <button
+                        type="button"
+                        onClick={() => handleCalculateRoutes()}
+                        className="w-full text-center text-[11px] font-bold text-slate-500 hover:text-slate-800 underline transition cursor-pointer py-1"
+                      >
+                        ↺ Reset to 4 Automated Routes
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-600" />
+                        <span className="font-extrabold text-xs text-slate-900">Manual Route Draw Mode</span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full border border-slate-200">
+                        {customWaypoints.length} Points Added
                       </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      Click anywhere on the Google Map along roads between A and B (you can add 5, 10, up to 25+ points).
+                    </p>
+
+                    <div className="flex items-center justify-between text-xs text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+                      <label className="flex items-center gap-2 cursor-pointer font-semibold">
+                        <input
+                          type="checkbox"
+                          checked={snapToRoads}
+                          onChange={(e) => setSnapToRoads(e.target.checked)}
+                          className="w-4 h-4 rounded accent-red-600 cursor-pointer"
+                        />
+                        <span>Snap through real tarmac roads</span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={handleUndoLastCustomPoint}
+                        disabled={customWaypoints.length === 0}
+                        className="py-1.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition disabled:opacity-40 cursor-pointer shadow-2xs"
+                      >
+                        <Undo2 className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Undo Point</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearCustomPoints}
+                        disabled={customWaypoints.length === 0}
+                        className="py-1.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition disabled:opacity-40 cursor-pointer shadow-2xs"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={handleFinishCustomRoute}
+                        disabled={customWaypoints.length === 0 || isApplyingCustomRoute}
+                        className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-xs disabled:opacity-40 cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{isApplyingCustomRoute ? 'Calculating Real Road...' : 'Apply & Save Route'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelCustomDrawing}
+                        className="py-2 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
-
-            {/* Route / Corridor Name */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                Route / Corridor Name *
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={corridorNameInput}
-                  onChange={(e) => setCorridorNameInput(e.target.value)}
-                  placeholder="e.g. Raipur to Bilaspur Industrial Highway"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012]"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveCorridorToDropdown}
-                  disabled={!startPoint || saving}
-                  className="px-3 py-2 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer disabled:opacity-40"
-                  title="Save this Route into Dropdown for Future Re-use"
-                >
-                  Save Route
-                </button>
-              </div>
             </div>
 
-            {/* OR Use Existing Saved Route Selector */}
-            <div className="pt-2 border-t border-slate-100 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <div className="h-px bg-slate-200 flex-1" />
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
-                  OR Select Previously Saved Route
+            {/* Highway FASTag Tolls */}
+            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <span>Highway FASTag Tolls</span>
                 </span>
-                <div className="h-px bg-slate-200 flex-1" />
+                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 font-mono">
+                  {selectedAxleConfig.shortLabel}
+                </span>
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
-                <Route className="w-4 h-4 text-[#E60012] shrink-0" />
-                <select
-                  value={selectedCorridorId}
-                  onChange={(e) => handleSelectExistingCorridor(e.target.value)}
-                  className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer truncate"
-                >
-                  <option value="">-- Select from {savedCorridors.length} Saved Routes / Corridors --</option>
-                  {savedCorridors.map((c, idx) => (
-                    <option key={idx} value={c.route_name}>
-                      {c.route_name} ({c.total_distance_km} KM)
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+              {currentTolls.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50/70 border border-amber-200/70 text-xs">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-amber-800 tracking-wider">Tolls</span>
+                      <p className="font-extrabold text-slate-900 text-xs">{currentTolls.length} Gate{currentTolls.length > 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total</span>
+                      <p className="font-black text-emerald-700 font-mono text-sm">₹{totalTruckToll}</p>
+                    </div>
+                  </div>
 
-            {/* Compact Save Modified Route Bar */}
-            {isRouteModifiedByDrag && (
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-50 border border-amber-200 text-xs">
-                <input
-                  type="text"
-                  value={newModifiedRouteName}
-                  onChange={(e) => setNewModifiedRouteName(e.target.value)}
-                  placeholder="Save modified route name..."
-                  className="flex-1 px-2.5 py-1 text-xs rounded-lg border border-amber-300 bg-white font-medium focus:outline-none focus:border-amber-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveModifiedAsNewRoute}
-                  disabled={saving}
-                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shrink-0 transition cursor-pointer disabled:opacity-40"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsRouteModifiedByDrag(false);
-                    setNewModifiedRouteName('');
-                  }}
-                  className="px-1.5 py-1 text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
-                  title="Dismiss"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-          </div>
+                  <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                    {currentTolls.map((toll, idx) => {
+                      const isOverridden = customTollOverrides[toll.name] !== undefined;
+                      return (
+                        <div key={idx} className="p-1.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between text-[11px] gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-800 truncate">{idx + 1}. {toll.name}</span>
+                              {isOverridden && (
+                                <span className="px-1 py-0.2 rounded bg-red-50 text-red-700 border border-red-200 font-bold text-[8px] uppercase tracking-wider shrink-0">
+                                  Custom
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[9px] text-slate-400 font-mono truncate">
+                              {Number(toll.lat).toFixed(4)}, {Number(toll.lng).toFixed(4)}
+                            </p>
+                          </div>
 
-          <div className="border-t border-[#E60012]/10" />
+                          {/* Editable Custom Toll Price Input */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-xs font-bold text-slate-400">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={toll.charges}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                handleUpdateTollPrice(toll.name, isNaN(val) ? 0 : val);
+                              }}
+                              className="w-16 px-1.5 py-0.5 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800 text-right"
+                              title="Edit Custom Toll Fee"
+                            />
+                            {isOverridden && (
+                              <button
+                                type="button"
+                                onClick={() => handleResetTollPrice(toll.name)}
+                                className="text-[9px] text-red-600 hover:text-red-700 font-bold px-1 py-0.5 rounded hover:bg-red-50 cursor-pointer"
+                                title="Reset"
+                              >
+                                ↺
+                              </button>
+                            )}
+                            {toll.is_manual && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveCustomToll(idx)}
+                                className="text-slate-400 hover:text-red-600 p-0.5"
+                                title="Remove Custom Toll"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-          {/* Custom Manual Route Drawer / Creator */}
-          <div className="space-y-2.5">
-            <div className="pt-1">
-              {!isManualDrawing ? (
-                <div className="space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsManualDrawing(true);
-                      setClickMode('manual-route');
-                    }}
-                    className="w-full py-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
-                    title="Draw custom road route by clicking points between Start and End"
-                  >
-                    <Route className="w-4 h-4 text-red-600" />
-                    <span>+ Draw / Create Custom Route (Click Points)</span>
-                  </button>
-
-                  {routes.some(r => r.id.startsWith('custom-manual-')) && (
-                    <button
-                      type="button"
-                      onClick={() => handleCalculateRoutes()}
-                      className="w-full text-center text-[11px] font-bold text-slate-500 hover:text-slate-800 underline transition cursor-pointer py-1"
-                    >
-                      ↺ Reset to 4 Automated Routes
-                    </button>
+                  {/* Button / Form to Add Custom Extra Toll Barrier */}
+                  {!showAddCustomToll ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
+                        className={`flex-1 py-1 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer ${clickMode === 'toll'
+                          ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
+                          : 'border-dashed border-slate-300 hover:border-slate-400 text-slate-700 bg-slate-50 hover:bg-slate-100'
+                          }`}
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{clickMode === 'toll' ? 'Click Map to Place' : '+ Add Toll (Map)'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddCustomToll(true)}
+                        className="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium bg-white cursor-pointer"
+                        title="Manual Entry"
+                      >
+                        Manual
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-2 rounded-lg border border-slate-200 bg-slate-50/80 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-700 text-[11px]">Add Toll Gate</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddCustomToll(false)}
+                          className="text-slate-400 hover:text-slate-600 text-[10px] cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                        <input
+                          type="text"
+                          value={newCustomTollName}
+                          onChange={(e) => setNewCustomTollName(e.target.value)}
+                          placeholder="Toll name..."
+                          className="sm:col-span-2 px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          value={newCustomTollPrice}
+                          onChange={(e) => setNewCustomTollPrice(e.target.value)}
+                          placeholder="₹..."
+                          className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddCustomToll}
+                        disabled={!newCustomTollName.trim()}
+                        className="w-full py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition cursor-pointer disabled:opacity-40"
+                      >
+                        Add Toll
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : (
-                <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-red-600" />
-                      <span className="font-extrabold text-xs text-slate-900">Manual Route Draw Mode</span>
-                    </div>
-                    <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full border border-slate-200">
-                      {customWaypoints.length} Points Added
-                    </span>
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 leading-snug">
-                    Click anywhere on the Google Map along roads between A and B (you can add 5, 10, up to 25+ points).
-                  </p>
-
-                  <div className="flex items-center justify-between text-xs text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
-                    <label className="flex items-center gap-2 cursor-pointer font-semibold">
-                      <input
-                        type="checkbox"
-                        checked={snapToRoads}
-                        onChange={(e) => setSnapToRoads(e.target.checked)}
-                        className="w-4 h-4 rounded accent-red-600 cursor-pointer"
-                      />
-                      <span>Snap through real tarmac roads</span>
-                    </label>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={handleUndoLastCustomPoint}
-                      disabled={customWaypoints.length === 0}
-                      className="py-1.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition disabled:opacity-40 cursor-pointer shadow-2xs"
-                    >
-                      <Undo2 className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Undo Point</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleClearCustomPoints}
-                      disabled={customWaypoints.length === 0}
-                      className="py-1.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition disabled:opacity-40 cursor-pointer shadow-2xs"
-                    >
-                      Clear All
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={handleFinishCustomRoute}
-                      disabled={customWaypoints.length === 0 || isApplyingCustomRoute}
-                      className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-xs disabled:opacity-40 cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{isApplyingCustomRoute ? 'Calculating Real Road...' : 'Apply & Save Route'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelCustomDrawing}
-                      className="py-2 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold transition cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Highway FASTag Tolls */}
-          <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs space-y-2.5">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span>Highway FASTag Tolls</span>
-              </span>
-              <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 font-mono">
-                {selectedAxleConfig.shortLabel}
-              </span>
-            </div>
-
-            {currentTolls.length > 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50/70 border border-amber-200/70 text-xs">
-                  <div>
-                    <span className="text-[9px] uppercase font-bold text-amber-800 tracking-wider">Tolls</span>
-                    <p className="font-extrabold text-slate-900 text-xs">{currentTolls.length} Gate{currentTolls.length > 1 ? 's' : ''}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total</span>
-                    <p className="font-black text-emerald-700 font-mono text-sm">₹{totalTruckToll}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                  {currentTolls.map((toll, idx) => {
-                    const isOverridden = customTollOverrides[toll.name] !== undefined;
-                    return (
-                      <div key={idx} className="p-1.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between text-[11px] gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-slate-800 truncate">{idx + 1}. {toll.name}</span>
-                            {isOverridden && (
-                              <span className="px-1 py-0.2 rounded bg-red-50 text-red-700 border border-red-200 font-bold text-[8px] uppercase tracking-wider shrink-0">
-                                Custom
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[9px] text-slate-400 font-mono truncate">
-                            {Number(toll.lat).toFixed(4)}, {Number(toll.lng).toFixed(4)}
-                          </p>
-                        </div>
-
-                        {/* Editable Custom Toll Price Input */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-xs font-bold text-slate-400">₹</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={toll.charges}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value);
-                              handleUpdateTollPrice(toll.name, isNaN(val) ? 0 : val);
-                            }}
-                            className="w-16 px-1.5 py-0.5 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800 text-right"
-                            title="Edit Custom Toll Fee"
-                          />
-                          {isOverridden && (
-                            <button
-                              type="button"
-                              onClick={() => handleResetTollPrice(toll.name)}
-                              className="text-[9px] text-red-600 hover:text-red-700 font-bold px-1 py-0.5 rounded hover:bg-red-50 cursor-pointer"
-                              title="Reset"
-                            >
-                              ↺
-                            </button>
-                          )}
-                          {toll.is_manual && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveCustomToll(idx)}
-                              className="text-slate-400 hover:text-red-600 p-0.5"
-                              title="Remove Custom Toll"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Button / Form to Add Custom Extra Toll Barrier */}
-                {!showAddCustomToll ? (
-                  <div className="flex items-center gap-1.5">
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-slate-500">No Tolls on Route</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
-                      className={`flex-1 py-1 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer ${clickMode === 'toll'
-                          ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
-                          : 'border-dashed border-slate-300 hover:border-slate-400 text-slate-700 bg-slate-50 hover:bg-slate-100'
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition ${clickMode === 'toll'
+                        ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                     >
                       <Plus className="w-3 h-3" />
-                      <span>{clickMode === 'toll' ? 'Click Map to Place' : '+ Add Toll (Map)'}</span>
+                      <span>{clickMode === 'toll' ? 'Click Map' : '+ Add Toll'}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowAddCustomToll(true)}
                       className="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium bg-white cursor-pointer"
-                      title="Manual Entry"
                     >
                       Manual
                     </button>
                   </div>
-                ) : (
-                  <div className="p-2 rounded-lg border border-slate-200 bg-slate-50/80 space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700 text-[11px]">Add Toll Gate</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddCustomToll(false)}
-                        className="text-slate-400 hover:text-slate-600 text-[10px] cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                      <input
-                        type="text"
-                        value={newCustomTollName}
-                        onChange={(e) => setNewCustomTollName(e.target.value)}
-                        placeholder="Toll name..."
-                        className="sm:col-span-2 px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        value={newCustomTollPrice}
-                        onChange={(e) => setNewCustomTollPrice(e.target.value)}
-                        placeholder="₹..."
-                        className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
-                      />
-                    </div>
+                </div>
+              )}
+              {currentTolls.length === 0 && showAddCustomToll && (
+                <div className="p-2 rounded-lg border border-slate-200 bg-white space-y-1.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                    <input
+                      type="text"
+                      value={newCustomTollName}
+                      onChange={(e) => setNewCustomTollName(e.target.value)}
+                      placeholder="Toll name..."
+                      className="sm:col-span-2 px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      value={newCustomTollPrice}
+                      onChange={(e) => setNewCustomTollPrice(e.target.value)}
+                      placeholder="₹..."
+                      className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCustomToll(false)}
+                      className="px-2 py-0.5 rounded text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
                     <button
                       type="button"
                       onClick={handleAddCustomToll}
                       disabled={!newCustomTollName.trim()}
-                      className="w-full py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition cursor-pointer disabled:opacity-40"
+                      className="px-2.5 py-0.5 rounded bg-slate-900 text-white font-bold text-xs disabled:opacity-40 cursor-pointer"
                     >
-                      Add Toll
+                      Add
                     </button>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium text-slate-500">No Tolls on Route</span>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition ${clickMode === 'toll'
-                        ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>{clickMode === 'toll' ? 'Click Map' : '+ Add Toll'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddCustomToll(true)}
-                    className="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium bg-white cursor-pointer"
-                  >
-                    Manual
-                  </button>
                 </div>
-              </div>
-            )}
-            {currentTolls.length === 0 && showAddCustomToll && (
-              <div className="p-2 rounded-lg border border-slate-200 bg-white space-y-1.5">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                  <input
-                    type="text"
-                    value={newCustomTollName}
-                    onChange={(e) => setNewCustomTollName(e.target.value)}
-                    placeholder="Toll name..."
-                    className="sm:col-span-2 px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    value={newCustomTollPrice}
-                    onChange={(e) => setNewCustomTollPrice(e.target.value)}
-                    placeholder="₹..."
-                    className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
-                  />
-                </div>
-                <div className="flex items-center justify-end gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddCustomToll(false)}
-                    className="px-2 py-0.5 rounded text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAddCustomToll}
-                    disabled={!newCustomTollName.trim()}
-                    className="px-2.5 py-0.5 rounded bg-slate-900 text-white font-bold text-xs disabled:opacity-40 cursor-pointer"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Stoppages & Route Metrics Card */}
-          <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-xs space-y-2">
-            {/* Stoppages */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs pb-0.5 border-b border-slate-100">
-                <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
-                  <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                  <span>Stoppages</span>
-                </label>
-                <span className="text-[10px] font-mono text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded-full">
-                  {stoppages.length} Stops
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <div className="flex items-center gap-1 bg-slate-50 p-0.5 rounded-lg border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = Math.max(0, (parseInt(stopsInput) || 0) - 1);
-                      setStopsInput(next.toString());
-                      handleSetStopsCount(next);
-                    }}
-                    className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center transition border border-slate-200 cursor-pointer"
-                    title="Decrease Stops"
-                  >
-                    <Minus className="w-3 h-3" />
-                  </button>
-                  <input
-                    type="number"
-                    min="0"
-                    max="99"
-                    value={stopsInput}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setStopsInput(val);
-                      const n = parseInt(val);
-                      if (!isNaN(n) && n >= 0) {
-                        handleSetStopsCount(n);
-                      } else if (val === '') {
-                        handleSetStopsCount(0);
-                      }
-                    }}
-                    placeholder="0"
-                    className="w-10 h-6 bg-transparent font-mono font-bold text-xs text-center text-slate-900 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = (parseInt(stopsInput) || 0) + 1;
-                      setStopsInput(next.toString());
-                      handleSetStopsCount(next);
-                    }}
-                    className="w-6 h-6 rounded bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center transition cursor-pointer"
-                    title="Increase Stops"
-                  >
-                    <Plus className="w-3 h-3" />
-                  </button>
+            {/* Stoppages & Route Metrics Card */}
+            <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-xs space-y-2">
+              {/* Stoppages */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs pb-0.5 border-b border-slate-100">
+                  <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
+                    <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                    <span>Stoppages</span>
+                  </label>
+                  <span className="text-[10px] font-mono text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded-full">
+                    {stoppages.length} Stops
+                  </span>
                 </div>
 
-                {/* Map Click Stoppage Option */}
-                <button
-                  type="button"
-                  onClick={() => setClickMode(clickMode === 'stop' ? 'none' : 'stop')}
-                  className={`flex-1 h-7 px-2 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${clickMode === 'stop'
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1 bg-slate-50 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = Math.max(0, (parseInt(stopsInput) || 0) - 1);
+                        setStopsInput(next.toString());
+                        handleSetStopsCount(next);
+                      }}
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center transition border border-slate-200 cursor-pointer"
+                      title="Decrease Stops"
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={stopsInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setStopsInput(val);
+                        const n = parseInt(val);
+                        if (!isNaN(n) && n >= 0) {
+                          handleSetStopsCount(n);
+                        } else if (val === '') {
+                          handleSetStopsCount(0);
+                        }
+                      }}
+                      placeholder="0"
+                      className="w-10 h-6 bg-transparent font-mono font-bold text-xs text-center text-slate-900 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = (parseInt(stopsInput) || 0) + 1;
+                        setStopsInput(next.toString());
+                        handleSetStopsCount(next);
+                      }}
+                      className="w-6 h-6 rounded bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                      title="Increase Stops"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* Map Click Stoppage Option */}
+                  <button
+                    type="button"
+                    onClick={() => setClickMode(clickMode === 'stop' ? 'none' : 'stop')}
+                    className={`flex-1 h-7 px-2 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${clickMode === 'stop'
                       ? 'bg-amber-600 text-white border-amber-600'
                       : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200/80'
-                    }`}
-                >
-                  <MapPin className="w-3 h-3 text-amber-600" />
-                  <span>{clickMode === 'stop' ? 'Click Map...' : '+ Map Stop'}</span>
-                </button>
+                      }`}
+                  >
+                    <MapPin className="w-3 h-3 text-amber-600" />
+                    <span>{clickMode === 'stop' ? 'Click Map...' : '+ Map Stop'}</span>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* Custom Route Distance */}
-            <div className="space-y-1 pt-1.5 border-t border-slate-100">
-              <div className="flex items-center justify-between text-xs">
-                <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
-                  <span className="w-2 h-2 rounded-full bg-red-600"></span>
-                  <span>Route Distance</span>
-                </label>
-                {customDistanceKm !== null && customDistanceKm !== activeRoute?.distanceKm && (
+              {/* Custom Route Distance */}
+              <div className="space-y-1 pt-1.5 border-t border-slate-100">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
+                    <span className="w-2 h-2 rounded-full bg-red-600"></span>
+                    <span>Route Distance</span>
+                  </label>
+                  {customDistanceKm !== null && customDistanceKm !== activeRoute?.distanceKm && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomDistanceKm(null)}
+                      className="text-[10px] font-bold text-red-600 hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span>↺ Reset ({activeRoute?.distanceKm || 0} KM)</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min="1"
+                      max="99999"
+                      step="0.1"
+                      value={effectiveDistanceKm || ''}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setCustomDistanceKm(isNaN(val) ? 0 : Math.max(0, Math.round(val * 10) / 10));
+                      }}
+                      placeholder="Distance..."
+                      className="w-full h-7 px-2.5 rounded-lg border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800 pr-9"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400 font-mono">
+                      KM
+                    </span>
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => setCustomDistanceKm(null)}
-                    className="text-[10px] font-bold text-red-600 hover:underline flex items-center gap-0.5 cursor-pointer"
+                    onClick={() => {
+                      const current = effectiveDistanceKm;
+                      setCustomDistanceKm(Math.max(1, Math.round((current - 5) * 10) / 10));
+                    }}
+                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                    title="Minus 5 KM"
                   >
-                    <span>↺ Reset ({activeRoute?.distanceKm || 0} KM)</span>
+                    -5
                   </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <div className="relative flex-1">
-                  <input
-                    type="number"
-                    min="1"
-                    max="99999"
-                    step="0.1"
-                    value={effectiveDistanceKm || ''}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setCustomDistanceKm(isNaN(val) ? 0 : Math.max(0, Math.round(val * 10) / 10));
-                    }}
-                    placeholder="Distance..."
-                    className="w-full h-7 px-2.5 rounded-lg border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800 pr-9"
-                  />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400 font-mono">
-                    KM
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const current = effectiveDistanceKm;
-                    setCustomDistanceKm(Math.max(1, Math.round((current - 5) * 10) / 10));
-                  }}
-                  className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center transition cursor-pointer"
-                  title="Minus 5 KM"
-                >
-                  -5
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const current = effectiveDistanceKm;
-                    setCustomDistanceKm(Math.round((current + 5) * 10) / 10);
-                  }}
-                  className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center transition shadow-xs cursor-pointer"
-                  title="Add 5 KM"
-                >
-                  +5
-                </button>
-              </div>
-            </div>
-
-            {/* Route Travel Duration */}
-            <div className="space-y-1 pt-1.5 border-t border-slate-100">
-              <div className="flex items-center justify-between text-xs">
-                <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
-                  <Clock className="w-3 h-3 text-slate-600" />
-                  <span>Travel Duration</span>
-                </label>
-                <span className="text-[10px] font-mono text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded-full">
-                  {travelHours}h {travelMinutes}m
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                {/* Hours Box */}
-                <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-500 shrink-0">Hrs</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="99"
-                    value={travelHours}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value);
-                      setTravelHours(isNaN(val) ? 0 : Math.max(0, val));
-                    }}
-                    placeholder="0"
-                    className="w-full h-5.5 bg-white px-1.5 rounded border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-800 text-center"
-                  />
-                  <div className="flex flex-col gap-0.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setTravelHours(prev => prev + 1)}
-                      className="w-3.5 h-2.5 bg-white hover:bg-slate-200 rounded text-[6px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
-                      title="Add 1 Hour"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTravelHours(prev => Math.max(0, prev - 1))}
-                      className="w-3.5 h-2.5 bg-white hover:bg-slate-200 rounded text-[6px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
-                      title="Subtract 1 Hour"
-                    >
-                      ▼
-                    </button>
-                  </div>
-                </div>
-
-                {/* Minutes Box */}
-                <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-500 shrink-0">Min</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="59"
-                    value={travelMinutes}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value);
-                      setTravelMinutes(isNaN(val) ? 0 : Math.min(59, Math.max(0, val)));
-                    }}
-                    placeholder="0"
-                    className="w-full h-5.5 bg-white px-1.5 rounded border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-800 text-center"
-                  />
-                  <div className="flex flex-col gap-0.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setTravelMinutes(prev => (prev + 5) % 60)}
-                      className="w-3.5 h-2.5 bg-white hover:bg-slate-200 rounded text-[6px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
-                      title="Add 5 Minutes"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTravelMinutes(prev => (prev - 5 < 0 ? 55 : prev - 5))}
-                      className="w-3.5 h-2.5 bg-white hover:bg-slate-200 rounded text-[6px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
-                      title="Subtract 5 Minutes"
-                    >
-                      ▼
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* List of active scheduled stoppages */}
-            {stoppages.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-slate-100 space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                {stoppages.map((s, idx) => {
-                  const durationMins = s.stop_duration_mins || s.duration || 25;
-                  const cleanName = (s.name || `Stoppage #${idx + 1}`)
-                    .replace(/Highway Dhaba & Rest Point|Fuel Station & Inspection Bay|Driver Rest Area|Logistics Checkpoint|Restaurant|Dhaba/gi, 'Transit Halt')
-                    .trim();
-                  return (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px]">
-                      <div className="min-w-0 pr-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full bg-slate-900 text-white font-bold text-[9px] flex items-center justify-center shrink-0">
-                            {idx + 1}
-                          </span>
-                          <span className="font-bold text-slate-800 truncate">{cleanName}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-mono mt-0.5 pl-5">
-                          {durationMins}m halt • {Number(s.lat || 0).toFixed(4)}, {Number(s.lng || 0).toFixed(4)}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = stoppages.filter((_, i) => i !== idx);
-                          setStoppages(updated);
-                          setStopsInput(updated.length.toString());
-                        }}
-                        className="text-slate-400 hover:text-red-600 p-1 rounded-lg hover:bg-white transition cursor-pointer"
-                        title="Delete Stoppage"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Primary Action Button: Allocate Route */}
-          <button
-            type="button"
-            onClick={handleAllocateRoute}
-            disabled={saving || !selectedVehicleId || routes.length === 0}
-            className="w-full py-3 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-          >
-            <Check className="w-4 h-4 text-emerald-200" />
-            <span>
-              {saving ? 'Allocating Route...' : saveSuccess ? 'Route Allocated Successfully!' : `Confirm & Allocate Route to ${targetVehicle?.registration_no || 'Vehicle'}`}
-            </span>
-          </button>
-        </div>
-
-        {/* Right Column: Google Maps (Full View) + Route Summary Card Below Map (7 cols) */}
-        <div className="lg:col-span-7 space-y-5">
-          {/* Map Container */}
-          <div className="relative flex flex-col">
-            {/* Map Top Floating Header: Clear Map & Engine Status */}
-            <div className="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-[#E60012]/10 text-xs">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStartPoint(null);
-                    setEndPoint(null);
-                    setRoutes([]);
-                    setSelectedRouteId('');
-                    setCustomWaypoints([]);
-                    setIsManualDrawing(false);
-                    setClickMode('none');
-                    setStoppages([]);
-                    setManualTolls([]);
-                    setCustomTollsAdded([]);
-                  }}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-700 border border-slate-200 hover:border-red-200 transition cursor-pointer"
-                  title="Clear all points, routes and custom drawing from map"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Clear Map</span>
-                </button>
-
-                {clickMode !== 'none' && (
                   <button
                     type="button"
-                    onClick={() => setClickMode('none')}
-                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 cursor-pointer transition shadow-2xs"
+                    onClick={() => {
+                      const current = effectiveDistanceKm;
+                      setCustomDistanceKm(Math.round((current + 5) * 10) / 10);
+                    }}
+                    className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center transition shadow-xs cursor-pointer"
+                    title="Add 5 KM"
                   >
-                    Cancel ({clickMode === 'toll' ? 'Toll Placement' : clickMode === 'stop' ? 'Stoppage Placement' : clickMode})
+                    +5
                   </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Google Maps Engine</span>
-              </div>
-            </div>
-
-            {/* Interactive Toll Placement Mode Active Notification Banner */}
-            {clickMode === 'toll' && (
-              <div className="mb-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between gap-2 shadow-2xs">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-                  <span>
-                    📍 Toll Placement Active: Click anywhere on the route polyline or map to place a Toll Gate.
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setClickMode('none')}
-                  className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg transition cursor-pointer"
-                >
-                  Done
-                </button>
-              </div>
-            )}
-
-            {/* Interactive Stoppage Mode Active Notification Banner */}
-            {clickMode === 'stop' && (
-              <div className="mb-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between gap-2 shadow-2xs">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-                  <span>
-                    Interactive Stoppage Mode: Click anywhere on the route polyline or map to add a stoppage ({stoppages.length} placed).
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setClickMode('none')}
-                  className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg transition cursor-pointer"
-                >
-                  Done Adding
-                </button>
-              </div>
-            )}
-
-            {/* Interactive Google Map Container - Completely Unobstructed */}
-            <div className="relative rounded-2xl overflow-hidden min-h-[520px]">
-              <InteractiveMap
-                height="540px"
-                center={startPoint ? [startPoint.lat, startPoint.lng] : [21.2580, 81.5645]}
-                zoom={8}
-                routes={routes}
-                selectedRouteId={selectedRouteId}
-                onSelectRoute={(id) => {
-                setSelectedRouteId(id);
-                setCustomDistanceKm(null);
-                const found = routes.find(r => r.id === id);
-                if (found && found.timeMinutes) {
-                  setTravelHours(Math.floor(found.timeMinutes / 60));
-                  setTravelMinutes(found.timeMinutes % 60);
-                }
-              }}
-                startPoint={startPoint}
-                endPoint={endPoint}
-                stoppages={stoppages}
-                parkingPoints={parkingPoints}
-                tollGates={currentTolls}
-                clickMode={clickMode}
-                customWaypoints={customWaypoints}
-                isManualDrawing={isManualDrawing}
-                onMapClick={handleMapClick}
-                isDraggableRoute={isDraggableRoute}
-                onRouteChange={handleRouteDragChange}
-              />
-            </div>
-          </div>
-
-          {/* Route & Vehicle Allocation Summary (Seamless inside unified container) */}
-          {activeRoute && (
-            <div className="pt-2 border-t border-[#E60012]/10 space-y-3.5">
-              {/* Row 1: Vehicle Plate, Type, Axle & Route Corridor */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#E60012]/10">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-[#E60012] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                    <Truck className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-black text-sm text-slate-900 font-mono tracking-tight">
-                        {targetVehicle?.registration_no || 'No Vehicle Selected'}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                        {targetVehicle?.vehicle_type || 'Commercial Fleet'}
-                      </span>
-                    </div>
-                    <p 
-                      className="text-xs text-slate-500 mt-1 font-medium truncate max-w-[420px]" 
-                      title={`${startPoint?.name || 'Origin'} → ${endPoint?.name || 'Destination'}`}
-                    >
-                      <span className="font-bold text-slate-800">
-                        {startPoint?.name || 'Origin'} → {endPoint?.name || 'Destination'}
-                      </span>
-                      <span className="text-slate-300 mx-1.5">•</span>
-                      <span className="font-mono text-slate-600">
-                        {tripDate}{endTripDate && endTripDate !== tripDate ? ` → ${endTripDate}` : ''} ({startTripTime} - {endTripTime})
-                      </span>
-                    </p>
-                  </div>
                 </div>
               </div>
 
-              {/* Row 2: 3 Clear, Well-Spaced Metric Boxes (Full Width Grid, Zero Overlap) */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
-                <div className="bg-slate-50/80 rounded-xl p-2.5 sm:p-3 border border-slate-100 text-left">
-                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">
-                    Total Distance
-                  </span>
-                  <span className="font-black text-slate-900 font-mono text-xs sm:text-sm block mt-0.5">
-                    {effectiveDistanceKm} KM
-                  </span>
-                </div>
-
-                <div className="bg-slate-50/80 rounded-xl p-2.5 sm:p-3 border border-slate-100 text-left">
-                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">
-                    Est. Duration
-                  </span>
-                  <span className="font-black text-slate-900 font-mono text-xs sm:text-sm block mt-0.5">
+              {/* Route Travel Duration */}
+              <div className="space-y-1 pt-1.5 border-t border-slate-100">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
+                    <Clock className="w-3 h-3 text-slate-600" />
+                    <span>Travel Duration</span>
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded-full">
                     {travelHours}h {travelMinutes}m
                   </span>
                 </div>
 
-                <div className="bg-slate-50/80 rounded-xl p-2.5 sm:p-3 border border-slate-100 text-left">
-                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider truncate">
-                    FASTag / Stops
-                  </span>
-                  <span 
-                    className="font-black text-slate-900 font-mono text-xs sm:text-sm block mt-0.5 truncate" 
-                    title={`${currentTolls.length} Plazas (₹${totalTruckToll}) • ${stoppages.length} Stops`}
-                  >
-                    {currentTolls.length} {currentTolls.length > 0 ? `(₹${totalTruckToll})` : 'Tolls'} • {stoppages.length} Stops
-                  </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Hours Box */}
+                  <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-500 shrink-0">Hrs</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={travelHours}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setTravelHours(isNaN(val) ? 0 : Math.max(0, val));
+                      }}
+                      placeholder="0"
+                      className="w-full h-5.5 bg-white px-1.5 rounded border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-800 text-center"
+                    />
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setTravelHours(prev => prev + 1)}
+                        className="w-3.5 h-2.5 bg-white hover:bg-slate-200 rounded text-[6px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
+                        title="Add 1 Hour"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTravelHours(prev => Math.max(0, prev - 1))}
+                        className="w-3.5 h-2.5 bg-white hover:bg-slate-200 rounded text-[6px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
+                        title="Subtract 1 Hour"
+                      >
+                        ▼
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Minutes Box */}
+                  <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-500 shrink-0">Min</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={travelMinutes}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setTravelMinutes(isNaN(val) ? 0 : Math.min(59, Math.max(0, val)));
+                      }}
+                      placeholder="0"
+                      className="w-full h-5.5 bg-white px-1.5 rounded border border-slate-200 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-800 text-center"
+                    />
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setTravelMinutes(prev => (prev + 5) % 60)}
+                        className="w-3.5 h-2.5 bg-white hover:bg-slate-200 rounded text-[6px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
+                        title="Add 5 Minutes"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTravelMinutes(prev => (prev - 5 < 0 ? 55 : prev - 5))}
+                        className="w-3.5 h-2.5 bg-white hover:bg-slate-200 rounded text-[6px] font-bold flex items-center justify-center border border-slate-200 cursor-pointer"
+                        title="Subtract 5 Minutes"
+                      >
+                        ▼
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* List of active scheduled stoppages */}
+              {stoppages.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-slate-100 space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {stoppages.map((s, idx) => {
+                    const durationMins = s.stop_duration_mins || s.duration || 25;
+                    const cleanName = (s.name || `Stoppage #${idx + 1}`)
+                      .replace(/Highway Dhaba & Rest Point|Fuel Station & Inspection Bay|Driver Rest Area|Logistics Checkpoint|Restaurant|Dhaba/gi, 'Transit Halt')
+                      .trim();
+                    return (
+                      <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px]">
+                        <div className="min-w-0 pr-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-4 h-4 rounded-full bg-slate-900 text-white font-bold text-[9px] flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span className="font-bold text-slate-800 truncate">{cleanName}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-mono mt-0.5 pl-5">
+                            {durationMins}m halt • {Number(s.lat || 0).toFixed(4)}, {Number(s.lng || 0).toFixed(4)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = stoppages.filter((_, i) => i !== idx);
+                            setStoppages(updated);
+                            setStopsInput(updated.length.toString());
+                          }}
+                          className="text-slate-400 hover:text-red-600 p-1 rounded-lg hover:bg-white transition cursor-pointer"
+                          title="Delete Stoppage"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Primary Action Button: Allocate Route */}
+            <button
+              type="button"
+              onClick={handleAllocateRoute}
+              disabled={saving || !selectedVehicleId || routes.length === 0}
+              className="w-full py-3 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+            >
+              <Check className="w-4 h-4 text-emerald-200" />
+              <span>
+                {saving ? 'Allocating Route...' : saveSuccess ? 'Route Allocated Successfully!' : `Confirm & Allocate Route to ${targetVehicle?.registration_no || 'Vehicle'}`}
+              </span>
+            </button>
+          </div>
+
+          {/* Right Column: Google Maps (Full View) + Route Summary Card Below Map (7 cols) */}
+          <div className="lg:col-span-7 space-y-5">
+            {/* Map Container */}
+            <div className="relative flex flex-col">
+              {/* Map Top Floating Header: Clear Map & Engine Status */}
+              <div className="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-[#E60012]/10 text-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStartPoint(null);
+                      setEndPoint(null);
+                      setRoutes([]);
+                      setSelectedRouteId('');
+                      setCustomWaypoints([]);
+                      setIsManualDrawing(false);
+                      setClickMode('none');
+                      setStoppages([]);
+                      setManualTolls([]);
+                      setCustomTollsAdded([]);
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-700 border border-slate-200 hover:border-red-200 transition cursor-pointer"
+                    title="Clear all points, routes and custom drawing from map"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Clear Map</span>
+                  </button>
+
+                  {clickMode !== 'none' && (
+                    <button
+                      type="button"
+                      onClick={() => setClickMode('none')}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 cursor-pointer transition shadow-2xs"
+                    >
+                      Cancel ({clickMode === 'toll' ? 'Toll Placement' : clickMode === 'stop' ? 'Stoppage Placement' : clickMode})
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Google Maps Engine</span>
+                </div>
+              </div>
+
+              {/* Interactive Toll Placement Mode Active Notification Banner */}
+              {clickMode === 'toll' && (
+                <div className="mb-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span>
+                      📍 Toll Placement Active: Click anywhere on the route polyline or map to place a Toll Gate.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setClickMode('none')}
+                    className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg transition cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+
+              {/* Interactive Stoppage Mode Active Notification Banner */}
+              {clickMode === 'stop' && (
+                <div className="mb-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span>
+                      Interactive Stoppage Mode: Click anywhere on the route polyline or map to add a stoppage ({stoppages.length} placed).
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setClickMode('none')}
+                    className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg transition cursor-pointer"
+                  >
+                    Done Adding
+                  </button>
+                </div>
+              )}
+
+              {/* Interactive Google Map Container - Completely Unobstructed */}
+              <div className="relative rounded-2xl overflow-hidden min-h-[520px]">
+                <InteractiveMap
+                  height="540px"
+                  center={startPoint ? [startPoint.lat, startPoint.lng] : [21.2580, 81.5645]}
+                  zoom={8}
+                  routes={routes}
+                  selectedRouteId={selectedRouteId}
+                  onSelectRoute={(id) => {
+                    setSelectedRouteId(id);
+                    setCustomDistanceKm(null);
+                    const found = routes.find(r => r.id === id);
+                    if (found && found.timeMinutes) {
+                      setTravelHours(Math.floor(found.timeMinutes / 60));
+                      setTravelMinutes(found.timeMinutes % 60);
+                    }
+                  }}
+                  startPoint={startPoint}
+                  endPoint={endPoint}
+                  stoppages={stoppages}
+                  parkingPoints={parkingPoints}
+                  tollGates={currentTolls}
+                  clickMode={clickMode}
+                  customWaypoints={customWaypoints}
+                  isManualDrawing={isManualDrawing}
+                  onMapClick={handleMapClick}
+                  isDraggableRoute={isDraggableRoute}
+                  onRouteChange={handleRouteDragChange}
+                />
+              </div>
+            </div>
+
+            {/* Route & Vehicle Allocation Summary (Seamless inside unified container) */}
+            {activeRoute && (
+              <div className="pt-2 border-t border-[#E60012]/10 space-y-3.5">
+                {/* Row 1: Vehicle Plate, Type, Axle & Route Corridor */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#E60012]/10">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-[#E60012] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <Truck className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-sm text-slate-900 font-mono tracking-tight">
+                          {targetVehicle?.registration_no || 'No Vehicle Selected'}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                          {targetVehicle?.vehicle_type || 'Commercial Fleet'}
+                        </span>
+                      </div>
+                      <p
+                        className="text-xs text-slate-500 mt-1 font-medium truncate max-w-[420px]"
+                        title={`${startPoint?.name || 'Origin'} → ${endPoint?.name || 'Destination'}`}
+                      >
+                        <span className="font-bold text-slate-800">
+                          {startPoint?.name || 'Origin'} → {endPoint?.name || 'Destination'}
+                        </span>
+                        <span className="text-slate-300 mx-1.5">•</span>
+                        <span className="font-mono text-slate-600">
+                          {tripDate}{endTripDate && endTripDate !== tripDate ? ` → ${endTripDate}` : ''} ({startTripTime} - {endTripTime})
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Row 2: 3 Clear, Well-Spaced Metric Boxes (Full Width Grid, Zero Overlap) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
+                  <div className="bg-slate-50/80 rounded-xl p-2.5 sm:p-3 border border-slate-100 text-left">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">
+                      Total Distance
+                    </span>
+                    <span className="font-black text-slate-900 font-mono text-xs sm:text-sm block mt-0.5">
+                      {effectiveDistanceKm} KM
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50/80 rounded-xl p-2.5 sm:p-3 border border-slate-100 text-left">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">
+                      Est. Duration
+                    </span>
+                    <span className="font-black text-slate-900 font-mono text-xs sm:text-sm block mt-0.5">
+                      {travelHours}h {travelMinutes}m
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50/80 rounded-xl p-2.5 sm:p-3 border border-slate-100 text-left">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider truncate">
+                      FASTag / Stops
+                    </span>
+                    <span
+                      className="font-black text-slate-900 font-mono text-xs sm:text-sm block mt-0.5 truncate"
+                      title={`${currentTolls.length} Plazas (₹${totalTruckToll}) • ${stoppages.length} Stops`}
+                    >
+                      {currentTolls.length} {currentTolls.length > 0 ? `(₹${totalTruckToll})` : 'Tolls'} • {stoppages.length} Stops
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
 };
