@@ -293,7 +293,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
             loop
             muted
             playsInline
-            preload="auto"
+            preload="metadata"
             src="/hero-video.mp4?v=hd_1026mb_update"
             onCanPlay={(e) => {
               const v = e.currentTarget;

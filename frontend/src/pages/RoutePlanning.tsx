@@ -1611,6 +1611,17 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     </button>
                   )}
                 </div>
+
+                {importedWaypointsCount > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-800 font-bold">
+                      <span>✓ {importedWaypointsCount} GPS Legs Imported from {excelFileName}</span>
+                      <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-emerald-200">
+                        Auto-Routed
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Route / Corridor Name */}

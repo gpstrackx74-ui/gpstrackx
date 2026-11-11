@@ -20,7 +20,14 @@ const AppContent: React.FC = () => {
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [previousTab, setPreviousTab] = useState<'dashboard' | 'vehicles' | 'history'>('vehicles');
   const [routePlanVehicleId, setRoutePlanVehicleId] = useState<number | null>(null);
-  const [userVehicles, setUserVehicles] = useState<any[]>([]);
+  const [userVehicles, setUserVehicles] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('gpstrackx_cached_vehicles');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [adminMapViewVehicleId, setAdminMapViewVehicleId] = useState<number | null>(null);
   const [selectedHistoricalTrip, setSelectedHistoricalTrip] = useState<any | null>(null);
   const [viewSource, setViewSource] = useState<'assigned-vehicle' | 'trip-history'>('assigned-vehicle');
@@ -32,11 +39,16 @@ const AppContent: React.FC = () => {
       setCurrentTab(user.role === 'admin' ? 'vehicle-tracking' : 'dashboard');
       api.getVehicles()
         .then((vehs) => {
-          setUserVehicles(vehs || []);
-          if (vehs && vehs.length > 0) {
-            // Pick vehicle with active route or first vehicle
-            const withRoute = vehs.find((v: any) => v.route_name);
-            setSelectedVehicleId(prev => prev || (withRoute ? withRoute.id : vehs[0].id));
+          if (vehs && Array.isArray(vehs)) {
+            setUserVehicles(vehs);
+            try {
+              localStorage.setItem('gpstrackx_cached_vehicles', JSON.stringify(vehs));
+            } catch (_) {}
+            if (vehs.length > 0) {
+              // Pick vehicle with active route or first vehicle
+              const withRoute = vehs.find((v: any) => v.route_name);
+              setSelectedVehicleId(prev => prev || (withRoute ? withRoute.id : vehs[0].id));
+            }
           }
         })
         .catch(() => {});

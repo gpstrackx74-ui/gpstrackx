@@ -47,6 +47,30 @@ interface LeafletRouteMapProps {
   height?: string;
 }
 
+const GooglePegmanSvg: React.FC<{ className?: string }> = ({ className = "w-6 h-7" }) => (
+  <svg
+    viewBox="0 0 24 32"
+    className={className}
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    {/* Ground drop shadow */}
+    <ellipse cx="12" cy="30" rx="6.5" ry="1.5" fill="#000000" fillOpacity="0.18" />
+    {/* Head */}
+    <circle cx="12" cy="6" r="4" fill="#F4B400" stroke="#755100" strokeWidth="0.9" />
+    {/* Body, Arms & Legs */}
+    <path
+      d="M7 11.2C5.9 11.2 5 12.1 5 13.2V18.5C5 19.33 5.67 20 6.5 20C7.33 20 8 19.33 8 18.5V14.8H9V28C9 28.83 9.67 29.5 10.5 29.5C11.33 29.5 12 28.83 12 28V20.5H12V28C12 28.83 12.67 29.5 13.5 29.5C14.33 29.5 15 28.83 15 28V14.8H16V18.5C16 19.33 16.67 20 17.5 20C18.33 20 19 19.33 19 18.5V13.2C19 12.1 18.1 11.2 17 11.2H7Z"
+      fill="#F4B400"
+      stroke="#755100"
+      strokeWidth="0.9"
+      strokeLinejoin="round"
+    />
+    {/* Iconic Orange Tie */}
+    <polygon points="12,11.2 10.4,15.8 12,17.2 13.6,15.8" fill="#E37400" />
+  </svg>
+);
+
 const EMPTY_ROUTES: AlternativeRoute[] = [];
 const EMPTY_STOPPAGES: Stoppage[] = [];
 const EMPTY_TOLLS: TollGate[] = [];
@@ -99,6 +123,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   // Street View States
   const [streetViewCoord, setStreetViewCoord] = useState<{ lat: number; lng: number } | null>(null);
   const [isDraggingPegman, setIsDraggingPegman] = useState<boolean>(false);
+  const droppedPegmanMarkerRef = useRef<L.Marker | null>(null);
 
   const activeRoute = React.useMemo(() => {
     return routes.find(r => r.id === selectedRouteId) || routes[0];
@@ -279,6 +304,42 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     }
   };
 
+  const openStreetViewAtCoord = (targetLat: number, targetLng: number) => {
+    setStreetViewCoord({ lat: targetLat, lng: targetLng });
+
+    const map = mapRef.current;
+    if (map) {
+      if (droppedPegmanMarkerRef.current) {
+        droppedPegmanMarkerRef.current.remove();
+        droppedPegmanMarkerRef.current = null;
+      }
+      try {
+        const pIcon = L.icon({
+          iconUrl: '/images/pegman.svg',
+          iconSize: [26, 34],
+          iconAnchor: [13, 32]
+        });
+        const marker = L.marker([targetLat, targetLng], {
+          icon: pIcon,
+          title: `360° Street View (${targetLat.toFixed(4)}, ${targetLng.toFixed(4)})`,
+          zIndexOffset: 500
+        }).addTo(map);
+
+        marker.on('click', () => {
+          const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${targetLat},${targetLng}`;
+          window.open(url, '_blank');
+        });
+        droppedPegmanMarkerRef.current = marker;
+      } catch (_) {}
+    }
+
+    const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${targetLat},${targetLng}`;
+    try {
+      const win = window.open(url, '_blank');
+      if (win) win.focus();
+    } catch (_) {}
+  };
+
   const handlePegmanClick = () => {
     let targetLat = 0;
     let targetLng = 0;
@@ -298,7 +359,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     }
 
     if (targetLat && targetLng) {
-      setStreetViewCoord({ lat: targetLat, lng: targetLng });
+      openStreetViewAtCoord(targetLat, targetLng);
     }
   };
 
@@ -315,7 +376,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     try {
       const latLng = map.containerPointToLatLng(L.point(x, y));
       if (latLng && latLng.lat && latLng.lng) {
-        setStreetViewCoord({ lat: latLng.lat, lng: latLng.lng });
+        openStreetViewAtCoord(latLng.lat, latLng.lng);
       }
     } catch (err) {}
   };
@@ -870,7 +931,41 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
         </div>
       )}
 
-      {/* Street View Pegman Floating Action in Bottom-Right Corner */}
+      {/* 360° Street View Active Banner */}
+      {streetViewCoord && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white px-4 py-2 rounded-2xl text-xs font-semibold shadow-2xl border border-slate-700/80 flex items-center gap-3 backdrop-blur-md animate-in fade-in slide-in-from-top duration-200">
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-amber-400">360° Street View:</span>
+            <span className="font-mono text-slate-300">({streetViewCoord.lat.toFixed(4)}, {streetViewCoord.lng.toFixed(4)})</span>
+          </div>
+          <a
+            href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${streetViewCoord.lat},${streetViewCoord.lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-2.5 py-1 bg-[#E60012] hover:bg-[#CC0010] text-white rounded-lg font-bold text-[11px] transition flex items-center gap-1 cursor-pointer"
+          >
+            <span>Open HD 360° View</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              setStreetViewCoord(null);
+              if (droppedPegmanMarkerRef.current) {
+                droppedPegmanMarkerRef.current.remove();
+                droppedPegmanMarkerRef.current = null;
+              }
+            }}
+            className="text-slate-400 hover:text-white p-1 rounded-md transition cursor-pointer"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Street View Pegman Floating Action in Bottom-Right Corner (Google Maps Default Style) */}
       <div
         className="absolute bottom-5 right-4 z-30 group"
         title="Direct Click: 360° Street View at Vehicle Position | Drag & Drop: Street View anywhere on map"
@@ -884,73 +979,17 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
           }}
           onDragEnd={() => setIsDraggingPegman(false)}
           onClick={handlePegmanClick}
-          className={`w-10 h-10 bg-white/95 hover:bg-white active:scale-95 rounded-xl shadow-lg border border-slate-200/90 flex items-center justify-center cursor-grab active:cursor-grabbing transition-all select-none hover:shadow-xl ${
+          className={`w-10 h-10 bg-white hover:bg-slate-50 active:scale-95 rounded-lg shadow-[0_2px_6px_rgba(0,0,0,0.3)] border border-slate-200/90 flex items-center justify-center cursor-grab active:cursor-grabbing transition-all select-none hover:shadow-lg ${
             isDraggingPegman ? 'scale-110 ring-2 ring-amber-500 shadow-amber-500/20' : ''
           }`}
         >
-          <img
-            src="/images/pegman.png"
-            alt="Street View Pegman"
-            className="w-6 h-6 object-contain pointer-events-none drop-shadow-xs"
-            onError={(e) => {
-              (e.currentTarget as HTMLElement).style.display = 'none';
-            }}
-          />
+          <GooglePegmanSvg className="w-5 h-6 drop-shadow-xs" />
         </div>
         {/* Tooltip on hover */}
         <div className="absolute right-12 bottom-1/2 translate-y-1/2 hidden group-hover:flex items-center whitespace-nowrap bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg shadow-lg border border-slate-700 pointer-events-none transition-all">
           Click: Vehicle Street View | Drag: Drop on Map
         </div>
       </div>
-
-      {/* Street View Modal Viewer */}
-      {streetViewCoord && (
-        <div className="absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col animate-in fade-in duration-200">
-          {/* Top Bar */}
-          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800 text-white">
-            <div className="flex items-center gap-2">
-              <img src="/images/pegman.png" alt="Pegman" className="w-5 h-5 object-contain" />
-              <span className="text-xs font-bold tracking-wide">360° Street View</span>
-              <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
-                ({streetViewCoord.lat.toFixed(5)}, {streetViewCoord.lng.toFixed(5)})
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <a
-                href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${streetViewCoord.lat},${streetViewCoord.lng}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition"
-                title="Open in Google Maps new tab"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Open in Maps</span>
-              </a>
-              <button
-                type="button"
-                onClick={() => setStreetViewCoord(null)}
-                className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
-                title="Close Street View"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Iframe View */}
-          <div className="flex-1 w-full h-full relative bg-slate-900">
-            <iframe
-              title="Google Street View"
-              width="100%"
-              height="100%"
-              style={{ border: 0 }}
-              loading="lazy"
-              allowFullScreen
-              src={`https://maps.google.com/maps?q=&layer=c&cbll=${streetViewCoord.lat},${streetViewCoord.lng}&cbp=11,0,0,0,0&output=svembed`}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Leaflet Container */}
       <div

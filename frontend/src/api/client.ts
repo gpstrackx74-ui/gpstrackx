@@ -24,24 +24,41 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
     ...(options.headers || {})
   };
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers
-  });
+  // 10s default timeout protection so network calls never hang indefinitely
+  let controller: AbortController | null = null;
+  let signal = options.signal;
+  let timeoutId: any = null;
 
-  if (response.status === 401) {
-    removeAuthToken();
-    window.dispatchEvent(new Event('gpstrackx_unauthorized'));
-    throw new Error('Unauthorized');
+  if (!signal) {
+    controller = new AbortController();
+    signal = controller.signal;
+    timeoutId = setTimeout(() => controller?.abort(), 10000);
   }
 
-  const data = await response.json().catch(() => null);
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+      signal
+    });
 
-  if (!response.ok) {
-    throw new Error(data?.error || `Request failed with status ${response.status}`);
+    if (response.status === 401) {
+      removeAuthToken();
+      localStorage.removeItem('gpstrackx_user');
+      window.dispatchEvent(new Event('gpstrackx_unauthorized'));
+      throw new Error('Unauthorized');
+    }
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(data?.error || `Request failed with status ${response.status}`);
+    }
+
+    return data;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
-
-  return data;
 }
 
 export const api = {
