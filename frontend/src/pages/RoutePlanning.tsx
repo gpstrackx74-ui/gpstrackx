@@ -1764,11 +1764,16 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer truncate"
                   >
                     <option value="">-- Select from {savedCorridors.length} Saved Routes / Corridors --</option>
-                    {savedCorridors.map((c, idx) => (
-                      <option key={idx} value={c.route_name}>
-                        {c.route_name} ({c.total_distance_km} KM)
-                      </option>
-                    ))}
+                    {savedCorridors.map((c, idx) => {
+                      const vehReg = c.vehicle_registration_no || '';
+                      const uName = c.user_name || '';
+                      const prefix = vehReg ? (uName ? `${vehReg} (${uName}): ` : `${vehReg}: `) : (uName ? `(${uName}): ` : '');
+                      return (
+                        <option key={idx} value={c.route_name}>
+                          {prefix}{c.route_name} ({c.total_distance_km} KM{c.trip_date ? ` • ${c.trip_date}` : ''})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>

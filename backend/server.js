@@ -1924,7 +1924,7 @@ app.delete('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) 
   }
 });
 
-// Get Previously Saved / Existing Corridors (For "Use Existing Route" in Route Planner)
+// Get Previously Saved / Existing Corridors Across ALL Users and Vehicles
 app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
   try {
     let dedicatedCorridors = [];
@@ -1956,6 +1956,7 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
     const routesCorridors = db.prepare(`
       SELECT 
         r.id, 
+        r.vehicle_id,
         r.route_name, 
         r.start_location_name, 
         r.start_address, 
@@ -1974,19 +1975,20 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
         r.trip_date, 
         r.start_trip_time, 
         r.end_trip_time,
-        r.created_at
+        r.total_toll_fee,
+        r.stoppages_count,
+        r.toll_gates_count,
+        r.created_at,
+        v.registration_no as vehicle_registration_no,
+        v.name_model as vehicle_name_model,
+        u.id as user_id,
+        u.name as user_name,
+        u.email as user_email
       FROM routes r
-      INNER JOIN (
-        SELECT MAX(id) as max_id
-        FROM routes
-        WHERE route_name IS NOT NULL AND route_name != ''
-        GROUP BY route_name
-      ) latest ON r.id = latest.max_id
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      LEFT JOIN users u ON v.assigned_user_id = u.id
       ORDER BY r.id DESC
     `).all();
-
-    const seenNames = new Set();
-    const combined = [];
 
     const sanitizeTolls = (rawTg) => {
       let list = [];
@@ -2006,18 +2008,25 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
       return list;
     };
 
+    const combined = [];
+    const seenKeys = new Set();
+
     for (const c of dedicatedCorridors) {
-      if (!seenNames.has(c.route_name)) {
-        seenNames.add(c.route_name);
+      const k = `dedicated_${c.id}_${(c.route_name || '').toLowerCase()}`;
+      if (!seenKeys.has(k)) {
+        seenKeys.add(k);
         let wp = [];
         try { if (c.waypoints_json) wp = typeof c.waypoints_json === 'string' ? JSON.parse(c.waypoints_json) : c.waypoints_json; } catch (_) {}
         const tg = sanitizeTolls(c.toll_gates_json);
         combined.push({ ...c, waypoints: wp, toll_gates: tg });
       }
     }
+
     for (const r of routesCorridors) {
-      if (!seenNames.has(r.route_name)) {
-        seenNames.add(r.route_name);
+      const rName = (r.route_name || '').trim();
+      const k = `route_${r.id}_${rName.toLowerCase()}_${r.vehicle_id || ''}`;
+      if (!seenKeys.has(k)) {
+        seenKeys.add(k);
         let wp = [];
         try { if (r.waypoints_json) wp = typeof r.waypoints_json === 'string' ? JSON.parse(r.waypoints_json) : r.waypoints_json; } catch (_) {}
         const tg = sanitizeTolls(r.toll_gates_json);
@@ -2028,6 +2037,41 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
     res.json(combined);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch saved corridors: ' + err.message });
+  }
+});
+
+// Get all trips recorded across ALL users and ALL vehicles (For Admin)
+app.get('/api/trips/all', authenticateToken, requireAdmin, (req, res) => {
+  try {
+    const trips = db.prepare(`
+      SELECT 
+        r.*,
+        v.registration_no as vehicle_registration_no,
+        v.name_model as vehicle_name_model,
+        u.id as user_id,
+        u.name as user_name,
+        u.email as user_email
+      FROM routes r
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      LEFT JOIN users u ON v.assigned_user_id = u.id
+      ORDER BY r.id DESC
+    `).all();
+
+    const formatted = trips.map(t => {
+      let waypoints = [];
+      try { if (t.waypoints_json) waypoints = typeof t.waypoints_json === 'string' ? JSON.parse(t.waypoints_json) : t.waypoints_json; } catch (_) {}
+      let toll_gates = [];
+      try { if (t.toll_gates_json) toll_gates = typeof t.toll_gates_json === 'string' ? JSON.parse(t.toll_gates_json) : t.toll_gates_json; } catch (_) {}
+      return {
+        ...t,
+        waypoints: Array.isArray(waypoints) ? waypoints : [],
+        toll_gates: Array.isArray(toll_gates) ? toll_gates : []
+      };
+    });
+
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch all trips: ' + err.message });
   }
 });
 

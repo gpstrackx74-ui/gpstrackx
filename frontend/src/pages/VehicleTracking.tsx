@@ -93,6 +93,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   const isTripStopOrComplete = (activeRoute?.operational_status === 'stop' || activeRoute?.operational_status === 'stopped' || Number(activeRoute?.is_active) === 0);
 
   const isMoving = React.useMemo(() => {
+    // If there is NO route allotted on this selected date, the vehicle is NOT moving on this date!
+    if (!activeRoute) return false;
+
     // If reviewing a specific historical completed trip
     if (historicalTrip) {
       if (Number(historicalTrip.is_active) === 0 || historicalTrip.operational_status === 'stop' || historicalTrip.operational_status === 'stopped') {
@@ -107,7 +110,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     if (isRouteMovingStatus) return true;
     if (isTripStopOrComplete) return false;
     return false;
-  }, [historicalTrip, isTripStopOrComplete, isRouteMovingStatus, isVehicleMovingStatus]);
+  }, [activeRoute, historicalTrip, isTripStopOrComplete, isRouteMovingStatus, isVehicleMovingStatus]);
 
   const isStopped = (vehicle?.status as string) === 'stop' || (vehicle?.status as string) === 'stopped' || (activeRoute?.operational_status === 'stop');
   const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
@@ -1061,7 +1064,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
               </div>
             )}
 
-            <div className="flex-1 min-h-[500px]">
+            <div className="flex-1 min-h-[500px] relative">
               <ErrorBoundary title="Live Telemetry & Road Map">
                 <InteractiveMap
                   height="520px"
@@ -1078,6 +1081,40 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                   hideBreadcrumbs={true}
                 />
               </ErrorBoundary>
+
+              {/* Blank Map Notification Banner when no route is allotted on the selected date */}
+              {!activeRoute && (
+                <div className="absolute inset-0 bg-slate-900/10 backdrop-blur-[2px] rounded-2xl flex flex-col items-center justify-center p-6 text-center pointer-events-none">
+                  <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/90 p-6 max-w-md space-y-3 pointer-events-auto">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto border border-slate-200">
+                      <Calendar className="w-6 h-6 text-slate-600" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">
+                        No Route Allotted on {effectiveDate ? formatToDMY(effectiveDate) : 'this Date'}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1">
+                        इस तारीख पर इस व्हीकल को कोई रूट अलॉट नहीं किया गया है। कृपया किसी अन्य तारीख का चयन करें।
+                      </p>
+                    </div>
+                    {allTrips.length > 0 && (
+                      <div className="pt-2 flex flex-wrap justify-center gap-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 block w-full">Available Journey Dates:</span>
+                        {Array.from(new Set(allTrips.map((t: any) => normalizeToYMD(t.trip_date || (t.created_at ? t.created_at.split('T')[0] : ''))).filter(Boolean))).slice(0, 4).map((d: any) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => handleDateChange(d)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[11px] font-bold transition cursor-pointer"
+                          >
+                            {formatToDMY(d)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Route Leg Legend / Live Status Indicator */}

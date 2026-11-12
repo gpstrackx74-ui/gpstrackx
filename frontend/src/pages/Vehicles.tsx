@@ -172,27 +172,46 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const [savedCorridorsForTrip, setSavedCorridorsForTrip] = useState<any[]>([]);
   const [selectedCorridorForTripId, setSelectedCorridorForTripId] = useState<string>('');
 
-  // List of completed trips for this vehicle (filtered: only completed trips)
-  const completedTripsList = useMemo(() => {
+  // List of all saved routes & completed trips across ALL users and vehicles for Admin
+  const savedRoutesDropdownList = useMemo(() => {
     const list: Array<{ id: string; label: string; raw: any }> = [];
     const seen = new Set<string>();
 
+    // 1. Current vehicle's completed trips / routes
     (vehicleTrips || []).forEach((t: any, idx: number) => {
       const name = (t.route_name || `Trip #${t.id || idx + 1}`).replace(/\r?\n/g, ' ').trim();
       const dist = Number(t.total_distance_km || t.distance_km || 0);
-      const key = `${t.id || idx}__${name.toLowerCase()}`;
+      const key = `trip_${t.id}_${name.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
         list.push({
           id: `trip-${t.id}`,
-          label: `${name} (${dist} KM${t.trip_date ? ` • ${t.trip_date}` : ''})`,
+          label: `${tripModalVehicle?.registration_no ? `${tripModalVehicle.registration_no}: ` : ''}${name} (${dist} KM${t.trip_date ? ` • ${t.trip_date}` : ''})`,
           raw: t
         });
       }
     });
 
+    // 2. All other users' & vehicles' saved corridors & completed routes
+    (savedCorridorsForTrip || []).forEach((c: any, idx: number) => {
+      const name = (c.route_name || `Corridor #${c.id || idx + 1}`).replace(/\r?\n/g, ' ').trim();
+      const dist = Number(c.total_distance_km || c.distance_km || 0);
+      const vehReg = c.vehicle_registration_no || (c.registration_no || '');
+      const uName = c.user_name || '';
+      const key = `corridor_${c.id}_${name.toLowerCase()}_${vehReg}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        const prefix = vehReg ? (uName ? `${vehReg} (${uName}): ` : `${vehReg}: `) : (uName ? `(${uName}): ` : '');
+        list.push({
+          id: `corridor-${c.id}`,
+          label: `${prefix}${name} (${dist} KM${c.trip_date ? ` • ${c.trip_date}` : ''})`,
+          raw: c
+        });
+      }
+    });
+
     return list;
-  }, [vehicleTrips]);
+  }, [vehicleTrips, savedCorridorsForTrip, tripModalVehicle]);
   const [selectedOriginalWaypoints, setSelectedOriginalWaypoints] = useState<any[]>([]);
   const [selectedOriginalTolls, setSelectedOriginalTolls] = useState<any[]>([]);
   const [loadingTrips, setLoadingTrips] = useState<boolean>(false);
@@ -1565,8 +1584,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                         onChange={(e) => handleSelectSavedCorridorForTrip(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-xs focus:outline-none focus:border-red-500 text-slate-700 truncate cursor-pointer shadow-2xs"
                       >
-                        <option value="">-- Choose Completed Trip --</option>
-                        {completedTripsList.map((item) => (
+                        <option value="">-- Choose Saved Route or Completed Trip --</option>
+                        {savedRoutesDropdownList.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.label}
                           </option>

@@ -171,56 +171,18 @@ export const FastagBilling: React.FC = () => {
     window.print();
   };
 
-  // Direct 2-Page Official ICICI Bank FASTag Statement PDF Generator
+  // Direct 2-Page Official ICICI Bank FASTag Statement PDF Generator (Direct download to storage, NO print popup)
   const handleDownloadPDF = async () => {
     if (!selectedTxForInvoice) return;
     try {
       setIsDownloadingPdf(true);
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
-
-      const p1 = document.getElementById('icici-fastag-page-1');
-      const p2 = document.getElementById('icici-fastag-page-2');
-
-      if (!p1) {
-        window.print();
-        return;
-      }
-
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-
-      // Capture Page 1
-      const canvas1 = await html2canvas(p1, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
-      const imgData1 = canvas1.toDataURL('image/png');
-      pdf.addImage(imgData1, 'PNG', 0, 0, 210, 297);
-
-      // Capture Page 2 if present
-      if (p2) {
-        pdf.addPage();
-        const canvas2 = await html2canvas(p2, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
-        const imgData2 = canvas2.toDataURL('image/png');
-        pdf.addImage(imgData2, 'PNG', 0, 0, 210, 297);
-      }
-
+      const { generateFastagStatementPdf } = await import('../utils/generateFastagStatementPdf');
+      const pdf = generateFastagStatementPdf(selectedTxForInvoice);
       const reg = selectedTxForInvoice.vehicle_registration_no?.replace(/[^A-Z0-9]/g, '') || 'VEH';
       pdf.save(`ICICI_Bank_FASTag_Statement_${reg}.pdf`);
     } catch (err) {
       console.error('PDF export error:', err);
-      window.print();
+      alert('Could not download PDF. Please try again.');
     } finally {
       setIsDownloadingPdf(false);
     }

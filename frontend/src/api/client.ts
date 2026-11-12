@@ -146,6 +146,7 @@ export const api = {
     apiRequest(`/vehicles/${vehicleId}/quick-route`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteRoute: (id: number | string) => apiRequest(`/routes/${id}`, { method: 'DELETE' }),
   getSavedCorridors: () => apiRequest<any[]>('/routes/saved-corridors'),
+  getAllTrips: () => apiRequest<any[]>('/trips/all'),
 
   // Settings
   getSettings: () => apiRequest<Record<string, string>>('/settings'),
