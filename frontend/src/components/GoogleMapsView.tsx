@@ -608,7 +608,8 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         onMapClickRef.current(lat, lng, defaultName, currentMode);
       }
 
-      if (geocoderRef.current) {
+      // Reverse geocode address for named markers (skip for rapid manual-route drawing so points aren't duplicated)
+      if (geocoderRef.current && currentMode !== 'manual-route') {
         geocoderRef.current.geocode({ location: { lat, lng } }, (results: any, status: any) => {
           if (status === 'OK' && results && results[0] && results[0].formatted_address) {
             if (onMapClickRef.current) {
@@ -910,6 +911,86 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         }
       }
     });
+
+    // --- LIVE MANUAL ROUTE DRAWING: Polyline & Waypoints Layer ---
+    if ((isManualDrawing || (customWaypoints && customWaypoints.length > 0))) {
+      const livePathPts: any[] = [];
+      
+      // If startPoint exists, include it as origin
+      if (startPoint?.lat && startPoint?.lng) {
+        livePathPts.push(new google.maps.LatLng(startPoint.lat, startPoint.lng));
+      }
+
+      // Add all clicked points
+      (customWaypoints || []).forEach((wp) => {
+        if (wp.lat && wp.lng) {
+          if (!startPoint || Math.abs(startPoint.lat - wp.lat) > 0.0001 || Math.abs(startPoint.lng - wp.lng) > 0.0001) {
+            livePathPts.push(new google.maps.LatLng(wp.lat, wp.lng));
+          }
+        }
+      });
+
+      // If user provided endPoint and finished drawing, include destination
+      if (endPoint?.lat && endPoint?.lng && !isManualDrawing) {
+        livePathPts.push(new google.maps.LatLng(endPoint.lat, endPoint.lng));
+      }
+
+      // Draw the live connecting polyline as user clicks on the map!
+      if (livePathPts.length >= 2) {
+        const casing = new google.maps.Polyline({
+          path: livePathPts,
+          map,
+          strokeColor: '#FFFFFF',
+          strokeOpacity: 0.9,
+          strokeWeight: 7,
+          zIndex: 55
+        });
+        polylinesRef.current.push(casing);
+
+        const livePolyline = new google.maps.Polyline({
+          path: livePathPts,
+          map,
+          strokeColor: '#EF4444',
+          strokeOpacity: 1.0,
+          strokeWeight: 4.5,
+          zIndex: 60
+        });
+        polylinesRef.current.push(livePolyline);
+      }
+
+      // Render numbered markers at each clicked point so user sees their clicks
+      (customWaypoints || []).forEach((wp, idx) => {
+        if (!wp.lat || !wp.lng) return;
+        const pos = new google.maps.LatLng(wp.lat, wp.lng);
+        bounds.extend(pos);
+        hasPoints = true;
+
+        const isStart = startPoint && Math.abs(startPoint.lat - wp.lat) < 0.0001 && Math.abs(startPoint.lng - wp.lng) < 0.0001;
+        if (isStart) return;
+
+        const wpMarker = new google.maps.Marker({
+          position: pos,
+          map,
+          title: `Custom Point #${idx + 1}`,
+          label: {
+            text: `${idx + 1}`,
+            color: '#FFFFFF',
+            fontWeight: 'bold',
+            fontSize: '10px'
+          },
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: '#EF4444',
+            fillOpacity: 1,
+            strokeColor: '#FFFFFF',
+            strokeWeight: 2
+          },
+          zIndex: 75
+        });
+        markersRef.current.push(wpMarker);
+      });
+    }
 
     // Start & Destination Flag SVGs
     const greenFlagSvg = `data:image/svg+xml;utf-8,${encodeURIComponent(`

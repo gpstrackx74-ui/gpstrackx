@@ -171,6 +171,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const [vehicleTrips, setVehicleTrips] = useState<any[]>([]);
   const [savedCorridorsForTrip, setSavedCorridorsForTrip] = useState<any[]>([]);
   const [selectedCorridorForTripId, setSelectedCorridorForTripId] = useState<string>('');
+  const [showSavedRouteSearch, setShowSavedRouteSearch] = useState<boolean>(false);
+  const [savedRouteSearchTerm, setSavedRouteSearchTerm] = useState<string>('');
 
   // List of all saved routes & completed trips across ALL users and vehicles for Admin
   const savedRoutesDropdownList = useMemo(() => {
@@ -212,6 +214,13 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
 
     return list;
   }, [vehicleTrips, savedCorridorsForTrip, tripModalVehicle]);
+
+  // Filtered saved routes based on user search term
+  const filteredSavedRoutes = useMemo(() => {
+    if (!savedRouteSearchTerm.trim()) return savedRoutesDropdownList;
+    const q = savedRouteSearchTerm.toLowerCase().trim();
+    return savedRoutesDropdownList.filter(item => item.label.toLowerCase().includes(q));
+  }, [savedRoutesDropdownList, savedRouteSearchTerm]);
   const [selectedOriginalWaypoints, setSelectedOriginalWaypoints] = useState<any[]>([]);
   const [selectedOriginalTolls, setSelectedOriginalTolls] = useState<any[]>([]);
   const [loadingTrips, setLoadingTrips] = useState<boolean>(false);
@@ -1575,17 +1584,60 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                         />
                       </label>
 
-                      <div className="flex items-center gap-2 text-slate-400 text-[10px] font-black uppercase tracking-wider justify-center">
+                      <div className="flex items-center justify-between gap-2 text-slate-400 text-[10px] font-black uppercase tracking-wider">
                         <span>OR SELECT PREVIOUS CORRIDOR</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSavedRouteSearch(prev => !prev);
+                            if (showSavedRouteSearch) setSavedRouteSearchTerm('');
+                          }}
+                          className={`p-1 px-2 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                            showSavedRouteSearch
+                              ? 'bg-red-50 border-red-200 text-[#E60012]'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                          title="Search saved routes"
+                        >
+                          <Search className="w-3 h-3 text-[#E60012]" />
+                          <span>Search</span>
+                        </button>
                       </div>
+
+                      {showSavedRouteSearch && (
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={savedRouteSearchTerm}
+                            onChange={(e) => setSavedRouteSearchTerm(e.target.value)}
+                            placeholder="Type to filter routes by vehicle, user, city..."
+                            className="w-full pl-8 pr-7 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold focus:outline-none focus:border-red-500 text-slate-800"
+                            autoFocus
+                          />
+                          {savedRouteSearchTerm && (
+                            <button
+                              type="button"
+                              onClick={() => setSavedRouteSearchTerm('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       <select
                         value={selectedCorridorForTripId}
                         onChange={(e) => handleSelectSavedCorridorForTrip(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-xs focus:outline-none focus:border-red-500 text-slate-700 truncate cursor-pointer shadow-2xs"
                       >
-                        <option value="">-- Choose Saved Route or Completed Trip --</option>
-                        {savedRoutesDropdownList.map((item) => (
+                        <option value="">
+                          {savedRouteSearchTerm
+                            ? `-- Showing ${filteredSavedRoutes.length} of ${savedRoutesDropdownList.length} Routes --`
+                            : '-- Choose Saved Route or Completed Trip --'}
+                        </option>
+                        {filteredSavedRoutes.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.label}
                           </option>

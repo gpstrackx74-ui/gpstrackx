@@ -628,6 +628,58 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       }
     });
 
+    // --- LIVE MANUAL ROUTE DRAWING: Polyline & Waypoints Layer ---
+    if ((isManualDrawing || (customWaypoints && customWaypoints.length > 0))) {
+      const livePathPts: L.LatLng[] = [];
+      if (startPoint?.lat && startPoint?.lng) {
+        livePathPts.push(L.latLng(startPoint.lat, startPoint.lng));
+      }
+      (customWaypoints || []).forEach((wp) => {
+        if (wp.lat && wp.lng) {
+          if (!startPoint || Math.abs(startPoint.lat - wp.lat) > 0.0001 || Math.abs(startPoint.lng - wp.lng) > 0.0001) {
+            livePathPts.push(L.latLng(wp.lat, wp.lng));
+          }
+        }
+      });
+      if (endPoint?.lat && endPoint?.lng && !isManualDrawing) {
+        livePathPts.push(L.latLng(endPoint.lat, endPoint.lng));
+      }
+
+      if (livePathPts.length >= 2) {
+        // Casing
+        L.polyline(livePathPts, {
+          color: '#FFFFFF',
+          weight: 7,
+          opacity: 0.9
+        }).addTo(group);
+
+        // Active Red Polyline
+        L.polyline(livePathPts, {
+          color: '#EF4444',
+          weight: 4.5,
+          opacity: 1.0
+        }).addTo(group);
+      }
+
+      // Render numbered markers at each clicked point
+      (customWaypoints || []).forEach((wp, idx) => {
+        if (!wp.lat || !wp.lng) return;
+        const p = L.latLng(wp.lat, wp.lng);
+        boundsPoints.push(p);
+
+        const isStart = startPoint && Math.abs(startPoint.lat - wp.lat) < 0.0001 && Math.abs(startPoint.lng - wp.lng) < 0.0001;
+        if (isStart) return;
+
+        const wpIcon = L.divIcon({
+          className: 'custom-wp-pin',
+          html: `<div style="background:#EF4444;color:#fff;border:2px solid #fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;box-shadow:0 1px 4px rgba(0,0,0,0.4);">${idx + 1}</div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        L.marker(p, { icon: wpIcon, title: `Custom Point #${idx + 1}` }).addTo(group);
+      });
+    }
+
     // Start Marker
     if (startPoint && startPoint.lat && startPoint.lng) {
       const p = L.latLng(startPoint.lat, startPoint.lng);

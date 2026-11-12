@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api/client';
 import { Vehicle, AlternativeRoute, Stoppage, TollGate } from '../types';
 import { InteractiveMap } from '../components/InteractiveMap';
@@ -34,7 +34,8 @@ import {
   UserCheck,
   Layers,
   Edit3,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Search
 } from 'lucide-react';
 
 interface ParkingPoint {
@@ -67,6 +68,19 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [savedCorridors, setSavedCorridors] = useState<any[]>([]);
   const [selectedCorridorId, setSelectedCorridorId] = useState<string>('');
   const [corridorNameInput, setCorridorNameInput] = useState<string>('');
+  const [showSavedCorridorSearch, setShowSavedCorridorSearch] = useState<boolean>(false);
+  const [savedCorridorSearchTerm, setSavedCorridorSearchTerm] = useState<string>('');
+
+  const filteredSavedCorridors = useMemo(() => {
+    if (!savedCorridorSearchTerm.trim()) return savedCorridors;
+    const q = savedCorridorSearchTerm.toLowerCase().trim();
+    return savedCorridors.filter(c => {
+      const name = (c.route_name || '').toLowerCase();
+      const veh = (c.vehicle_registration_no || '').toLowerCase();
+      const user = (c.user_name || '').toLowerCase();
+      return name.includes(q) || veh.includes(q) || user.includes(q);
+    });
+  }, [savedCorridors, savedCorridorSearchTerm]);
 
   // Excel File Route Import State
   const [excelFileName, setExcelFileName] = useState<string | null>(null);
@@ -1125,16 +1139,25 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   };
 
   const handleUndoLastCustomPoint = () => {
-    setCustomWaypoints(prev => prev.slice(0, -1));
+    if (customWaypoints.length <= 1) {
+      setCustomWaypoints([]);
+      setStartPoint(null);
+    } else {
+      setCustomWaypoints(prev => prev.slice(0, -1));
+    }
   };
 
   const handleClearCustomPoints = () => {
     setCustomWaypoints([]);
+    setStartPoint(null);
+    setEndPoint(null);
   };
 
   const handleCancelCustomDrawing = () => {
     setIsManualDrawing(false);
     setCustomWaypoints([]);
+    setStartPoint(null);
+    setEndPoint(null);
     setClickMode('none');
   };
 
@@ -1213,23 +1236,44 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   };
 
   const handleFinishCustomRoute = async () => {
-    if (customWaypoints.length === 0) {
-      alert('Please click at least 1 or 2 points on the map between A and B.');
-      return;
-    }
-    if (!startPoint || !endPoint) {
-      alert('Please ensure Start (A) and Destination (B) points are selected first.');
+    if (customWaypoints.length < 2) {
+      alert('Please click at least 2 points on the map (First click = Start Point, Last click = Destination).');
       return;
     }
 
     try {
       setIsApplyingCustomRoute(true);
+
+      // 1. First click is Start Point (🟢), Last click is Destination (🔴)
+      const firstWp = customWaypoints[0];
+      const lastWp = customWaypoints[customWaypoints.length - 1];
+
+      const effectiveStart = startPoint || {
+        lat: firstWp.lat,
+        lng: firstWp.lng,
+        name: firstWp.name && !firstWp.name.startsWith('Point ') ? firstWp.name : `Start (${firstWp.lat.toFixed(3)}, ${firstWp.lng.toFixed(3)})`,
+        address: `Coordinates: ${firstWp.lat.toFixed(4)}, ${firstWp.lng.toFixed(4)}`
+      };
+      setStartPoint(effectiveStart);
+
+      const effectiveEnd = {
+        lat: lastWp.lat,
+        lng: lastWp.lng,
+        name: lastWp.name && !lastWp.name.startsWith('Point ') ? lastWp.name : `Destination (${lastWp.lat.toFixed(3)}, ${lastWp.lng.toFixed(3)})`,
+        address: `Coordinates: ${lastWp.lat.toFixed(4)}, ${lastWp.lng.toFixed(4)}`
+      };
+      setEndPoint(effectiveEnd);
+
+      // Intermediate waypoints between Start and End
+      const intermediateWps = customWaypoints.slice(1, -1);
+
       let finalCoords: [number, number][] = [];
       let finalDistKm = 0;
       let finalTimeMin = 0;
 
+      // 2. Fetch real road polyline through intermediate road waypoints
       if (snapToRoads) {
-        const roadRes = await fetchRealRoadPolyline(startPoint, endPoint, customWaypoints);
+        const roadRes = await fetchRealRoadPolyline(effectiveStart, effectiveEnd, intermediateWps);
         if (roadRes && roadRes.coordinates && roadRes.coordinates.length > 5) {
           finalCoords = roadRes.coordinates;
           finalDistKm = roadRes.distanceKm;
@@ -1238,14 +1282,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       }
 
       if (finalCoords.length === 0) {
-        finalCoords = [
-          [startPoint.lat, startPoint.lng],
-          ...customWaypoints.map(w => [w.lat, w.lng] as [number, number]),
-          [endPoint.lat, endPoint.lng]
-        ];
-        finalDistKm = parseFloat(calculateDirectDistance(finalCoords).toFixed(1));
-        finalTimeMin = Math.round(finalDistKm / 55 * 60);
+        finalCoords = customWaypoints.map(w => [w.lat, w.lng] as [number, number]);
       }
+
+      // 3. Make custom route look authentic with road geometry & subtle highway zig-zag ("ekdum light zig jag line show krna taaki asli lage")
+      finalCoords = await enhanceRouteWithRoadGeometry(finalCoords);
+
+      finalDistKm = calculateCumulativeDistanceKm(finalCoords);
+      finalTimeMin = calculateDurationMinutes(finalDistKm, 45);
 
       const detectedCustom = detectRealTollsOnRoute(finalCoords, 1.2, selectedAxle);
       const customTolls = detectedCustom.map(t => ({
@@ -1257,20 +1301,25 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         ? `${customTolls.length} Real Tolls (₹${customFee} Truck Rate)`
         : 'Toll-Free Route (₹0)';
 
+      const routeName = corridorNameInput.trim()
+        ? corridorNameInput.trim()
+        : `Custom Route: ${effectiveStart.name} to ${effectiveEnd.name}`;
+
       const customRoute: AlternativeRoute = {
         id: 'custom-manual-' + Date.now(),
-        name: 'Custom Road Route (' + customWaypoints.length + ' Waypoints)',
+        name: routeName,
         distanceKm: finalDistKm,
         timeMinutes: finalTimeMin,
         tollGatesCount: customTolls.length,
         stopsCount: stoppages.length,
-        summary: `${customSummary}. Custom route through ${customWaypoints.length} waypoints.`,
-        color: '#EF4444',
+        summary: `${customSummary}. Custom authentic road corridor (${finalDistKm} km).`,
+        color: '#1A73E8',
         coordinates: finalCoords,
-        tollGates: customTolls
+        tollGates: customTolls,
+        source: 'Custom Route'
       };
 
-      // CLEAR ALL OLD ROUTES so ONLY this custom route is shown on the map!
+      // Set ONLY this custom route on map - no alternatives
       setRoutes([customRoute]);
       setSelectedRouteId(customRoute.id);
       setTravelHours(Math.floor(finalTimeMin / 60));
@@ -1279,7 +1328,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       setIsManualDrawing(false);
       setClickMode('none');
     } catch (err: any) {
-      alert('Failed to generate custom route: ' + err.message);
+      alert('Failed to generate custom route: ' + (err?.message || err));
     } finally {
       setIsApplyingCustomRoute(false);
     }
@@ -1361,10 +1410,26 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         setClickMode('none');
       });
     } else if (effectiveMode === 'manual-route') {
+      // 1st click: Set & show as Start Point (🟢 Green Start Flag on map)
+      if (!startPoint || customWaypoints.length === 0) {
+        const name = address ? address.split(',')[0] : `Start (${lat.toFixed(3)}, ${lng.toFixed(3)})`;
+        const newStart = { lat, lng, name, address: address || `Coordinates: ${lat}, ${lng}` };
+        setStartPoint(newStart);
+        setCustomWaypoints([{ lat, lng, name: 'Start' }]);
+        return;
+      }
+
+      // Check for duplicate rapid click
+      const lastPt = customWaypoints[customWaypoints.length - 1];
+      if (lastPt && Math.abs(lastPt.lat - lat) < 0.00005 && Math.abs(lastPt.lng - lng) < 0.00005) {
+        return;
+      }
+
+      const nextIdx = customWaypoints.length + 1;
       const newPt = {
         lat,
         lng,
-        name: 'Point ' + (customWaypoints.length + 1)
+        name: 'Point ' + nextIdx
       };
       setCustomWaypoints(prev => [...prev, newPt]);
     }
@@ -1748,13 +1813,52 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
               {/* OR Use Existing Saved Route Selector */}
               <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="h-px bg-slate-200 flex-1" />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
-                    OR Select Previously Saved Route
-                  </span>
-                  <div className="h-px bg-slate-200 flex-1" />
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
+                      OR Select Previously Saved Route
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSavedCorridorSearch(prev => !prev);
+                      if (showSavedCorridorSearch) setSavedCorridorSearchTerm('');
+                    }}
+                    className={`p-1 px-2 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                      showSavedCorridorSearch
+                        ? 'bg-red-50 border-red-200 text-[#E60012]'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                    title="Search saved routes"
+                  >
+                    <Search className="w-3 h-3 text-[#E60012]" />
+                    <span>Search</span>
+                  </button>
                 </div>
+
+                {showSavedCorridorSearch && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={savedCorridorSearchTerm}
+                      onChange={(e) => setSavedCorridorSearchTerm(e.target.value)}
+                      placeholder="Type to filter routes by name, vehicle, or user..."
+                      className="w-full pl-8 pr-7 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold focus:outline-none focus:border-red-500 text-slate-800"
+                      autoFocus
+                    />
+                    {savedCorridorSearchTerm && (
+                      <button
+                        type="button"
+                        onClick={() => setSavedCorridorSearchTerm('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
                   <Route className="w-4 h-4 text-[#E60012] shrink-0" />
@@ -1763,8 +1867,12 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     onChange={(e) => handleSelectExistingCorridor(e.target.value)}
                     className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer truncate"
                   >
-                    <option value="">-- Select from {savedCorridors.length} Saved Routes / Corridors --</option>
-                    {savedCorridors.map((c, idx) => {
+                    <option value="">
+                      {savedCorridorSearchTerm
+                        ? `-- Showing ${filteredSavedCorridors.length} of ${savedCorridors.length} Routes --`
+                        : `-- Select from ${savedCorridors.length} Saved Routes / Corridors --`}
+                    </option>
+                    {filteredSavedCorridors.map((c, idx) => {
                       const vehReg = c.vehicle_registration_no || '';
                       const uName = c.user_name || '';
                       const prefix = vehReg ? (uName ? `${vehReg} (${uName}): ` : `${vehReg}: `) : (uName ? `(${uName}): ` : '');
@@ -1823,9 +1931,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       onClick={() => {
                         setIsManualDrawing(true);
                         setClickMode('manual-route');
+                        setCustomWaypoints([]);
+                        setStartPoint(null);
+                        setEndPoint(null);
+                        setRoutes([]);
+                        setSelectedRouteId('');
                       }}
                       className="w-full py-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
-                      title="Draw custom road route by clicking points between Start and End"
+                      title="Draw custom road route by clicking points directly on map"
                     >
                       <Route className="w-4 h-4 text-red-600" />
                       <span>+ Draw / Create Custom Route (Click Points)</span>
@@ -1854,7 +1967,9 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     </div>
 
                     <p className="text-[11px] text-slate-500 leading-snug">
-                      Click anywhere on the Google Map along roads between A and B (you can add 5, 10, up to 25+ points).
+                      {customWaypoints.length === 0
+                        ? '📍 1st Click on Map: Sets Start Point (🟢 Green Flag). Then continue clicking along your road path.'
+                        : `📍 ${customWaypoints.length} point${customWaypoints.length > 1 ? 's' : ''} placed. Click "Apply & Save Route" when done (last point becomes 🔴 Destination).`}
                     </p>
 
                     <div className="flex items-center justify-between text-xs text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
