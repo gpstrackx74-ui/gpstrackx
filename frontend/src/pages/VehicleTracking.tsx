@@ -90,7 +90,15 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   // Operational status resolution
   const isVehicleMovingStatus = (vehicle?.status as string) === 'moving';
   const isRouteMovingStatus = (activeRoute?.operational_status === 'moving') || (activeRoute?.is_active && isVehicleMovingStatus);
-  const isTripStopOrComplete = (activeRoute?.operational_status === 'stop' || activeRoute?.operational_status === 'stopped' || Number(activeRoute?.is_active) === 0);
+  const isTripStopOrComplete = Boolean(
+    historicalTrip ||
+    viewSource === 'trip-history' ||
+    Number(activeRoute?.is_active) === 0 ||
+    activeRoute?.operational_status === 'stop' ||
+    activeRoute?.operational_status === 'stopped' ||
+    activeRoute?.operational_status === 'completed' ||
+    (activeRoute as any)?.status === 'completed'
+  );
 
   const isMoving = React.useMemo(() => {
     // If there is NO route allotted on this selected date, the vehicle is NOT moving on this date!
@@ -98,19 +106,24 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
 
     // If reviewing a specific historical completed trip
     if (historicalTrip) {
-      if (Number(historicalTrip.is_active) === 0 || historicalTrip.operational_status === 'stop' || historicalTrip.operational_status === 'stopped') {
+      if (Number(historicalTrip.is_active) === 0 || historicalTrip.operational_status === 'stop' || historicalTrip.operational_status === 'stopped' || historicalTrip.operational_status === 'completed') {
         return false;
       }
       return historicalTrip.operational_status === 'moving' || (Boolean(historicalTrip.is_active) && isVehicleMovingStatus);
     }
 
+    // If viewing from trip-history or if trip is stopped / completed, it is a completed trip (NOT live moving)
+    if (isTripStopOrComplete) return false;
+
+    // If selected date is in the past: completed trip!
+    if (isPreviousDate) return false;
+
     // Active vehicle / new user / new vehicle:
     // If vehicle status is moving, it is ALWAYS moving!
     if (isVehicleMovingStatus) return true;
     if (isRouteMovingStatus) return true;
-    if (isTripStopOrComplete) return false;
     return false;
-  }, [activeRoute, historicalTrip, isTripStopOrComplete, isRouteMovingStatus, isVehicleMovingStatus]);
+  }, [activeRoute, historicalTrip, isTripStopOrComplete, isRouteMovingStatus, isVehicleMovingStatus, isPreviousDate]);
 
   const isStopped = (vehicle?.status as string) === 'stop' || (vehicle?.status as string) === 'stopped' || (activeRoute?.operational_status === 'stop');
   const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
@@ -958,8 +971,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
               </div>
             )}
 
-            {/* VEHICLE ROUTE PLAYBACK CONTROLLER BAR (Admin Simulation Tool - Only when stopped/inactive, NEVER when moving) */}
-            {!isMoving && !isLiveMovingMode && isAdmin && activeRoute && parsedCoordinates.length > 0 && (
+            {/* VEHICLE ROUTE PLAYBACK CONTROLLER BAR (Simulation & Replay for Completed/Stopped Trips - Available in both Admin and User Logins) */}
+            {!isMoving && !isLiveMovingMode && activeRoute && parsedCoordinates.length > 0 && (
               <div className="mb-3.5 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/90 shadow-2xs space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
