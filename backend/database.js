@@ -153,6 +153,15 @@ function initializeDatabase() {
     if (!routeCols.includes('operational_status')) {
       db.exec("ALTER TABLE routes ADD COLUMN operational_status TEXT DEFAULT 'moving'");
     }
+    if (!routeCols.includes('total_toll_fee')) {
+      db.exec('ALTER TABLE routes ADD COLUMN total_toll_fee REAL DEFAULT 0');
+    }
+    if (!routeCols.includes('stoppages_count')) {
+      db.exec('ALTER TABLE routes ADD COLUMN stoppages_count INTEGER DEFAULT 0');
+    }
+    if (!routeCols.includes('toll_gates_count')) {
+      db.exec('ALTER TABLE routes ADD COLUMN toll_gates_count INTEGER DEFAULT 0');
+    }
   } catch (e) {}
 
   // 4. Stoppages table

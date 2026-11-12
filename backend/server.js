@@ -799,14 +799,19 @@ app.get('/api/vehicles/:id/trips', authenticateToken, (req, res) => {
         } catch (_) {}
       }
 
-      const stopsCount = waypoints.length || t.sql_stoppages_count || t.veh_stoppages_count || 0;
-      const tollsAmount = tollGates.reduce((sum, item) => sum + (Number(item.charges) || 0), 0) || t.sql_tolls_amount || t.veh_total_toll_fee || 0;
+      const stopsCount = (t.stoppages_count != null && Number(t.stoppages_count) > 0)
+        ? Number(t.stoppages_count)
+        : (waypoints.length || t.sql_stoppages_count || t.veh_stoppages_count || 0);
+      const tollsAmount = (t.total_toll_fee != null && Number(t.total_toll_fee) > 0)
+        ? Number(t.total_toll_fee)
+        : (tollGates.reduce((sum, item) => sum + (Number(item.charges) || 0), 0) || t.sql_tolls_amount || t.veh_total_toll_fee || 0);
 
       return {
         ...t,
         waypoints,
         toll_gates: tollGates,
         stoppages_count: stopsCount,
+        total_toll_fee: tollsAmount,
         total_tolls_amount: tollsAmount
       };
     });
@@ -1693,7 +1698,10 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
     trip_date,
     end_trip_date,
     start_trip_time,
-    end_trip_time
+    end_trip_time,
+    total_toll_fee,
+    stoppages_count,
+    toll_gates_count
   } = req.body;
 
   if (!vehicle_id || !start_location_name || !end_location_name) {
@@ -1724,8 +1732,8 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
         vehicle_id, route_name, start_location_name, start_address, start_lat, start_lng,
         end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
         overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
-        trip_date, end_trip_date, start_trip_time, end_trip_time, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        trip_date, end_trip_date, start_trip_time, end_trip_time, total_toll_fee, stoppages_count, toll_gates_count, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     `);
 
     const result = insertRouteStmt.run(
@@ -1749,7 +1757,10 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
       trip_date || new Date().toISOString().split('T')[0],
       end_trip_date || trip_date || new Date().toISOString().split('T')[0],
       start_trip_time || '08:00 AM',
-      end_trip_time || '06:00 PM'
+      end_trip_time || '06:00 PM',
+      Number(total_toll_fee) || 0,
+      Number(stoppages_count) || (waypoints ? waypoints.length : 0),
+      Number(toll_gates_count) || (toll_gates ? toll_gates.length : 0)
     );
 
     const routeId = result.lastInsertRowid;
@@ -1826,16 +1837,28 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
-    // Update vehicle's coordinates and status
+    // Update vehicle's coordinates, times, tolls, stoppages, and status
     db.prepare(`
       UPDATE vehicles SET 
         current_lat = ?, 
         current_lng = ?, 
         status = 'moving',
         current_speed = 62.0,
+        start_trip_time = ?,
+        end_trip_time = ?,
+        total_toll_fee = ?,
+        stoppages_count = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(start_lat, start_lng, vehicle_id);
+    `).run(
+      start_lat,
+      start_lng,
+      start_trip_time || '08:00 AM',
+      end_trip_time || '06:00 PM',
+      Number(total_toll_fee) || 0,
+      Number(stoppages_count) || (waypoints ? waypoints.length : 0),
+      vehicle_id
+    );
 
     return routeId;
   });

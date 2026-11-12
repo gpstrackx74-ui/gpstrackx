@@ -203,6 +203,101 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     }
   };
 
+  // Fetch 100% accurate driving road distance directly from Google Maps between Start and Destination
+  const fetchGoogleRoadDistance = async (
+    start: { lat: number; lng: number },
+    end: { lat: number; lng: number }
+  ): Promise<{ distanceKm: number; durationMins: number } | null> => {
+    // 1. Google Maps JS DirectionsService in browser
+    if (typeof (window as any).google?.maps?.DirectionsService !== 'undefined') {
+      try {
+        const directionsService = new (window as any).google.maps.DirectionsService();
+        const res: any = await new Promise((resolve, reject) => {
+          directionsService.route(
+            {
+              origin: new (window as any).google.maps.LatLng(Number(start.lat), Number(start.lng)),
+              destination: new (window as any).google.maps.LatLng(Number(end.lat), Number(end.lng)),
+              travelMode: (window as any).google.maps.TravelMode.DRIVING
+            },
+            (response: any, status: any) => {
+              if (status === 'OK' && response?.routes?.[0]?.legs?.[0]) {
+                resolve(response);
+              } else {
+                reject(new Error(`Directions status: ${status}`));
+              }
+            }
+          );
+        });
+
+        const leg = res.routes[0].legs[0];
+        const distMeters = leg.distance?.value || 0;
+        const durSecs = leg.duration?.value || 0;
+        if (distMeters > 0) {
+          return {
+            distanceKm: Math.round((distMeters / 1000) * 10) / 10,
+            durationMins: Math.round(durSecs / 60)
+          };
+        }
+      } catch (e) {
+        console.warn('Google DirectionsService route error:', e);
+      }
+    }
+
+    // 2. Google Maps DistanceMatrixService in browser
+    if (typeof (window as any).google?.maps?.DistanceMatrixService !== 'undefined') {
+      try {
+        const dmService = new (window as any).google.maps.DistanceMatrixService();
+        const res: any = await new Promise((resolve, reject) => {
+          dmService.getDistanceMatrix(
+            {
+              origins: [{ lat: Number(start.lat), lng: Number(start.lng) }],
+              destinations: [{ lat: Number(end.lat), lng: Number(end.lng) }],
+              travelMode: (window as any).google.maps.TravelMode.DRIVING
+            },
+            (response: any, status: any) => {
+              if (status === 'OK' && response?.rows?.[0]?.elements?.[0]?.status === 'OK') {
+                resolve(response);
+              } else {
+                reject(new Error(`Distance Matrix status: ${status}`));
+              }
+            }
+          );
+        });
+
+        const elem = res.rows[0].elements[0];
+        const distMeters = elem.distance?.value || 0;
+        const durSecs = elem.duration?.value || 0;
+        if (distMeters > 0) {
+          return {
+            distanceKm: Math.round((distMeters / 1000) * 10) / 10,
+            durationMins: Math.round(durSecs / 60)
+          };
+        }
+      } catch (e) {
+        console.warn('Google DistanceMatrixService error:', e);
+      }
+    }
+
+    // 3. Fallback to backend route calculator (/api/routes/calculate)
+    try {
+      const calc = await api.calculateRoutes({
+        origin: { lat: start.lat, lng: start.lng },
+        destination: { lat: end.lat, lng: end.lng }
+      });
+      if (calc?.routes && calc.routes.length > 0) {
+        const r = calc.routes[0];
+        return {
+          distanceKm: Math.round(Number(r.distanceKm) * 10) / 10,
+          durationMins: Math.round(Number(r.timeMinutes) || 120)
+        };
+      }
+    } catch (e) {
+      console.warn('Backend calculateRoute fallback error:', e);
+    }
+
+    return null;
+  };
+
   // Import Route from Excel (.xlsx, .xls, .csv) with 0ms latency & smooth performance
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -264,11 +359,25 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           const enhancedPolyline = await enhanceRouteWithRoadGeometry(displayPolyline);
           displayPolyline = enhancedPolyline;
 
-          // 100% ACCURATE EXCEL DISTANCE: Prioritize Excel distance / odometer meter reading
-          const accurateDist = calculateCumulativeDistanceKm(displayPolyline);
-          const finalDistKm = tele.isAccurateMeterFound && tele.distanceKm > 0
-            ? tele.distanceKm
-            : (accurateDist > 0 ? accurateDist : tele.distanceKm);
+          // Fetch 100% accurate driving road distance directly from Google Maps between Start and Destination!
+          let finalDistKm = 0;
+          let totalMins = 0;
+          try {
+            const googleRoad = await fetchGoogleRoadDistance(start, end);
+            if (googleRoad && googleRoad.distanceKm > 0) {
+              finalDistKm = googleRoad.distanceKm;
+              totalMins = googleRoad.durationMins || Math.round((finalDistKm / 45) * 60);
+            }
+          } catch (_) {}
+
+          // Fallback if Google Maps query is unavailable
+          if (!finalDistKm || finalDistKm <= 0) {
+            const accurateDist = calculateCumulativeDistanceKm(displayPolyline);
+            finalDistKm = tele.isAccurateMeterFound && tele.distanceKm > 0
+              ? tele.distanceKm
+              : (accurateDist > 0 ? accurateDist : tele.distanceKm);
+            totalMins = Math.round((finalDistKm / (tele.avgSpeed || 42)) * 60) || 120;
+          }
 
           const summaryMeta = {
             vehicleReg: tele.vehicleReg,
@@ -282,14 +391,11 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           };
           setExcelSummaryMeta(summaryMeta);
 
-          let totalMins = Math.round((finalDistKm / (summaryMeta.avgSpeed || 40)) * 60) || 120;
           if (summaryMeta.runningTime) {
             const tParts = summaryMeta.runningTime.split(':').map(Number);
             if (tParts.length >= 2 && !isNaN(tParts[0]) && !isNaN(tParts[1])) {
               totalMins = tParts[0] * 60 + tParts[1];
             }
-          } else {
-            totalMins = calculateDurationMinutes(finalDistKm, summaryMeta.avgSpeed || 42);
           }
 
           setStartPoint(start);
@@ -1612,16 +1718,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                   )}
                 </div>
 
-                {importedWaypointsCount > 0 && (
-                  <div className="space-y-2 pt-1">
-                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-800 font-bold">
-                      <span>✓ {importedWaypointsCount} GPS Legs Imported from {excelFileName}</span>
-                      <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-emerald-200">
-                        Auto-Routed
-                      </span>
-                    </div>
-                  </div>
-                )}
+
               </div>
 
               {/* Route / Corridor Name */}

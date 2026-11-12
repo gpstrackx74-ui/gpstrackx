@@ -172,16 +172,15 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const [savedCorridorsForTrip, setSavedCorridorsForTrip] = useState<any[]>([]);
   const [selectedCorridorForTripId, setSelectedCorridorForTripId] = useState<string>('');
 
-  // Unified single list of all previous corridors and completed trips (no duplicate sections)
-  const unifiedCorridorsList = useMemo(() => {
+  // List of completed trips for this vehicle (filtered: only completed trips)
+  const completedTripsList = useMemo(() => {
     const list: Array<{ id: string; label: string; raw: any }> = [];
     const seen = new Set<string>();
 
-    // 1. Vehicle trips
     (vehicleTrips || []).forEach((t: any, idx: number) => {
-      const name = (t.route_name || `Trip #${t.id || idx}`).replace(/\r?\n/g, ' ').trim();
-      const dist = Number(t.total_distance_km || 0);
-      const key = `${name.toLowerCase()}__${dist}`;
+      const name = (t.route_name || `Trip #${t.id || idx + 1}`).replace(/\r?\n/g, ' ').trim();
+      const dist = Number(t.total_distance_km || t.distance_km || 0);
+      const key = `${t.id || idx}__${name.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
         list.push({
@@ -192,23 +191,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       }
     });
 
-    // 2. Saved corridors
-    (savedCorridorsForTrip || []).forEach((c: any, idx: number) => {
-      const name = (c.route_name || `Route #${c.id || idx}`).replace(/\r?\n/g, ' ').trim();
-      const dist = Number(c.total_distance_km || c.distance_km || 0);
-      const key = `${name.toLowerCase()}__${dist}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        list.push({
-          id: `corridor-${c.id}`,
-          label: `${name} (${dist} KM)`,
-          raw: c
-        });
-      }
-    });
-
     return list;
-  }, [vehicleTrips, savedCorridorsForTrip]);
+  }, [vehicleTrips]);
   const [selectedOriginalWaypoints, setSelectedOriginalWaypoints] = useState<any[]>([]);
   const [selectedOriginalTolls, setSelectedOriginalTolls] = useState<any[]>([]);
   const [loadingTrips, setLoadingTrips] = useState<boolean>(false);
@@ -477,7 +461,15 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
     setSelectedOriginalTolls(rawTolls);
 
     const calculatedTotalToll = rawTolls.reduce((sum: number, t: any) => sum + (Number(t.charges) || 0), 0);
-    const finalTollFee = calculatedTotalToll > 0 ? calculatedTotalToll : (Number(found.total_toll_fee) || Number(found.total_tolls_amount) || 0);
+    const finalTollFee = found.total_toll_fee != null
+      ? Number(found.total_toll_fee)
+      : (calculatedTotalToll > 0 ? calculatedTotalToll : (Number(found.total_tolls_amount) || 0));
+    const finalStopsCount = found.stoppages_count != null && Number(found.stoppages_count) > 0
+      ? Number(found.stoppages_count)
+      : (rawWaypoints.length || 0);
+    const finalTollsCount = found.toll_gates_count != null && Number(found.toll_gates_count) > 0
+      ? Number(found.toll_gates_count)
+      : (rawTolls.length || 0);
 
     let finalDistKm = Number(found.total_distance_km || found.distance_km || 0);
     if ((!finalDistKm || finalDistKm <= 0) && poly.length >= 2) {
@@ -488,12 +480,13 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
     setTripForm(prev => ({
       ...prev,
       route_name: cleanRouteName || `Trip #${tripNum}: ${found.start_location_name || 'Origin'} to ${found.end_location_name || 'Destination'}`,
+      trip_date: found.trip_date || prev.trip_date,
       start_location_name: found.start_location_name || '',
       end_location_name: found.end_location_name || '',
       total_distance_km: finalDistKm > 0 ? String(finalDistKm) : '',
       total_toll_fee: String(finalTollFee),
-      toll_gates_count: String(rawTolls.length),
-      stoppages_count: String(rawWaypoints.length),
+      toll_gates_count: String(finalTollsCount),
+      stoppages_count: String(finalStopsCount),
       start_trip_time: found.start_trip_time || prev.start_trip_time || '08:00 AM',
       end_trip_time: found.end_trip_time || prev.end_trip_time || '06:00 PM'
     }));
@@ -841,6 +834,9 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
         end_lat: endCoord.lat,
         end_lng: endCoord.lng,
         total_distance_km: Number(tripForm.total_distance_km) || 120,
+        total_toll_fee: Number(tripForm.total_toll_fee) || 0,
+        toll_gates_count: Number(tripForm.toll_gates_count) || generatedTolls.length,
+        stoppages_count: Number(tripForm.stoppages_count) || waypoints.length,
         estimated_travel_time_min: 180,
         overview_polyline: polyline,
         waypoints: waypoints,
@@ -849,6 +845,10 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
         start_trip_time: tripForm.start_trip_time,
         end_trip_time: tripForm.end_trip_time
       });
+
+      // Refresh vehicle trips so this newly modified trip is instantly in the completed trips list
+      const updatedTrips = await api.getVehicleTrips(tripModalVehicle.id);
+      setVehicleTrips(updatedTrips || []);
 
       // Refresh vehicles & close modal
       fetchVehiclesAndUsers();
@@ -1565,8 +1565,8 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                         onChange={(e) => handleSelectSavedCorridorForTrip(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-xs focus:outline-none focus:border-red-500 text-slate-700 truncate cursor-pointer shadow-2xs"
                       >
-                        <option value="">-- Choose Completed Trip or Saved Route --</option>
-                        {unifiedCorridorsList.map((item) => (
+                        <option value="">-- Choose Completed Trip --</option>
+                        {completedTripsList.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.label}
                           </option>
