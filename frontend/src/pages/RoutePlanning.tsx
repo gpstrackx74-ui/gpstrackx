@@ -38,7 +38,8 @@ import {
   FileSpreadsheet,
   Search,
   Loader2,
-  X
+  X,
+  ArrowLeftRight
 } from 'lucide-react';
 
 interface ParkingPoint {
@@ -961,6 +962,76 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       // Legacy fallback: single calculated route only (no alternative routes)
       handleCalculateRoutes(newStart, newEnd, parsedWaypoints);
     }
+  };
+
+  // Reverse Active Route to instantly create Coming / Return Trip (Swaps Start & Destination flags & polyline)
+  const handleReverseRoute = () => {
+    if (!startPoint || !endPoint) {
+      alert('Please select or open a route first before reversing.');
+      return;
+    }
+
+    // 1. Swap Start Point (🟢) and End Point (🔴)
+    const oldStart = { ...startPoint };
+    const oldEnd = { ...endPoint };
+
+    setStartPoint(oldEnd);
+    setEndPoint(oldStart);
+
+    // 2. Reverse Corridor Name
+    let newCorridorName = '';
+    const oldName = (corridorNameInput || '').trim();
+    if (oldName.includes(' to ')) {
+      const parts = oldName.split(' to ');
+      newCorridorName = parts.length === 2 ? `${parts[1].trim()} to ${parts[0].trim()}` : `${oldEnd.name} to ${oldStart.name}`;
+    } else if (oldName.includes(' → ')) {
+      const parts = oldName.split(' → ');
+      newCorridorName = parts.length === 2 ? `${parts[1].trim()} → ${parts[0].trim()}` : `${oldEnd.name} → ${oldStart.name}`;
+    } else if (oldName.includes(' - ')) {
+      const parts = oldName.split(' - ');
+      newCorridorName = parts.length === 2 ? `${parts[1].trim()} - ${parts[0].trim()}` : `${oldEnd.name} - ${oldStart.name}`;
+    } else {
+      newCorridorName = `${oldEnd.name.split(',')[0]} to ${oldStart.name.split(',')[0]}`;
+    }
+
+    setCorridorNameInput(newCorridorName);
+    setSelectedCorridorId(''); // Clear selected corridor dropdown so user can save this new return route
+
+    // 3. Reverse Waypoints / Stoppages if present
+    if (stoppages.length > 0) {
+      const reversedStoppages: Stoppage[] = [...stoppages].reverse().map((s, idx) => ({
+        ...s,
+        id: idx + 1,
+        sequence_order: idx + 1
+      }));
+      setStoppages(reversedStoppages);
+      setStopsInput(String(reversedStoppages.length));
+    }
+
+    // 4. Reverse Route Coordinates & Tolls for all active routes
+    const reversedRoutes: AlternativeRoute[] = routes.map(r => {
+      const revCoords = [...(r.coordinates || [])].reverse();
+      const revTolls = [...(r.tollGates || [])].reverse();
+      return {
+        ...r,
+        name: newCorridorName,
+        coordinates: revCoords,
+        tollGates: revTolls,
+        summary: `Return Corridor (${r.distanceKm} km): ${newCorridorName}`
+      };
+    });
+
+    setRoutes(reversedRoutes);
+
+    // 5. Update modified polyline and center map on new Start Point
+    if (reversedRoutes.length > 0 && reversedRoutes[0].coordinates.length > 0) {
+      setModifiedPolyline(reversedRoutes[0].coordinates);
+    }
+    setMapCenter([oldEnd.lat, oldEnd.lng]);
+    setIsRouteModifiedByDrag(true);
+    setNewModifiedRouteName(newCorridorName);
+    setModifiedDistanceKm(reversedRoutes[0]?.distanceKm || null);
+    setModifiedDurationMins(reversedRoutes[0]?.timeMinutes || null);
   };
 
   const handleSelectAxle = (newAxle: TruckAxleType) => {
@@ -2227,6 +2298,19 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     })}
                   </select>
                 </div>
+
+                {/* Reverse Route (Create Coming / Return Trip) Button */}
+                {Boolean(startPoint && endPoint && routes.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={handleReverseRoute}
+                    className="w-full py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs active:scale-[0.99]"
+                    title="Reverse this route to create return/coming trip (Swaps start & destination flags and reverses path)"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>Reverse Route ⇄ (Create Coming / Return Trip)</span>
+                  </button>
+                )}
               </div>
 
               {/* Compact Save Modified Route Bar */}
@@ -2957,6 +3041,18 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     <span>Clear Map</span>
                   </button>
 
+                  {Boolean(startPoint && endPoint && routes.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleReverseRoute}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition cursor-pointer shadow-2xs"
+                      title="Reverse route for return/coming trip (swaps start & destination flags and route)"
+                    >
+                      <ArrowLeftRight className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Reverse Route ⇄ (Coming Trip)</span>
+                    </button>
+                  )}
+
                   {clickMode !== 'none' && (
                     <button
                       type="button"
@@ -3080,6 +3176,18 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       </p>
                     </div>
                   </div>
+
+                  {Boolean(startPoint && endPoint) && (
+                    <button
+                      type="button"
+                      onClick={handleReverseRoute}
+                      className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0"
+                      title="Reverse route for return/coming trip (Swaps start & destination flags)"
+                    >
+                      <ArrowLeftRight className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Reverse Trip ⇄</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Row 2: 3 Clear, Well-Spaced Metric Boxes (Full Width Grid, Zero Overlap) */}
