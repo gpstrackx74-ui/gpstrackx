@@ -67,7 +67,7 @@ const AppContent: React.FC = () => {
     checkAndApplyPendingSearch();
   }, [currentTab, selectedVehicleId, adminMapViewVehicleId]);
 
-  const [authView, setAuthView] = useState<'landing' | 'login' | 'signup'>('landing');
+  const [authView, setAuthView] = useState<'landing' | 'login'>('landing');
 
   if (loading) {
     return (
@@ -78,12 +78,11 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // If user is not authenticated: Show Landing Page or Auth Page (Sign In / Sign Up)
+  // If user is not authenticated: Show Landing Page or Auth Page (Sign In)
   if (!user) {
-    if (authView === 'login' || authView === 'signup') {
+    if (authView === 'login') {
       return (
         <AuthPage 
-          initialTab={authView} 
           onBackToHome={() => setAuthView('landing')} 
         />
       );
@@ -91,7 +90,7 @@ const AppContent: React.FC = () => {
     return (
       <LandingPage 
         onSignIn={() => setAuthView('login')} 
-        onSignUp={() => setAuthView('signup')} 
+        onSignUp={() => setAuthView('login')} 
       />
     );
   }

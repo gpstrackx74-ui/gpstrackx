@@ -693,7 +693,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
               <h5 className="font-bold text-xs uppercase tracking-wider text-white/40 mb-3">Portal Access</h5>
               <ul className="space-y-2 text-xs text-white/70">
                 <li><button type="button" onClick={onSignIn} className="hover:text-white transition cursor-pointer">Fleet User Sign In</button></li>
-                <li><button type="button" onClick={onSignUp} className="hover:text-white transition cursor-pointer">Register New Account</button></li>
               </ul>
             </div>
 

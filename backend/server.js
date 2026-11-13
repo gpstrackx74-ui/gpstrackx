@@ -279,78 +279,7 @@ app.post('/api/auth/login-otp', (req, res) => {
 // ---------------- AUTH ROUTES ---------------- //
 
 app.post('/api/auth/register', (req, res) => {
-  const { name, company_name, phone, password, confirmPassword, role, email } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Username / Full name is required' });
-  }
-  if (!phone || !phone.trim()) {
-    return res.status(400).json({ error: 'Mobile number is required' });
-  }
-  const cleanPhone = cleanPhoneNumber(phone);
-  if (cleanPhone.length !== 10) {
-    return res.status(400).json({ error: 'Please enter a valid 10-digit Indian mobile number' });
-  }
-  if (!password || password.length < 4) {
-    return res.status(400).json({ error: 'Password must be at least 4 characters long' });
-  }
-  if (confirmPassword && password !== confirmPassword) {
-    return res.status(400).json({ error: 'Passwords do not match' });
-  }
-
-  // Check duplicate phone
-  const allUsers = db.prepare('SELECT id, phone, email FROM users').all();
-  const existingUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
-  if (existingUser) {
-    return res.status(409).json({ error: 'This phone number is already in use' });
-  }
-
-  const userEmail = email && /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim()) 
-    ? email.trim().toLowerCase() 
-    : `${cleanPhone}@gpstrackx.in`;
-
-  const hashedPassword = bcrypt.hashSync(password, 10);
-  const userRole = role === 'admin' ? 'admin' : 'user';
-
-  const info = db.prepare(`
-    INSERT INTO users (name, email, password, phone, role, status, avatar_color, company_name)
-    VALUES (?, ?, ?, ?, ?, 'active', '#EF4444', ?)
-  `).run(name.trim(), userEmail, hashedPassword, `+91 ${cleanPhone}`, userRole, company_name ? company_name.trim() : null);
-
-  const newUser = db.prepare('SELECT id, name, email, phone, role, avatar_color, company_name FROM users WHERE id = ?').get(info.lastInsertRowid);
-
-  try {
-    supabaseService.syncUser({ ...newUser, password: hashedPassword });
-  } catch (e) {}
-
-  // Record registration login event
-  recordUserLogin({
-    userId: newUser.id,
-    email: newUser.email,
-    userName: newUser.name,
-    role: newUser.role,
-    req,
-    status: 'SUCCESS'
-  });
-
-  const token = jwt.sign(
-    { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-
-  res.status(201).json({
-    message: 'User registered successfully',
-    token,
-    user: {
-      id: newUser.id,
-      name: newUser.name,
-      email: newUser.email,
-      phone: newUser.phone,
-      companyName: newUser.company_name,
-      role: newUser.role,
-      avatarColor: newUser.avatar_color
-    }
-  });
+  return res.status(403).json({ error: 'Public registration is disabled. Fleet accounts are provisioned exclusively by the Administrator.' });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -485,78 +414,7 @@ app.post('/api/auth/login', (req, res) => {
 // ---------------- AUTH ROUTES ---------------- //
 
 app.post('/api/auth/register', (req, res) => {
-  const { name, company_name, phone, password, confirmPassword, role, email } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Username / Full name is required' });
-  }
-  if (!phone || !phone.trim()) {
-    return res.status(400).json({ error: 'Mobile number is required' });
-  }
-  const cleanPhone = cleanPhoneNumber(phone);
-  if (cleanPhone.length !== 10) {
-    return res.status(400).json({ error: 'Please enter a valid 10-digit Indian mobile number' });
-  }
-  if (!password || password.length < 4) {
-    return res.status(400).json({ error: 'Password must be at least 4 characters long' });
-  }
-  if (confirmPassword && password !== confirmPassword) {
-    return res.status(400).json({ error: 'Passwords do not match' });
-  }
-
-  // Check duplicate phone
-  const allUsers = db.prepare('SELECT id, phone, email FROM users').all();
-  const existingUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
-  if (existingUser) {
-    return res.status(409).json({ error: 'This phone number is already in use' });
-  }
-
-  const userEmail = email && /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim()) 
-    ? email.trim().toLowerCase() 
-    : `${cleanPhone}@gpstrackx.in`;
-
-  const hashedPassword = bcrypt.hashSync(password, 10);
-  const userRole = role === 'admin' ? 'admin' : 'user';
-
-  const info = db.prepare(`
-    INSERT INTO users (name, email, password, phone, role, status, avatar_color, company_name)
-    VALUES (?, ?, ?, ?, ?, 'active', '#EF4444', ?)
-  `).run(name.trim(), userEmail, hashedPassword, `+91 ${cleanPhone}`, userRole, company_name ? company_name.trim() : null);
-
-  const newUser = db.prepare('SELECT id, name, email, phone, role, avatar_color, company_name FROM users WHERE id = ?').get(info.lastInsertRowid);
-
-  try {
-    supabaseService.syncUser({ ...newUser, password: hashedPassword });
-  } catch (e) {}
-
-  // Record registration login event
-  recordUserLogin({
-    userId: newUser.id,
-    email: newUser.email,
-    userName: newUser.name,
-    role: newUser.role,
-    req,
-    status: 'SUCCESS'
-  });
-
-  const token = jwt.sign(
-    { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-
-  res.status(201).json({
-    message: 'User registered successfully',
-    token,
-    user: {
-      id: newUser.id,
-      name: newUser.name,
-      email: newUser.email,
-      phone: newUser.phone,
-      companyName: newUser.company_name,
-      role: newUser.role,
-      avatarColor: newUser.avatar_color
-    }
-  });
+  return res.status(403).json({ error: 'Public registration is disabled. Fleet accounts are provisioned exclusively by the Administrator.' });
 });
 
 app.get('/api/auth/me', authenticateToken, (req, res) => {
