@@ -1024,6 +1024,9 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
     // Search Result Pin (Across India Search)
     if (searchLocation && searchLocation.lat && searchLocation.lng) {
       const pos = new google.maps.LatLng(searchLocation.lat, searchLocation.lng);
+      map.panTo(pos);
+      map.setZoom(16);
+
       const searchMarker = new google.maps.Marker({
         position: pos,
         map,
@@ -1050,6 +1053,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       });
 
       searchMarker.addListener('click', () => openPopup(searchInfoWindow, searchMarker));
+      openPopup(searchInfoWindow, searchMarker);
       markersRef.current.push(searchMarker);
     }
 

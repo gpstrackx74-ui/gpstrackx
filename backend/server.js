@@ -354,8 +354,131 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
-  return res.status(403).json({
-    error: 'Password login is disabled. All users and administrators must login using SMS OTP verification.'
+  const { identifier, phone, email, password } = req.body;
+  const loginId = String(identifier || phone || email || '').trim();
+
+  if (!loginId || !password) {
+    return res.status(400).json({ error: 'Email or mobile number and password are required' });
+  }
+
+  const clean = cleanPhoneNumber(loginId);
+  let user = null;
+
+  // 1. Try finding by email (case-insensitive)
+  const emailCandidates = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').all(loginId);
+  if (emailCandidates.length > 0) {
+    user = emailCandidates.find(u => {
+      try {
+        return bcrypt.compareSync(password, u.password) || password === u.password;
+      } catch (e) {
+        return password === u.password;
+      }
+    }) || emailCandidates[0];
+  }
+
+  // 2. If not found by email, try finding by phone number
+  if (!user && clean && clean.length >= 7) {
+    const allUsers = db.prepare('SELECT * FROM users').all();
+    const phoneCandidates = allUsers.filter(u => {
+      if (!u.phone) return false;
+      const uClean = cleanPhoneNumber(u.phone);
+      return uClean === clean || uClean.endsWith(clean) || clean.endsWith(uClean);
+    });
+    if (phoneCandidates.length > 0) {
+      user = phoneCandidates.find(u => {
+        try {
+          return bcrypt.compareSync(password, u.password) || password === u.password;
+        } catch (e) {
+          return password === u.password;
+        }
+      }) || phoneCandidates[0];
+    }
+  }
+
+  // 3. Fallback: try direct name or raw phone match
+  if (!user) {
+    const nameCandidates = db.prepare(`
+      SELECT * FROM users 
+      WHERE LOWER(name) = LOWER(?) 
+         OR phone = ? 
+         OR REPLACE(REPLACE(phone, ' ', ''), '+91', '') = ?
+    `).all(loginId, loginId, clean);
+    if (nameCandidates.length > 0) {
+      user = nameCandidates.find(u => {
+        try {
+          return bcrypt.compareSync(password, u.password) || password === u.password;
+        } catch (e) {
+          return password === u.password;
+        }
+      }) || nameCandidates[0];
+    }
+  }
+
+  if (!user) {
+    recordUserLogin({ email: loginId, role: 'unknown', req, status: 'FAILED_INVALID_USER' });
+    return res.status(401).json({ error: 'Invalid login credentials. Please check your email or mobile number.' });
+  }
+
+  // STRICT REQUIREMENT:
+  // Admin can login with password, but regular fleet users must sign in via Phone Number & SMS OTP
+  if (user.role !== 'admin') {
+    return res.status(403).json({
+      error: 'User accounts must sign in using Mobile Number & SMS OTP.'
+    });
+  }
+
+  let validPassword = false;
+  try {
+    validPassword = bcrypt.compareSync(password, user.password);
+  } catch (e) {
+    validPassword = false;
+  }
+  if (!validPassword && password === user.password) {
+    validPassword = true;
+  }
+
+  if (!validPassword) {
+    recordUserLogin({
+      userId: user.id,
+      email: user.email,
+      userName: user.name,
+      role: user.role,
+      req,
+      status: 'FAILED_INVALID_PASSWORD'
+    });
+    return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
+  }
+
+  if (user.status !== 'active') {
+    return res.status(403).json({ error: 'Account has been deactivated. Please contact fleet administrator.' });
+  }
+
+  recordUserLogin({
+    userId: user.id,
+    email: user.email,
+    userName: user.name,
+    role: user.role,
+    req,
+    status: 'SUCCESS'
+  });
+
+  const token = jwt.sign(
+    { id: user.id, name: user.name, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      companyName: user.company_name,
+      role: user.role,
+      avatarColor: user.avatar_color
+    }
   });
 });
 

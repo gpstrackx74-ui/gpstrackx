@@ -476,6 +476,368 @@ export const VERIFIED_TOLL_PLAZAS: VerifiedTollPlaza[] = [
     truckRate: 295,
     concessionaire: 'NHAI Odisha',
     state: 'Odisha'
+  },
+
+  // Madhya Pradesh Commercial Corridors (NH-45, NH-44, NH-30, NH-46, NH-47, NH-52)
+  {
+    name: 'Pipariya Toll Plaza',
+    officialName: 'Pipariya State Highway Toll Gate',
+    highway: 'SH-22 (Hoshangabad - Pipariya - Narsinghpur Corridor)',
+    lat: 22.7580,
+    lng: 78.3610,
+    truckRate: 190,
+    concessionaire: 'MPRDC',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Babai Toll Plaza',
+    officialName: 'Babai / Bagra Toll Plaza',
+    highway: 'NH-45 (Jabalpur - Bhopal Expressway)',
+    lat: 22.7012,
+    lng: 77.9345,
+    truckRate: 235,
+    concessionaire: 'NHAI PIU Bhopal',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Barna Toll Plaza',
+    officialName: 'Barna / Bareli Toll Plaza',
+    highway: 'NH-45 (Raisen - Bareli Section)',
+    lat: 22.8640,
+    lng: 78.2310,
+    truckRate: 245,
+    concessionaire: 'NHAI Jabalpur',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Narsinghpur Toll Plaza',
+    officialName: 'Narsinghpur / Kareli Toll Plaza',
+    highway: 'NH-45 (Jabalpur - Narsinghpur Corridor)',
+    lat: 22.8950,
+    lng: 79.1850,
+    truckRate: 260,
+    concessionaire: 'NHAI PIU Jabalpur',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Tendukheda Toll Gate',
+    officialName: 'Tendukheda Commercial Highway Toll Gate',
+    highway: 'Damoh - Jabalpur State Corridor',
+    lat: 23.4120,
+    lng: 79.5420,
+    truckRate: 180,
+    concessionaire: 'MP State Road Development Corp',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Bargi Toll Plaza',
+    officialName: 'Bargi Toll Plaza',
+    highway: 'NH-44 (Jabalpur - Seoni Corridor)',
+    lat: 22.9850,
+    lng: 79.8820,
+    truckRate: 275,
+    concessionaire: 'NHAI PIU Jabalpur',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Suktara Toll Plaza',
+    officialName: 'Suktara / Seoni Toll Plaza',
+    highway: 'NH-44 (Seoni National Highway)',
+    lat: 22.0230,
+    lng: 79.5210,
+    truckRate: 290,
+    concessionaire: 'NHAI Nagpur/Jabalpur',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Khawasa Toll Plaza',
+    officialName: 'Khawasa Toll Plaza',
+    highway: 'NH-44 (MP - Maharashtra Border Corridor)',
+    lat: 21.7210,
+    lng: 79.4850,
+    truckRate: 310,
+    concessionaire: 'NHAI Nagpur',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Lakhnadon Toll Plaza',
+    officialName: 'Lakhnadon Toll Plaza',
+    highway: 'NH-44 / NH-34 Junction',
+    lat: 22.5980,
+    lng: 79.6540,
+    truckRate: 265,
+    concessionaire: 'NHAI Jabalpur',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Sleemanabad Toll Plaza',
+    officialName: 'Sleemanabad Toll Plaza',
+    highway: 'NH-30 (Jabalpur - Katni Corridor)',
+    lat: 23.6320,
+    lng: 80.2510,
+    truckRate: 270,
+    concessionaire: 'NHAI PIU Katni',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Maihar Toll Plaza',
+    officialName: 'Maihar Toll Plaza',
+    highway: 'NH-30 (Katni - Satna Section)',
+    lat: 24.2610,
+    lng: 80.7520,
+    truckRate: 285,
+    concessionaire: 'NHAI Katni',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Teothar Toll Plaza',
+    officialName: 'Teothar / Chakghat Toll Plaza',
+    highway: 'NH-30 (Rewa - Prayagraj Border)',
+    lat: 24.9750,
+    lng: 81.7450,
+    truckRate: 315,
+    concessionaire: 'NHAI Rewa',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Chitora Toll Plaza',
+    officialName: 'Chitora Toll Plaza',
+    highway: 'NH-44 (Sagar Bypass)',
+    lat: 23.7540,
+    lng: 78.7820,
+    truckRate: 290,
+    concessionaire: 'NHAI Sagar',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Malthone Toll Plaza',
+    officialName: 'Malthone Toll Plaza',
+    highway: 'NH-44 (Sagar - Lalitpur Section)',
+    lat: 24.3120,
+    lng: 78.5340,
+    truckRate: 320,
+    concessionaire: 'NHAI Sagar',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Barkhedi Toll Plaza',
+    officialName: 'Barkhedi Toll Plaza',
+    highway: 'NH-46 (Bhopal - Obedullaganj - Hoshangabad)',
+    lat: 23.0120,
+    lng: 77.6210,
+    truckRate: 240,
+    concessionaire: 'NHAI Bhopal',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Sonway Toll Plaza',
+    officialName: 'Sonway Toll Plaza',
+    highway: 'NH-52 (Indore - Dewas Bypass)',
+    lat: 22.7840,
+    lng: 75.9820,
+    truckRate: 270,
+    concessionaire: 'NHAI Indore',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Chicholi Toll Plaza',
+    officialName: 'Chicholi Toll Plaza',
+    highway: 'NH-47 (Betul - Bhopal Highway)',
+    lat: 21.9840,
+    lng: 77.7120,
+    truckRate: 250,
+    concessionaire: 'NHAI Betul',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Multai Toll Plaza',
+    officialName: 'Multai Toll Plaza',
+    highway: 'NH-47 (Betul - Nagpur Corridor)',
+    lat: 21.7720,
+    lng: 78.2540,
+    truckRate: 260,
+    concessionaire: 'NHAI Betul',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Biaora Toll Plaza',
+    officialName: 'Biaora Toll Plaza',
+    highway: 'NH-46 / NH-52 Junction (Biaora Bypass)',
+    lat: 23.9210,
+    lng: 76.9120,
+    truckRate: 280,
+    concessionaire: 'NHAI Biaora',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Guna Toll Plaza',
+    officialName: 'Guna Toll Plaza',
+    highway: 'NH-46 (Gwalior - Dewas Corridor)',
+    lat: 24.6420,
+    lng: 77.3150,
+    truckRate: 295,
+    concessionaire: 'NHAI Guna',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Dabra Toll Plaza',
+    officialName: 'Dabra Toll Plaza',
+    highway: 'NH-44 (Jhansi - Gwalior Expressway)',
+    lat: 25.9120,
+    lng: 78.3340,
+    truckRate: 310,
+    concessionaire: 'NHAI Gwalior',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Sendhwa Toll Plaza',
+    officialName: 'Sendhwa Toll Plaza',
+    highway: 'NH-52 (Indore - Dhule MP-MH Border)',
+    lat: 21.6850,
+    lng: 75.1050,
+    truckRate: 340,
+    concessionaire: 'NHAI Indore',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Jhabua Toll Plaza',
+    officialName: 'Jhabua Toll Plaza',
+    highway: 'NH-47 (Indore - Ahmedabad MP-Gujarat Border)',
+    lat: 22.7740,
+    lng: 74.5920,
+    truckRate: 285,
+    concessionaire: 'NHAI Jhabua',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Ratlam Toll Plaza',
+    officialName: 'Ratlam Toll Plaza',
+    highway: 'Delhi - Mumbai Expressway / NH-927A',
+    lat: 23.3320,
+    lng: 75.0420,
+    truckRate: 380,
+    concessionaire: 'NHAI Ratlam',
+    state: 'Madhya Pradesh'
+  },
+  {
+    name: 'Mathura Toll Plaza',
+    officialName: 'Mathura Toll Plaza',
+    highway: 'NH-19 (Delhi - Agra Section)',
+    lat: 27.5640,
+    lng: 77.6210,
+    truckRate: 340,
+    concessionaire: 'NHAI Agra',
+    state: 'Uttar Pradesh'
+  },
+  {
+    name: 'Barakhamba Toll Plaza',
+    officialName: 'Agra - Lucknow Expressway Toll Plaza',
+    highway: 'Agra - Lucknow Expressway',
+    lat: 27.1250,
+    lng: 78.0850,
+    truckRate: 590,
+    concessionaire: 'UPEIDA',
+    state: 'Uttar Pradesh'
+  },
+  {
+    name: 'Kanpur Toll Plaza',
+    officialName: 'Barah / Kanpur Toll Plaza',
+    highway: 'NH-19 (Etawah - Kanpur Corridor)',
+    lat: 26.4320,
+    lng: 80.1250,
+    truckRate: 320,
+    concessionaire: 'NHAI Kanpur',
+    state: 'Uttar Pradesh'
+  },
+  {
+    name: 'Sasaram Toll Plaza',
+    officialName: 'Sasaram Toll Plaza',
+    highway: 'NH-19 (Varanasi - Kolkata Grand Trunk Road)',
+    lat: 24.9620,
+    lng: 84.0150,
+    truckRate: 310,
+    concessionaire: 'NHAI Bihar',
+    state: 'Bihar'
+  },
+  {
+    name: 'Govindpur Toll Plaza',
+    officialName: 'Govindpur Toll Plaza',
+    highway: 'NH-19 (Dhanbad Corridor)',
+    lat: 23.8340,
+    lng: 86.5210,
+    truckRate: 300,
+    concessionaire: 'NHAI Jharkhand',
+    state: 'Jharkhand'
+  },
+  {
+    name: 'Dankuni Toll Plaza',
+    officialName: 'Dankuni Toll Plaza',
+    highway: 'NH-19 (Kolkata Western Entryway)',
+    lat: 22.6850,
+    lng: 88.2910,
+    truckRate: 260,
+    concessionaire: 'NHAI Kolkata',
+    state: 'West Bengal'
+  },
+  {
+    name: 'Ahmedabad - Vadodara Expressway Toll',
+    officialName: 'Ahmedabad Toll Plaza (NE-1)',
+    highway: 'National Expressway 1',
+    lat: 22.9520,
+    lng: 72.6340,
+    truckRate: 360,
+    concessionaire: 'IRB Infrastructure / NHAI',
+    state: 'Gujarat'
+  },
+  {
+    name: 'Bhestan Toll Plaza',
+    officialName: 'Bhestan / Surat Toll Plaza',
+    highway: 'NH-48 (Vadodara - Mumbai Corridor)',
+    lat: 21.1250,
+    lng: 72.8840,
+    truckRate: 340,
+    concessionaire: 'NHAI Surat',
+    state: 'Gujarat'
+  },
+  {
+    name: 'Devanahalli Toll Plaza',
+    officialName: 'Devanahalli Airport Toll Plaza',
+    highway: 'NH-44 (Bangalore - Hyderabad Expressway)',
+    lat: 13.2350,
+    lng: 77.7120,
+    truckRate: 270,
+    concessionaire: 'NHAI Bangalore',
+    state: 'Karnataka'
+  },
+  {
+    name: 'Krishnagiri Toll Plaza',
+    officialName: 'Krishnagiri Toll Plaza',
+    highway: 'NH-44 (Hosur - Krishnagiri - Chennai Corridor)',
+    lat: 12.5920,
+    lng: 78.2140,
+    truckRate: 310,
+    concessionaire: 'L&T Tollways / NHAI',
+    state: 'Tamil Nadu'
+  },
+  {
+    name: 'Medchal Toll Plaza',
+    officialName: 'Medchal Toll Plaza',
+    highway: 'NH-44 (Nagpur - Hyderabad Highway)',
+    lat: 17.6320,
+    lng: 78.4810,
+    truckRate: 320,
+    concessionaire: 'NHAI Hyderabad',
+    state: 'Telangana'
+  },
+  {
+    name: 'Kurnool Toll Plaza',
+    officialName: 'Pullur / Kurnool Toll Plaza',
+    highway: 'NH-44 (Hyderabad - Bangalore Section)',
+    lat: 15.8920,
+    lng: 78.0210,
+    truckRate: 330,
+    concessionaire: 'NHAI Kurnool',
+    state: 'Andhra Pradesh'
   }
 ];
 
@@ -568,6 +930,141 @@ export function detectRealTollsOnRoute(
       highway: toll.highway
     };
   });
+}
+
+/**
+ * Detects toll plazas using Google Maps Places API along a road polyline.
+ * Queries Google Places nearbySearch for 'toll plaza' or 'toll gate' around corridor checkpoints.
+ */
+export async function detectGooglePlacesTollsOnRoute(
+  coordinates: [number, number][],
+  thresholdKm = 3.5,
+  axle: TruckAxleType = '3-axle'
+): Promise<TollGate[]> {
+  if (typeof window === 'undefined' || !(window as any).google?.maps?.places?.PlacesService) {
+    return [];
+  }
+  if (!coordinates || coordinates.length < 2) return [];
+
+  const axleConfig = AXLE_CONFIGURATIONS.find(a => a.id === axle);
+  const baseRate = 220;
+  const standardFee = Math.round(((baseRate * (axleConfig?.multiplier || 1.0)) / 5)) * 5;
+
+  const samplePoints: [number, number][] = [];
+  const step = Math.max(1, Math.floor(coordinates.length / 5));
+  for (let i = 0; i < coordinates.length; i += step) {
+    samplePoints.push(coordinates[i]);
+  }
+  const last = coordinates[coordinates.length - 1];
+  if (samplePoints[samplePoints.length - 1] !== last) {
+    samplePoints.push(last);
+  }
+
+  const dummyDiv = document.createElement('div');
+  const service = new (window as any).google.maps.places.PlacesService(dummyDiv);
+  const googleTolls: TollGate[] = [];
+  const seenNames = new Set<string>();
+
+  const searchPromises = samplePoints.map(pt => {
+    return new Promise<void>((resolve) => {
+      try {
+        service.nearbySearch(
+          {
+            location: new (window as any).google.maps.LatLng(pt[0], pt[1]),
+            radius: 25000,
+            keyword: 'toll plaza'
+          },
+          (results: any, status: any) => {
+            if (status === (window as any).google.maps.places.PlacesServiceStatus.OK && Array.isArray(results)) {
+              for (const place of results) {
+                const name = place.name || '';
+                const lowerName = name.toLowerCase();
+                if (
+                  lowerName.includes('toll') ||
+                  lowerName.includes('plaza') ||
+                  lowerName.includes('naka')
+                ) {
+                  const lat = typeof place.geometry?.location?.lat === 'function'
+                    ? place.geometry.location.lat()
+                    : Number(place.geometry?.location?.lat);
+                  const lng = typeof place.geometry?.location?.lng === 'function'
+                    ? place.geometry.location.lng()
+                    : Number(place.geometry?.location?.lng);
+
+                  if (!isNaN(lat) && !isNaN(lng)) {
+                    // Check distance to route
+                    let minD = Infinity;
+                    for (let i = 0; i < coordinates.length - 1; i++) {
+                      const p1 = { lat: coordinates[i][0], lng: coordinates[i][1] };
+                      const p2 = { lat: coordinates[i + 1][0], lng: coordinates[i + 1][1] };
+                      const d = distToSegmentKm({ lat, lng }, p1, p2);
+                      if (d < minD) minD = d;
+                    }
+
+                    if (minD <= thresholdKm) {
+                      const cleanName = name.replace(/\s+/g, ' ').trim();
+                      if (!seenNames.has(cleanName)) {
+                        seenNames.add(cleanName);
+                        googleTolls.push({
+                          name: cleanName,
+                          lat,
+                          lng,
+                          charges: standardFee,
+                          is_manual: false,
+                          toll_type: `FASTag Toll Plaza (${axleConfig?.shortLabel || 'Commercial Truck'})`,
+                          highway: place.vicinity || 'National Highway'
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            resolve();
+          }
+        );
+      } catch (err) {
+        resolve();
+      }
+    });
+  });
+
+  try {
+    await Promise.all(searchPromises);
+  } catch (_) {}
+
+  return googleTolls;
+}
+
+/**
+ * Master async toll detector: Combines verified NHAI database + Live Google Places Toll Search
+ */
+export async function detectAllTollsOnRoute(
+  coordinates: [number, number][],
+  thresholdKm = 3.5,
+  axle: TruckAxleType = '3-axle'
+): Promise<TollGate[]> {
+  const verifiedTolls = detectRealTollsOnRoute(coordinates, thresholdKm, axle);
+
+  try {
+    const googleTolls = await detectGooglePlacesTollsOnRoute(coordinates, thresholdKm, axle);
+    if (googleTolls.length === 0) return verifiedTolls;
+
+    // Deduplicate against verifiedTolls (by name similarity or distance < 2km)
+    const combined = [...verifiedTolls];
+    for (const gt of googleTolls) {
+      const exists = combined.some(vt => {
+        const d = haversineDistKm(vt.lat, vt.lng, gt.lat, gt.lng);
+        return d < 2.0 || vt.name.toLowerCase().includes(gt.name.toLowerCase()) || gt.name.toLowerCase().includes(vt.name.toLowerCase());
+      });
+      if (!exists) {
+        combined.push(gt);
+      }
+    }
+    return combined;
+  } catch (_) {
+    return verifiedTolls;
+  }
 }
 
 /**

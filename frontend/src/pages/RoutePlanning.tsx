@@ -7,6 +7,7 @@ import { LocationSearchInput } from '../components/LocationSearchInput';
 import { DMYDateInput } from '../components/DMYDateInput';
 import {
   detectRealTollsOnRoute,
+  detectAllTollsOnRoute,
   computeTotalTruckToll,
   TruckAxleType,
   AXLE_CONFIGURATIONS
@@ -184,6 +185,22 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
   const [mapZoom, setMapZoom] = useState<number>(8);
   const mapSearchRef = useRef<HTMLDivElement>(null);
+  const autocompleteServiceRef = useRef<any>(null);
+  const geocoderRef = useRef<any>(null);
+
+  // Initialize Google Autocomplete and Geocoder if Google Maps JS API is available
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.places?.AutocompleteService) {
+      try {
+        autocompleteServiceRef.current = new (window as any).google.maps.places.AutocompleteService();
+      } catch (_) {}
+    }
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder) {
+      try {
+        geocoderRef.current = new (window as any).google.maps.Geocoder();
+      } catch (_) {}
+    }
+  }, []);
 
   // Outside click & touch listener: hide search bar when clicking anywhere on map or page
   useEffect(() => {
@@ -203,30 +220,123 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     };
   }, [showMapSearch]);
 
-  // Debounced search for locations across India (triggers on 1-2 letters)
+  const fetchBackendLocations = async (queryText: string) => {
+    try {
+      const res = await fetch(`/api/locations/search?q=${encodeURIComponent(queryText)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMapSearchResults(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error searching map locations via backend:', err);
+    } finally {
+      setMapSearchLoading(false);
+    }
+  };
+
+  // Debounced search for locations across India using Google Places Autocomplete API with fallback
   useEffect(() => {
-    if (!mapSearchQuery || mapSearchQuery.trim().length < 1) {
+    const q = mapSearchQuery.trim();
+    if (!q || q.length < 1) {
       setMapSearchResults([]);
+      setMapSearchLoading(false);
       return;
     }
-    const timer = setTimeout(async () => {
-      try {
-        setMapSearchLoading(true);
-        const res = await fetch(`/api/locations/search?q=${encodeURIComponent(mapSearchQuery.trim())}`);
-        if (res.ok) {
-          const data = await res.json();
-          setMapSearchResults(Array.isArray(data) ? data : []);
+
+    const timer = setTimeout(() => {
+      setMapSearchLoading(true);
+
+      // 1. Try Google Maps Places Autocomplete Service first (instant, high-precision across India)
+      if ((window as any).google?.maps?.places?.AutocompleteService) {
+        if (!autocompleteServiceRef.current) {
+          try {
+            autocompleteServiceRef.current = new (window as any).google.maps.places.AutocompleteService();
+          } catch (_) {}
         }
-      } catch (err) {
-        console.error('Error searching map locations:', err);
-      } finally {
-        setMapSearchLoading(false);
+        if (autocompleteServiceRef.current) {
+          try {
+            autocompleteServiceRef.current.getPlacePredictions(
+              {
+                input: q,
+                componentRestrictions: { country: 'in' }
+              },
+              (predictions: any, status: any) => {
+                if (
+                  status === (window as any).google?.maps?.places?.PlacesServiceStatus?.OK &&
+                  Array.isArray(predictions) &&
+                  predictions.length > 0
+                ) {
+                  const formatted = predictions.map((p: any) => ({
+                    place_id: p.place_id,
+                    name: p.structured_formatting?.main_text || p.description,
+                    address: p.structured_formatting?.secondary_text || p.description,
+                    description: p.description,
+                    isGoogle: true
+                  }));
+                  setMapSearchResults(formatted);
+                  setMapSearchLoading(false);
+                  return;
+                }
+                // Fallback to backend search API if Google Places returned empty
+                fetchBackendLocations(q);
+              }
+            );
+            return;
+          } catch (e) {
+            console.warn('Google Places Autocomplete error:', e);
+          }
+        }
       }
-    }, 200);
+
+      // 2. Fallback to backend locations search API
+      fetchBackendLocations(q);
+    }, 180);
+
     return () => clearTimeout(timer);
   }, [mapSearchQuery]);
 
   const handleSelectMapSearchResult = (item: any) => {
+    // If it has place_id, resolve exact coordinates via Google Geocoder
+    if (item.place_id && (window as any).google?.maps?.Geocoder) {
+      if (!geocoderRef.current) {
+        try {
+          geocoderRef.current = new (window as any).google.maps.Geocoder();
+        } catch (_) {}
+      }
+      if (geocoderRef.current) {
+        geocoderRef.current.geocode({ placeId: item.place_id }, (results: any, status: any) => {
+          if (status === 'OK' && results && results[0]?.geometry?.location) {
+            const loc = results[0].geometry.location;
+            const lat = typeof loc.lat === 'function' ? loc.lat() : Number(loc.lat);
+            const lng = typeof loc.lng === 'function' ? loc.lng() : Number(loc.lng);
+            const placeName = item.name || results[0].formatted_address;
+            const placeAddr = item.address || results[0].formatted_address;
+            setSearchedLocation({ lat, lng, name: placeName, address: placeAddr });
+            setMapCenter([lat, lng]);
+            setMapZoom(16);
+            setMapSearchResults([]);
+            setShowMapSearch(false);
+          } else {
+            // Fallback geocode by address/description string
+            geocoderRef.current.geocode({ address: item.description || item.name }, (r2: any, s2: any) => {
+              if (s2 === 'OK' && r2 && r2[0]?.geometry?.location) {
+                const loc = r2[0].geometry.location;
+                const lat = typeof loc.lat === 'function' ? loc.lat() : Number(loc.lat);
+                const lng = typeof loc.lng === 'function' ? loc.lng() : Number(loc.lng);
+                setSearchedLocation({ lat, lng, name: item.name, address: item.address });
+                setMapCenter([lat, lng]);
+                setMapZoom(16);
+                setMapSearchResults([]);
+                setShowMapSearch(false);
+              }
+            });
+          }
+        });
+        return;
+      }
+    }
+
+    // Direct lat & lng coordinates
     const lat = Number(item.lat);
     const lng = Number(item.lng);
     if (!isNaN(lat) && !isNaN(lng)) {
@@ -240,6 +350,30 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       setMapZoom(16); // High zoom street level view
       setMapSearchResults([]);
       setShowMapSearch(false); // Hide search bar after selection
+    }
+  };
+
+  const handleDirectGeocodeQuery = (q: string) => {
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder) {
+      if (!geocoderRef.current) {
+        try {
+          geocoderRef.current = new (window as any).google.maps.Geocoder();
+        } catch (_) {}
+      }
+      if (geocoderRef.current) {
+        geocoderRef.current.geocode({ address: q.includes('India') ? q : `${q}, India` }, (results: any, status: any) => {
+          if (status === 'OK' && results && results[0]?.geometry?.location) {
+            const loc = results[0].geometry.location;
+            const lat = typeof loc.lat === 'function' ? loc.lat() : Number(loc.lat);
+            const lng = typeof loc.lng === 'function' ? loc.lng() : Number(loc.lng);
+            setSearchedLocation({ lat, lng, name: results[0].formatted_address, address: results[0].formatted_address });
+            setMapCenter([lat, lng]);
+            setMapZoom(16);
+            setMapSearchResults([]);
+            setShowMapSearch(false);
+          }
+        });
+      }
     }
   };
 
@@ -555,10 +689,10 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           const highwayDist = finalDistKm;
           const highwayMins = totalMins;
 
-          // Detect all FASTag tolls on this actual route corridor (adaptive threshold for highway routes)
-          let detectedTolls = detectRealTollsOnRoute(highwayCoords, 2.5, selectedAxle);
-          if (detectedTolls.length === 0 && highwayDist > 35) {
-            detectedTolls = detectRealTollsOnRoute(highwayCoords, 3.8, selectedAxle);
+          // Detect all FASTag tolls on this actual route corridor (combining verified NHAI database & Google Places API)
+          let detectedTolls = await detectAllTollsOnRoute(highwayCoords, 3.5, selectedAxle);
+          if (detectedTolls.length === 0 && highwayDist > 30) {
+            detectedTolls = await detectAllTollsOnRoute(highwayCoords, 5.0, selectedAxle);
           }
           const realTolls = detectedTolls.map(t => ({
             ...t,
@@ -827,7 +961,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     setSelectedAxle(newAxle);
     // Recalculate toll gates on all existing route options based on new axle category
     setRoutes(prev => prev.map(r => {
-      const detected = detectRealTollsOnRoute(r.coordinates, 1.2, newAxle);
+      const detected = detectRealTollsOnRoute(r.coordinates, 2.5, newAxle);
       const tollsWithOverrides = detected.map(t => ({
         ...t,
         charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
@@ -863,7 +997,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       return copy;
     });
     setRoutes(prev => prev.map(r => {
-      const detected = detectRealTollsOnRoute(r.coordinates, 1.2, selectedAxle);
+      const detected = detectRealTollsOnRoute(r.coordinates, 2.5, selectedAxle);
       return {
         ...r,
         tollGates: detected
@@ -989,7 +1123,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               ? `${summaryName} (Fastest / Recommended)`
               : `${summaryName}${tag ? ' (' + tag + ')' : ` (Option ${routeIdx + 1})`}`;
 
-            const detectedTolls = detectRealTollsOnRoute(coords, 1.2, selectedAxle);
+            const detectedTolls = detectRealTollsOnRoute(coords, 2.5, selectedAxle);
             const realTolls = detectedTolls.map(t => ({
               ...t,
               charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
@@ -1067,7 +1201,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         });
         if (res.routes && Array.isArray(res.routes)) {
           backendRoutes = res.routes.map((br: any) => {
-            const detected = detectRealTollsOnRoute(br.coordinates || [], 1.2, selectedAxle);
+            const detected = detectRealTollsOnRoute(br.coordinates || [], 2.5, selectedAxle);
             const tollsWithOverrides = detected.map(t => ({
               ...t,
               charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
@@ -1364,7 +1498,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       finalDistKm = calculateCumulativeDistanceKm(finalCoords);
       finalTimeMin = calculateDurationMinutes(finalDistKm, 45);
 
-      const detectedCustom = detectRealTollsOnRoute(finalCoords, 1.2, selectedAxle);
+      const detectedCustom = detectRealTollsOnRoute(finalCoords, 2.5, selectedAxle);
       const customTolls = detectedCustom.map(t => ({
         ...t,
         charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
@@ -2701,6 +2835,16 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                         type="text"
                         value={mapSearchQuery}
                         onChange={(e) => setMapSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (mapSearchResults.length > 0) {
+                              handleSelectMapSearchResult(mapSearchResults[0]);
+                            } else if (mapSearchQuery.trim()) {
+                              handleDirectGeocodeQuery(mapSearchQuery.trim());
+                            }
+                          }
+                        }}
                         placeholder="Search street, town, city, state in India..."
                         className="w-full text-xs font-semibold text-slate-800 placeholder-slate-400 bg-transparent border-none outline-none focus:ring-0"
                         autoFocus

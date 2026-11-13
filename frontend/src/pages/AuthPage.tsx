@@ -29,16 +29,25 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   onBackToHome,
   onSuccess
 }) => {
-  const { loginWithOtp, register } = useAuth();
+  const { login, loginWithOtp, register } = useAuth();
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>(initialTab);
 
-  // Sign In with SMS OTP State (Password login strictly removed)
+  // Sign In State (Dual Mode: Admin Email + Password vs User Phone + SMS OTP)
   const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [usePasswordMode, setUsePasswordMode] = useState(false);
+
+  // SMS OTP State
   const [otpCode, setOtpCode] = useState('');
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(0);
   const [sentTargetPhone, setSentTargetPhone] = useState('');
+
+  // Dynamically determine whether to present Password flow (e.g. Email entered or explicitly selected)
+  const isEmailInput = loginIdentifier.includes('@');
+  const isPasswordFlow = isEmailInput || usePasswordMode;
 
   // Sign Up State
   const [name, setName] = useState('');
@@ -115,6 +124,34 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       if (onSuccess) onSuccess();
     } catch (err: any) {
       setError(err.message || 'Incorrect or expired OTP. Please enter the valid code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Submit Sign In with Password (Admin Email / Password)
+  const handlePasswordLoginSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMessage(null);
+
+    const identifier = loginIdentifier.trim();
+    if (!identifier) {
+      setError('Please enter your email or mobile number.');
+      return;
+    }
+    if (!loginPassword) {
+      setError('Please enter your password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await login(identifier, loginPassword);
+      setSuccessMessage('Signed in successfully!');
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in. Please verify your credentials.');
     } finally {
       setLoading(false);
     }
@@ -271,11 +308,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           {/* Header titles */}
           <div>
             <h2 className="text-xl font-black text-slate-900 tracking-tight">
-              {activeTab === 'login' ? 'Sign In via SMS OTP' : 'Create Fleet Account'}
+              {activeTab === 'login' ? 'Sign In to GpsTrackX' : 'Create Fleet Account'}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {activeTab === 'login' 
-                ? 'Enter your registered mobile number or email to receive a 6-digit SMS verification code'
+                ? (isPasswordFlow ? 'Enter your registered email and password to sign in' : 'Enter your registered mobile number to receive a 6-digit SMS OTP')
                 : 'Register your mobile number to access live fleet telemetry & assigned routes'}
             </p>
           </div>
@@ -295,86 +332,174 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             </div>
           )}
 
-          {/* SIGN IN FORM (STRICTLY SMS OTP ONLY - NO PASSWORD) */}
+          {/* SIGN IN FORM (UNIFIED DUAL-MODE: ADMIN EMAIL+PASSWORD vs USER PHONE+OTP) */}
           {activeTab === 'login' && (
-            <form onSubmit={handleOtpLoginSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="login-otp-identifier" className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Mobile Number or Registered Email *
-                </label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
+            isPasswordFlow ? (
+              // Mode A: Password Flow (Admin Email/Mobile + Password)
+              <form onSubmit={handlePasswordLoginSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="login-password-identifier" className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Email or Mobile Number *
+                  </label>
+                  <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                      <Phone className="w-4 h-4" />
+                      {isEmailInput ? <Mail className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
                     </div>
                     <input
-                      id="login-otp-identifier"
+                      id="login-password-identifier"
                       type="text"
                       required
                       value={loginIdentifier}
-                      onChange={(e) => {
-                        setLoginIdentifier(e.target.value);
-                        setIsOtpSent(false);
-                      }}
-                      placeholder="e.g. 9876543210 or name@company.com"
+                      onChange={(e) => setLoginIdentifier(e.target.value)}
+                      placeholder="e.g. admin@gpstrackx.com or 9876543210"
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012] focus:ring-2 focus:ring-[#E60012]/15 transition"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label htmlFor="login-password-input" className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Password *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="login-password-input"
+                      type={showLoginPassword ? 'text' : 'password'}
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Enter account password"
+                      className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012] focus:ring-2 focus:ring-[#E60012]/15 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword(!showLoginPassword)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || !loginIdentifier.trim() || !loginPassword}
+                  className="w-full py-3 px-4 bg-[#E60012] hover:bg-[#CC0010] text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
+                >
+                  <KeyRound className="w-4 h-4 text-white" />
+                  <span>{loading ? 'Signing in...' : 'Sign In with Password'}</span>
+                </button>
+
+                <div className="text-center pt-1">
                   <button
                     type="button"
-                    onClick={handleSendOtp}
-                    disabled={isSendingOtp || otpCountdown > 0 || !loginIdentifier.trim()}
-                    className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer"
+                    onClick={() => {
+                      setUsePasswordMode(false);
+                      setError(null);
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-800 font-semibold cursor-pointer transition underline decoration-dotted"
                   >
-                    {isSendingOtp ? (
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5 text-emerald-400" />
-                    )}
-                    <span>{otpCountdown > 0 ? `${otpCountdown}s` : isOtpSent ? 'Resend' : 'Send OTP'}</span>
+                    Sign in with SMS OTP instead
                   </button>
                 </div>
-                {sentTargetPhone && isOtpSent && (
-                  <p className="text-[11px] text-emerald-700 font-semibold mt-1.5 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>OTP sent to {sentTargetPhone} via Fast2SMS</span>
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="login-otp-code" className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Enter 6-Digit SMS OTP *
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <KeyRound className="w-4 h-4" />
+              </form>
+            ) : (
+              // Mode B: SMS OTP Flow (User Mobile Number + Fast2SMS OTP)
+              <form onSubmit={handleOtpLoginSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="login-otp-identifier" className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Mobile Number *
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Phone className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="login-otp-identifier"
+                        type="text"
+                        required
+                        value={loginIdentifier}
+                        onChange={(e) => {
+                          setLoginIdentifier(e.target.value);
+                          setIsOtpSent(false);
+                        }}
+                        placeholder="e.g. 9876543210"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012] focus:ring-2 focus:ring-[#E60012]/15 transition"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      disabled={isSendingOtp || otpCountdown > 0 || !loginIdentifier.trim()}
+                      className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isSendingOtp ? (
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5 text-emerald-400" />
+                      )}
+                      <span>{otpCountdown > 0 ? `${otpCountdown}s` : isOtpSent ? 'Resend' : 'Send OTP'}</span>
+                    </button>
                   </div>
-                  <input
-                    id="login-otp-code"
-                    type="text"
-                    maxLength={6}
-                    required
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                    placeholder="Enter 6-digit OTP code from SMS"
-                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-mono font-bold text-center tracking-widest text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012] focus:ring-2 focus:ring-[#E60012]/15 transition"
-                  />
+                  {sentTargetPhone && isOtpSent && (
+                    <p className="text-[11px] text-emerald-700 font-semibold mt-1.5 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>OTP sent to {sentTargetPhone} via Fast2SMS</span>
+                    </p>
+                  )}
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Check your mobile SMS inbox for the 6-digit verification code.
-                </p>
-              </div>
 
-              <button
-                type="submit"
-                disabled={loading || !otpCode.trim() || otpCode.trim().length !== 6}
-                className="w-full py-3 px-4 bg-[#E60012] hover:bg-[#CC0010] text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
-              >
-                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                <span>{loading ? 'Verifying OTP...' : 'Verify OTP & Sign In'}</span>
-              </button>
-            </form>
+                <div>
+                  <label htmlFor="login-otp-code" className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Enter 6-Digit SMS OTP *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <KeyRound className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="login-otp-code"
+                      type="text"
+                      maxLength={6}
+                      required
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                      placeholder="Enter 6-digit OTP code from SMS"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-mono font-bold text-center tracking-widest text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012] focus:ring-2 focus:ring-[#E60012]/15 transition"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Check your mobile SMS inbox for the 6-digit verification code.
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || !otpCode.trim() || otpCode.trim().length !== 6}
+                  className="w-full py-3 px-4 bg-[#E60012] hover:bg-[#CC0010] text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                  <span>{loading ? 'Verifying OTP...' : 'Verify OTP & Sign In'}</span>
+                </button>
+
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUsePasswordMode(true);
+                      setError(null);
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-800 font-semibold cursor-pointer transition underline decoration-dotted"
+                  >
+                    Sign in with Password instead
+                  </button>
+                </div>
+              </form>
+            )
           )}
 
           {/* SIGN UP FORM (FULL NAME, COMPANY NAME OPTIONAL, MOBILE, EMAIL, PASSWORD, CONFIRM PASSWORD - NO OTP) */}
