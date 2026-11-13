@@ -301,7 +301,7 @@ app.post('/api/auth/register', (req, res) => {
   const allUsers = db.prepare('SELECT id, phone, email FROM users').all();
   const existingUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
   if (existingUser) {
-    return res.status(409).json({ error: 'This phone number is already in use. Please use another mobile number to create user account.' });
+    return res.status(409).json({ error: 'This phone number is already in use' });
   }
 
   const userEmail = email && /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim()) 
@@ -507,7 +507,7 @@ app.post('/api/auth/register', (req, res) => {
   const allUsers = db.prepare('SELECT id, phone, email FROM users').all();
   const existingUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
   if (existingUser) {
-    return res.status(409).json({ error: 'This phone number is already in use. Please use another mobile number to create user account.' });
+    return res.status(409).json({ error: 'This phone number is already in use' });
   }
 
   const userEmail = email && /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim()) 
@@ -1372,7 +1372,7 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
     const existingUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
     if (existingUser) {
       return res.status(400).json({
-        error: 'This phone number is already in use. Please use another mobile number to create user account.'
+        error: 'This phone number is already in use'
       });
     }
   }
@@ -1552,7 +1552,7 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, (req, res) => {
     const duplicatePhoneUser = otherUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
     if (duplicatePhoneUser) {
       return res.status(400).json({
-        error: 'This phone number is already in use. Please use another mobile number to create user account.'
+        error: 'This phone number is already in use'
       });
     }
   }

@@ -133,7 +133,7 @@ export const UsersManagement: React.FC = () => {
         return uClean === cleanPhone;
       });
       if (existingUserWithPhone) {
-        setFormError('This phone number is already in use. Please use another mobile number to create user account.');
+        setFormError('This phone number is already in use');
         return;
       }
     }
@@ -524,7 +524,7 @@ export const UsersManagement: React.FC = () => {
                 />
                 {duplicatePhoneUser && (
                   <p className="text-xs text-red-600 font-semibold mt-1 flex items-center gap-1">
-                    <span>⚠️ This phone number is already in use ({duplicatePhoneUser.name}). Please use another mobile number.</span>
+                    <span>⚠️ This phone number is already in use</span>
                   </p>
                 )}
               </div>
