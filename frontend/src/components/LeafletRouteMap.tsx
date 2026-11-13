@@ -26,6 +26,41 @@ import {
   calculateBearing
 } from '../utils/routePolylineUtils';
 
+// Smoothly deform coordinates when a control dot is dragged
+function deformPolylineSmooth(
+  coords: [number, number][],
+  centerIdx: number,
+  prevIdx: number,
+  nextIdx: number,
+  targetLat: number,
+  targetLng: number
+): [number, number][] {
+  const orig = coords[centerIdx];
+  if (!orig) return coords;
+  const dLat = targetLat - orig[0];
+  const dLng = targetLng - orig[1];
+
+  return coords.map(([lat, lng], j) => {
+    if (j < prevIdx || j > nextIdx) return [lat, lng];
+
+    let w = 0;
+    if (j <= centerIdx) {
+      const span = centerIdx - prevIdx;
+      const t = span <= 0 ? 1 : (j - prevIdx) / span;
+      w = 0.5 * (1 - Math.cos(Math.PI * t));
+    } else {
+      const span = nextIdx - centerIdx;
+      const t = span <= 0 ? 1 : (nextIdx - j) / span;
+      w = 0.5 * (1 - Math.cos(Math.PI * t));
+    }
+
+    return [
+      parseFloat((lat + dLat * w).toFixed(6)),
+      parseFloat((lng + dLng * w).toFixed(6))
+    ];
+  });
+}
+
 interface LeafletRouteMapProps {
   center?: [number, number];
   zoom?: number;
@@ -622,20 +657,79 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
 
       polyline.addTo(group);
 
-      // Telematic Breadcrumb Dots
-      if (!hideBreadcrumbs && showBreadcrumbs && isSelected && !isTrimMode && validCoords.length > 0) {
-        const step = validCoords.length > 400 ? Math.ceil(validCoords.length / 300) : 1;
-        for (let i = 0; i < validCoords.length; i += step) {
+      // Telematic & Draggable Breadcrumb Dots
+      if (!hideBreadcrumbs && showBreadcrumbs && isSelected && !isTrimMode && validCoords.length > 1) {
+        // 1. Background telematic dots
+        const bgStep = validCoords.length > 400 ? Math.ceil(validCoords.length / 300) : 1;
+        for (let i = 0; i < validCoords.length; i += bgStep) {
           const ll = L.latLng(validCoords[i][0], validCoords[i][1]);
           const dot = L.circleMarker(ll, {
-            radius: 3,
+            radius: 2,
             fillColor: '#FFFFFF',
-            fillOpacity: 1,
-            color: '#EF4444',
-            weight: 1.5
+            fillOpacity: 0.9,
+            color: route.color || (isSelected ? '#1A73E8' : '#E60012'),
+            weight: 1
           });
           dot.addTo(group);
         }
+
+        // 2. Interactive Draggable Control Dots
+        const totalPts = validCoords.length;
+        const targetDotCount = totalPts <= 25 ? Math.max(1, totalPts - 2) : Math.min(28, Math.max(8, Math.floor(totalPts / 18)));
+        const ctrlStep = targetDotCount > 0 ? Math.max(1, Math.floor((totalPts - 1) / (targetDotCount + 1))) : 1;
+
+        const dotIndices: number[] = [];
+        if (totalPts <= 15) {
+          for (let i = 1; i < totalPts - 1; i++) dotIndices.push(i);
+        } else {
+          for (let i = ctrlStep; i < totalPts - 1; i += ctrlStep) {
+            dotIndices.push(i);
+          }
+        }
+
+        const dotColor = route.color || (isSelected ? '#1A73E8' : '#E60012');
+        const dotIcon = L.divIcon({
+          className: 'draggable-route-dot',
+          html: `<div style="width: 12px; height: 12px; border-radius: 50%; background: #FFFFFF; border: 2.5px solid ${dotColor}; box-shadow: 0 1px 4px rgba(0,0,0,0.35); cursor: grab;"></div>`,
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        });
+
+        dotIndices.forEach((dotIdx, k) => {
+          const pt = validCoords[dotIdx];
+          if (!pt) return;
+          const prevIdx = k > 0 ? dotIndices[k - 1] : 0;
+          const nextIdx = k < dotIndices.length - 1 ? dotIndices[k + 1] : totalPts - 1;
+
+          const dotMarker = L.marker([pt[0], pt[1]], {
+            draggable: true,
+            icon: dotIcon,
+            title: `Waypoint Dot #${k + 1} - Drag to modify route`
+          });
+
+          dotMarker.on('drag', (e: any) => {
+            const ll = e.latlng;
+            const deformed = deformPolylineSmooth(validCoords, dotIdx, prevIdx, nextIdx, ll.lat, ll.lng);
+            polyline.setLatLngs(deformed.map(([lat, lng]) => L.latLng(lat, lng)));
+          });
+
+          dotMarker.on('dragend', (e: any) => {
+            const ll = e.latlng;
+            const deformed = deformPolylineSmooth(validCoords, dotIdx, prevIdx, nextIdx, ll.lat, ll.lng);
+            const newDistKm = calculateCumulativeDistanceKm(deformed);
+            const newTimeMins = calculateDurationMinutes(newDistKm, 45);
+            if (onRouteChangeRef.current) {
+              onRouteChangeRef.current({
+                coordinates: deformed,
+                distanceKm: newDistKm,
+                timeMinutes: newTimeMins,
+                summary: 'Route Modified via Draggable Dots'
+              });
+            }
+          });
+
+          dotMarker.addTo(group);
+        });
       }
 
       // Trim Mode Clickable Markers

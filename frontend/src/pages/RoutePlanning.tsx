@@ -649,7 +649,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           setStoppages(autoStops);
           setStopsInput(String(autoStops.length));
           setImportedWaypointsCount(validPoints.length);
-          setIsDraggableRoute(false);
+          setIsDraggableRoute(true);
 
           // Set 100% accurate distance as custom distance so effectiveDistanceKm and inputs reflect it immediately
           setCustomDistanceKm(finalDistKm);
@@ -725,7 +725,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           setTravelHours(Math.floor(highwayMins / 60));
           setTravelMinutes(highwayMins % 60);
           setModifiedPolyline(highwayCoords);
-          setIsDraggableRoute(false); // Clean crisp polyline without draggable circle clutter!
+          setIsDraggableRoute(true); // Draggable dots enabled so user can reshape/modify route on map!
         } catch (err: any) {
           alert('Failed to read Excel file: ' + err.message);
         } finally {
@@ -784,12 +784,12 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       setNewModifiedRouteName(corridorNameInput || 'Commercial Highway Corridor');
     }
 
-    setRoutes(prev => prev.map((r, i) => i === 0 ? {
+    setRoutes(prev => prev.map((r, i) => (r.id === selectedRouteId || prev.length === 1 || i === 0) ? {
       ...r,
       coordinates: updated.coordinates,
       distanceKm: updated.distanceKm,
       timeMinutes: updated.timeMinutes,
-      name: corridorNameInput || 'Commercial Highway Corridor'
+      name: corridorNameInput || r.name || 'Commercial Highway Corridor'
     } : r));
 
     setTravelHours(Math.floor(updated.timeMinutes / 60));

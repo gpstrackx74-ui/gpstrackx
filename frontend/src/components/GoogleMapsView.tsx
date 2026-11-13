@@ -104,6 +104,41 @@ export const GooglePegmanSvg: React.FC<{ className?: string }> = ({ className = 
   </svg>
 );
 
+// Smoothly deform coordinates when a control dot is dragged
+function deformPolylineSmooth(
+  coords: [number, number][],
+  centerIdx: number,
+  prevIdx: number,
+  nextIdx: number,
+  targetLat: number,
+  targetLng: number
+): [number, number][] {
+  const orig = coords[centerIdx];
+  if (!orig) return coords;
+  const dLat = targetLat - orig[0];
+  const dLng = targetLng - orig[1];
+
+  return coords.map(([lat, lng], j) => {
+    if (j < prevIdx || j > nextIdx) return [lat, lng];
+
+    let w = 0;
+    if (j <= centerIdx) {
+      const span = centerIdx - prevIdx;
+      const t = span <= 0 ? 1 : (j - prevIdx) / span;
+      w = 0.5 * (1 - Math.cos(Math.PI * t));
+    } else {
+      const span = nextIdx - centerIdx;
+      const t = span <= 0 ? 1 : (nextIdx - j) / span;
+      w = 0.5 * (1 - Math.cos(Math.PI * t));
+    }
+
+    return [
+      parseFloat((lat + dLat * w).toFixed(6)),
+      parseFloat((lng + dLng * w).toFixed(6))
+    ];
+  });
+}
+
 interface ParkingPoint {
   id?: number;
   name: string;
@@ -784,10 +819,11 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       }
       bounds.extend(path[path.length - 1]);
 
+      let glow: any = null;
       if (isSelected) {
         const isBlue = route.color === '#1A73E8' || route.color === '#2563EB' || route.color === '#3B82F6' || !route.color;
         const glowColor = isBlue ? '#93C5FD' : '#FEE2E2';
-        const glow = new google.maps.Polyline({
+        glow = new google.maps.Polyline({
           path,
           strokeColor: glowColor,
           strokeOpacity: 0.6,
@@ -805,12 +841,12 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         strokeWeight: isSelected ? 6 : 4.5,
         map,
         zIndex: isSelected ? 30 : 15,
-        editable: Boolean(isSelected && !hideEditTools && (isDraggableRoute || isTrimMode)),
+        editable: Boolean(isSelected && !hideEditTools && isTrimMode),
         draggable: false
       });
 
-      // Interactive polyline vertex drag and right-click delete
-      if (isSelected && !hideEditTools && (isDraggableRoute || isTrimMode)) {
+      // Interactive polyline vertex trim mode contextmenu delete
+      if (isSelected && !hideEditTools && isTrimMode) {
         const mvcPath = polyline.getPath();
         let dragDebounceTimer: any = null;
         const onPathChange = () => {
@@ -863,6 +899,35 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
           if (onMapClickRef.current) {
             onMapClickRef.current(lat, lng, `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`, currentMode);
           }
+        } else if (showBreadcrumbs && !isTrimMode && e.latLng) {
+          // If in dots mode, clicking on the polyline inserts a new draggable dot right there
+          const clickLat = parseFloat(e.latLng.lat().toFixed(6));
+          const clickLng = parseFloat(e.latLng.lng().toFixed(6));
+          let bestIdx = 1;
+          let bestDist = Infinity;
+          for (let i = 0; i < validCoords.length - 1; i++) {
+            const p1 = validCoords[i];
+            const p2 = validCoords[i + 1];
+            const midLat = (p1[0] + p2[0]) / 2;
+            const midLng = (p1[1] + p2[1]) / 2;
+            const d = Math.hypot(clickLat - midLat, clickLng - midLng);
+            if (d < bestDist) {
+              bestDist = d;
+              bestIdx = i + 1;
+            }
+          }
+          const newCoords: [number, number][] = [...validCoords];
+          newCoords.splice(bestIdx, 0, [clickLat, clickLng]);
+          const newDistKm = calculateCumulativeDistanceKm(newCoords);
+          const newTimeMins = calculateDurationMinutes(newDistKm, 45);
+          if (onRouteChangeRef.current) {
+            onRouteChangeRef.current({
+              coordinates: newCoords,
+              distanceKm: newDistKm,
+              timeMinutes: newTimeMins,
+              summary: 'Waypoint Dot Added to Route'
+            });
+          }
         } else {
           if (onSelectRoute) onSelectRoute(route.id);
         }
@@ -870,28 +935,125 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
 
       polylinesRef.current.push(polyline);
 
-      // --- Telematic Breadcrumbs Dots Layer (GPU-Accelerated Native Canvas Polyline with Symbol Repeat) ---
-      if (!hideBreadcrumbs && showBreadcrumbs && isSelected && !isTrimMode && validCoords.length > 0) {
+      // --- Telematic & Draggable Route Dots Layer ---
+      if (!hideBreadcrumbs && showBreadcrumbs && isSelected && !isTrimMode && validCoords.length > 1) {
+        const dotColor = route.color || (isSelected ? '#1A73E8' : '#E60012');
+
+        // 1. Subtle telematic dots line for background texture
         const breadcrumbPolyline = new google.maps.Polyline({
           path,
           strokeOpacity: 0,
           icons: [{
             icon: {
               path: google.maps.SymbolPath.CIRCLE,
-              scale: 2.2,
+              scale: 2.0,
               fillColor: '#FFFFFF',
-              fillOpacity: 1,
-              strokeColor: '#EF4444',
-              strokeWeight: 1.5
+              fillOpacity: 0.9,
+              strokeColor: dotColor,
+              strokeWeight: 1.2
             },
             offset: '0',
-            repeat: '35px'
+            repeat: '28px'
           }],
           map,
           zIndex: 25,
           clickable: false
         });
         polylinesRef.current.push(breadcrumbPolyline);
+
+        // 2. Interactive Draggable Control Dots
+        const totalPts = validCoords.length;
+        const targetDotCount = totalPts <= 25 ? Math.max(1, totalPts - 2) : Math.min(28, Math.max(8, Math.floor(totalPts / 18)));
+        const step = targetDotCount > 0 ? Math.max(1, Math.floor((totalPts - 1) / (targetDotCount + 1))) : 1;
+
+        const dotIndices: number[] = [];
+        if (totalPts <= 15) {
+          for (let i = 1; i < totalPts - 1; i++) dotIndices.push(i);
+        } else {
+          for (let i = step; i < totalPts - 1; i += step) {
+            dotIndices.push(i);
+          }
+        }
+
+        dotIndices.forEach((dotIdx, k) => {
+          const pt = validCoords[dotIdx];
+          if (!pt) return;
+          const prevIdx = k > 0 ? dotIndices[k - 1] : 0;
+          const nextIdx = k < dotIndices.length - 1 ? dotIndices[k + 1] : totalPts - 1;
+
+          const dotMarker = new google.maps.Marker({
+            position: new google.maps.LatLng(pt[0], pt[1]),
+            map,
+            draggable: true,
+            cursor: 'grab',
+            zIndex: 45,
+            title: `Waypoint Dot #${k + 1} - Drag to modify route corridor`,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 5.5,
+              fillColor: '#FFFFFF',
+              fillOpacity: 1.0,
+              strokeColor: dotColor,
+              strokeWeight: 2.5
+            }
+          });
+
+          // Visual feedback on hover
+          dotMarker.addListener('mouseover', () => {
+            dotMarker.setIcon({
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 7.5,
+              fillColor: '#FEF2F2',
+              fillOpacity: 1.0,
+              strokeColor: '#0F172A',
+              strokeWeight: 3.0
+            });
+          });
+          dotMarker.addListener('mouseout', () => {
+            dotMarker.setIcon({
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 5.5,
+              fillColor: '#FFFFFF',
+              fillOpacity: 1.0,
+              strokeColor: dotColor,
+              strokeWeight: 2.5
+            });
+          });
+
+          // Dynamic 60fps real-time polyline bending during drag
+          dotMarker.addListener('drag', (e: any) => {
+            if (!e.latLng) return;
+            const newLat = e.latLng.lat();
+            const newLng = e.latLng.lng();
+            const deformed = deformPolylineSmooth(validCoords, dotIdx, prevIdx, nextIdx, newLat, newLng);
+            const deformedPath = deformed.map(([lat, lng]) => ({ lat, lng }));
+            polyline.setPath(deformedPath);
+            breadcrumbPolyline.setPath(deformedPath);
+            if (glow) {
+              glow.setPath(deformedPath);
+            }
+          });
+
+          // Commit modified route on dragend
+          dotMarker.addListener('dragend', (e: any) => {
+            if (!e.latLng) return;
+            const newLat = e.latLng.lat();
+            const newLng = e.latLng.lng();
+            const deformed = deformPolylineSmooth(validCoords, dotIdx, prevIdx, nextIdx, newLat, newLng);
+            const newDistKm = calculateCumulativeDistanceKm(deformed);
+            const newTimeMins = calculateDurationMinutes(newDistKm, 45);
+            if (onRouteChangeRef.current) {
+              onRouteChangeRef.current({
+                coordinates: deformed,
+                distanceKm: newDistKm,
+                timeMinutes: newTimeMins,
+                summary: 'Route Modified via Draggable Dots'
+              });
+            }
+          });
+
+          markersRef.current.push(dotMarker);
+        });
       }
 
       // --- Interactive Trim / Point Deletion Markers ---
