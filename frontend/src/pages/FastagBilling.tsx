@@ -25,8 +25,33 @@ import {
   Building2,
   FileText,
   AlertCircle,
-  Loader2
+  Loader2,
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  Route
 } from 'lucide-react';
+
+interface GroupedTrip {
+  tripKey: string;
+  routeId: number | null;
+  routeName: string;
+  tripDate: string;
+  totalAmount: number;
+  tollCount: number;
+  transactions: FastagTransaction[];
+}
+
+interface GroupedVehicle {
+  vehicleId: number;
+  registrationNo: string;
+  vehicleModel: string;
+  vehicleType: string;
+  totalAmount: number;
+  totalTolls: number;
+  tripCount: number;
+  trips: GroupedTrip[];
+}
 
 export const FastagBilling: React.FC = () => {
   const { isAdmin } = useAuth();
@@ -43,6 +68,11 @@ export const FastagBilling: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  // Grouped Hierarchy & View Mode states
+  const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
+  const [expandedVehicles, setExpandedVehicles] = useState<Record<string, boolean>>({});
+  const [expandedTrips, setExpandedTrips] = useState<Record<string, boolean>>({});
 
   // Filters
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('all');
@@ -102,6 +132,126 @@ export const FastagBilling: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Group transactions by Vehicle -> Trip/Date -> Toll Deductions
+  const groupedVehicles = React.useMemo<GroupedVehicle[]>(() => {
+    const vehMap = new Map<string, {
+      vehicleId: number;
+      registrationNo: string;
+      vehicleModel: string;
+      vehicleType: string;
+      tripMap: Map<string, GroupedTrip>;
+    }>();
+
+    transactions.forEach(tx => {
+      const regNo = tx.vehicle_registration_no || `Vehicle #${tx.vehicle_id}`;
+      if (!vehMap.has(regNo)) {
+        vehMap.set(regNo, {
+          vehicleId: tx.vehicle_id,
+          registrationNo: regNo,
+          vehicleModel: tx.vehicle_model || tx.vehicle_class || 'Commercial Truck',
+          vehicleType: tx.vehicle_type || 'Heavy Vehicle',
+          tripMap: new Map()
+        });
+      }
+      const vEntry = vehMap.get(regNo)!;
+
+      // Group trips by route_id or date
+      const datePart = (tx.crossing_time || tx.created_at || '').split('T')[0] || (tx.crossing_time || '').split(' ')[0] || 'Unknown Date';
+      const tripKey = tx.route_id ? `route-${tx.route_id}` : `date-${datePart}`;
+      const tripName = tx.route_name || (tx.route_id ? `Highway Corridor #${tx.route_id}` : `Trip on ${datePart}`);
+
+      if (!vEntry.tripMap.has(tripKey)) {
+        vEntry.tripMap.set(tripKey, {
+          tripKey,
+          routeId: tx.route_id || null,
+          routeName: tripName,
+          tripDate: tx.route_trip_date || datePart,
+          totalAmount: 0,
+          tollCount: 0,
+          transactions: []
+        });
+      }
+      const tripEntry = vEntry.tripMap.get(tripKey)!;
+      tripEntry.transactions.push(tx);
+      tripEntry.totalAmount += Number(tx.amount || 0);
+      tripEntry.tollCount += 1;
+    });
+
+    const result: GroupedVehicle[] = [];
+    vehMap.forEach((vData) => {
+      const trips = Array.from(vData.tripMap.values()).map(trip => {
+        trip.transactions.sort((a, b) => new Date(a.crossing_time).getTime() - new Date(b.crossing_time).getTime());
+        return trip;
+      });
+
+      trips.sort((a, b) => (b.tripDate || '').localeCompare(a.tripDate || ''));
+
+      const totalAmount = trips.reduce((sum, t) => sum + t.totalAmount, 0);
+      const totalTolls = trips.reduce((sum, t) => sum + t.tollCount, 0);
+
+      result.push({
+        vehicleId: vData.vehicleId,
+        registrationNo: vData.registrationNo,
+        vehicleModel: vData.vehicleModel,
+        vehicleType: vData.vehicleType,
+        totalAmount,
+        totalTolls,
+        tripCount: trips.length,
+        trips
+      });
+    });
+
+    return result.sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [transactions]);
+
+  const toggleVehicleExpand = (regNo: string) => {
+    setExpandedVehicles(prev => ({
+      ...prev,
+      [regNo]: prev[regNo] === undefined ? false : !prev[regNo]
+    }));
+  };
+
+  const isVehicleExpanded = (regNo: string) => {
+    return expandedVehicles[regNo] !== false; // expanded by default
+  };
+
+  const toggleTripExpand = (tripKey: string) => {
+    setExpandedTrips(prev => ({
+      ...prev,
+      [tripKey]: prev[tripKey] === undefined ? false : !prev[tripKey]
+    }));
+  };
+
+  const isTripExpanded = (tripKey: string) => {
+    return expandedTrips[tripKey] !== false; // expanded by default
+  };
+
+  const expandAll = () => {
+    const allVeh: Record<string, boolean> = {};
+    const allTrips: Record<string, boolean> = {};
+    groupedVehicles.forEach(v => {
+      allVeh[v.registrationNo] = true;
+      v.trips.forEach(t => {
+        allTrips[t.tripKey] = true;
+      });
+    });
+    setExpandedVehicles(allVeh);
+    setExpandedTrips(allTrips);
+  };
+
+  const collapseAll = () => {
+    const allVeh: Record<string, boolean> = {};
+    const allTrips: Record<string, boolean> = {};
+    groupedVehicles.forEach(v => {
+      allVeh[v.registrationNo] = false;
+      v.trips.forEach(t => {
+        allTrips[t.tripKey] = false;
+      });
+    });
+    setExpandedVehicles(allVeh);
+    setExpandedTrips(allTrips);
+  };
 
   // Auto-estimate tariff when plaza or coordinates change in modal
   const handleAutoEstimate = async () => {
@@ -389,16 +539,62 @@ export const FastagBilling: React.FC = () => {
 
         {/* Section 4: Transactions Table & Toll Bills List */}
         <div>
-          <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+          <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
                 Electronic Toll Clearance & Tax Invoice Records
               </h3>
             </div>
-            <span className="text-[10px] font-mono text-slate-400">
-              NHAI FASTag NETC Clearing Format
-            </span>
+
+            {/* View Mode Switcher: Grouped by Vehicle vs All List */}
+            <div className="flex items-center gap-2">
+              {viewMode === 'grouped' && groupedVehicles.length > 0 && (
+                <div className="flex items-center gap-1.5 mr-2">
+                  <button
+                    type="button"
+                    onClick={expandAll}
+                    className="px-2 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                  >
+                    Expand All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={collapseAll}
+                    className="px-2 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                  >
+                    Collapse All
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grouped')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    viewMode === 'grouped'
+                      ? 'bg-[#E60012] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Grouped by Vehicle</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('flat')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    viewMode === 'flat'
+                      ? 'bg-[#E60012] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Flat All List</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {transactions.length === 0 ? (
@@ -409,7 +605,247 @@ export const FastagBilling: React.FC = () => {
                 {isAdmin ? 'Plan a route with tolls in Route Planner or click "+ Add FASTag Toll Bill" above.' : 'No toll transactions recorded for your vehicle yet.'}
               </p>
             </div>
+          ) : viewMode === 'grouped' ? (
+            /* ============================================================== */
+            /* 3-LEVEL NESTED COLLAPSIBLE VEHICLE / TRIP HIERARCHY            */
+            /* Level 1: Vehicle Node                                          */
+            /* Level 2: Trip / Date Node                                      */
+            /* Level 3: Individual Toll Plaza Deductions with View Bill Button*/
+            /* ============================================================== */
+            <div className="p-4 sm:p-5 space-y-4">
+              {groupedVehicles.map((v) => {
+                const isVExpanded = isVehicleExpanded(v.registrationNo);
+                return (
+                  <div
+                    key={v.registrationNo}
+                    className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs transition"
+                  >
+                    {/* Level 1: Vehicle Node Header */}
+                    <div
+                      onClick={() => toggleVehicleExpand(v.registrationNo)}
+                      className="p-3.5 sm:p-4 bg-slate-50/80 hover:bg-slate-100/80 cursor-pointer flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 transition select-none"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <button
+                          type="button"
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 shrink-0 shadow-2xs"
+                        >
+                          {isVExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-[#E60012]" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-slate-500" />
+                          )}
+                        </button>
+
+                        <div className="w-9 h-9 rounded-xl bg-[#E60012] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                          <Truck className="w-4 h-4 text-white" />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-black text-sm text-slate-900 tracking-tight">
+                              {v.registrationNo}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded-full border border-slate-200">
+                              {v.vehicleModel}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
+                            <span>{v.vehicleType}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Vehicle Node Aggregates */}
+                      <div className="flex items-center gap-2 sm:gap-4 flex-wrap ml-auto">
+                        <div className="text-right">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Trips</span>
+                          <span className="font-bold text-xs text-slate-700 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
+                            {v.tripCount} Trips
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tolls</span>
+                          <span className="font-bold text-xs text-slate-700 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
+                            {v.totalTolls} Tolls
+                          </span>
+                        </div>
+                        <div className="text-right pl-2 border-l border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Deducted</span>
+                          <span className="font-black text-sm font-mono text-emerald-600">
+                            ₹{v.totalAmount.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Level 2: Trips / Dates inside Vehicle */}
+                    {isVExpanded && (
+                      <div className="p-3 sm:p-4 bg-slate-50/40 space-y-3">
+                        {v.trips.map((trip) => {
+                          const isTExpanded = isTripExpanded(trip.tripKey);
+                          return (
+                            <div
+                              key={trip.tripKey}
+                              className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs"
+                            >
+                              {/* Level 2 Header: Trip / Route Corridor */}
+                              <div
+                                onClick={() => toggleTripExpand(trip.tripKey)}
+                                className="p-3 bg-gradient-to-r from-slate-50 to-white hover:bg-slate-100/60 cursor-pointer flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 transition select-none"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <button
+                                    type="button"
+                                    className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center text-slate-500 shrink-0"
+                                  >
+                                    {isTExpanded ? (
+                                      <ChevronDown className="w-3.5 h-3.5 text-blue-600" />
+                                    ) : (
+                                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                                    )}
+                                  </button>
+
+                                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                    <Route className="w-3.5 h-3.5 text-blue-600" />
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-bold text-slate-900 truncate max-w-[340px] sm:max-w-md" title={trip.routeName}>
+                                      {trip.routeName}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                      <span className="flex items-center gap-1 font-mono">
+                                        <Calendar className="w-3 h-3 text-slate-400" />
+                                        {trip.tripDate}
+                                      </span>
+                                      <span>•</span>
+                                      <span className="font-semibold text-slate-600">
+                                        {trip.tollCount} Toll Deductions
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs font-black font-mono text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                                    ₹{trip.totalAmount.toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Level 3: Individual Toll Plaza Deductions Table */}
+                              {isTExpanded && (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                                      <tr>
+                                        <th className="py-2.5 px-3">Toll Plaza & Highway</th>
+                                        <th className="py-2.5 px-3">GPS Coordinates</th>
+                                        <th className="py-2.5 px-3">Txn ID & NETC</th>
+                                        <th className="py-2.5 px-3">Crossing Time</th>
+                                        <th className="py-2.5 px-3 text-right">Tariff (₹)</th>
+                                        <th className="py-2.5 px-3 text-center">Status</th>
+                                        <th className="py-2.5 px-3 text-center">Tax Invoice</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                                      {trip.transactions.map((tx) => (
+                                        <tr key={tx.id} className="hover:bg-blue-50/30 transition">
+                                          <td className="py-3 px-3 min-w-[180px]">
+                                            <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                              <span>{tx.toll_plaza_name}</span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-400 font-medium mt-0.5 truncate max-w-[200px]" title={tx.highway_name || ''}>
+                                              {tx.highway_name || 'National Highway Expressway'}
+                                            </p>
+                                          </td>
+
+                                          <td className="py-3 px-3 whitespace-nowrap">
+                                            <a
+                                              href={`https://www.google.com/maps?q=${tx.lat},${tx.lng}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-mono font-semibold transition"
+                                            >
+                                              <MapPin className="w-3 h-3 text-red-500 shrink-0" />
+                                              <span>{Number(tx.lat).toFixed(4)}, {Number(tx.lng).toFixed(4)}</span>
+                                              <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
+                                            </a>
+                                          </td>
+
+                                          <td className="py-3 px-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-1 font-mono text-[11px] font-bold text-slate-800">
+                                              <span>{tx.transaction_id}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => copyToClipboard(tx.transaction_id, `txn-${tx.id}`)}
+                                                className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                                                title="Copy Transaction ID"
+                                              >
+                                                {copiedId === `txn-${tx.id}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                              </button>
+                                            </div>
+                                            <p className="text-[9px] font-mono text-slate-400 mt-0.5">
+                                              Ref: {tx.netc_reference_no}
+                                            </p>
+                                          </td>
+
+                                          <td className="py-3 px-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-1 text-[11px] text-slate-800 font-medium">
+                                              <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                              <span>{tx.crossing_time}</span>
+                                            </div>
+                                            <span className="text-[9px] text-slate-400 uppercase font-mono block mt-0.5">
+                                              {tx.lane_direction || 'Lane 04'}
+                                            </span>
+                                          </td>
+
+                                          <td className="py-3 px-3 text-right whitespace-nowrap">
+                                            <div className="text-xs font-black text-slate-900 font-mono">
+                                              ₹{Number(tx.amount).toFixed(2)}
+                                            </div>
+                                            <span className="text-[8px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded-full border border-emerald-200">
+                                              Exempt GST
+                                            </span>
+                                          </td>
+
+                                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                              <CheckCircle2 className="w-2.5 h-2.5" />
+                                              <span>PAID</span>
+                                            </span>
+                                          </td>
+
+                                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                                            <button
+                                              type="button"
+                                              onClick={() => setSelectedTxForInvoice(tx)}
+                                              className="px-2.5 py-1 rounded-lg bg-[#E60012] hover:bg-[#CC0010] text-white text-[10px] font-bold flex items-center justify-center gap-1 transition shadow-2xs mx-auto cursor-pointer"
+                                              title="View & Download FASTag Tax Invoice"
+                                            >
+                                              <FileText className="w-3 h-3 text-white" />
+                                              <span>View Bill</span>
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           ) : (
+            /* Flat All Transactions Table */
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">

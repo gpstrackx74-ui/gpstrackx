@@ -150,19 +150,52 @@ function recordUserLogin({ userId, email, userName, role, req, status = 'SUCCESS
 // ---------------- FAST2SMS OTP ROUTES ---------------- //
 
 app.post('/api/auth/send-otp', async (req, res) => {
-  const { phone } = req.body;
-  if (!phone) return res.status(400).json({ error: 'Mobile number is required' });
+  const { phone, identifier } = req.body;
+  const input = String(phone || identifier || '').trim();
+  if (!input) return res.status(400).json({ error: 'Mobile number or Email is required' });
+
+  let targetPhone = input;
+  let targetUser = null;
+
+  // If input contains @, find user by email to get registered phone
+  if (input.includes('@')) {
+    targetUser = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(input);
+    if (!targetUser || !targetUser.phone) {
+      return res.status(404).json({ error: 'No account registered with this email address or no mobile number linked.' });
+    }
+    targetPhone = targetUser.phone;
+  } else {
+    // Input is a phone number or username
+    const clean = cleanPhoneNumber(input);
+    const allUsers = db.prepare('SELECT * FROM users').all();
+    targetUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === clean);
+    targetPhone = clean;
+  }
+
+  const cleanTargetPhone = cleanPhoneNumber(targetPhone);
+  if (!cleanTargetPhone || cleanTargetPhone.length !== 10) {
+    return res.status(400).json({ error: 'Please enter a valid 10-digit Indian mobile number or registered email' });
+  }
+
   try {
-    const result = await smsService.sendOtp(phone);
-    res.json(result);
+    const result = await smsService.sendOtp(cleanTargetPhone);
+    const masked = `+91 ******${cleanTargetPhone.slice(-4)}`;
+    res.json({
+      ...result,
+      phone: cleanTargetPhone,
+      maskedPhone: masked,
+      userName: targetUser ? targetUser.name : undefined
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
 app.post('/api/auth/verify-otp', (req, res) => {
-  const { phone, otp } = req.body;
-  const result = smsService.verifyOtp(phone, otp);
+  const { phone, identifier, otp } = req.body;
+  const target = String(phone || identifier || '').trim();
+  const clean = cleanPhoneNumber(target);
+  const result = smsService.verifyOtp(clean, otp);
   if (!result.success) {
     return res.status(400).json({ error: result.error });
   }
@@ -170,25 +203,47 @@ app.post('/api/auth/verify-otp', (req, res) => {
 });
 
 app.post('/api/auth/login-otp', (req, res) => {
-  const { phone, otp } = req.body;
-  if (!phone || !otp) {
-    return res.status(400).json({ error: 'Mobile number and OTP are required' });
+  const { phone, identifier, otp } = req.body;
+  const input = String(phone || identifier || '').trim();
+  if (!input || !otp) {
+    return res.status(400).json({ error: 'Mobile number or email and OTP are required' });
   }
-  const verify = smsService.verifyOtp(phone, otp);
+
+  let targetPhone = input;
+  let user = null;
+
+  // 1. If input is email, look up user by email
+  if (input.includes('@')) {
+    user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(input);
+    if (user && user.phone) {
+      targetPhone = user.phone;
+    }
+  }
+
+  const clean = cleanPhoneNumber(targetPhone);
+  const verify = smsService.verifyOtp(clean, otp);
   if (!verify.success) {
     return res.status(400).json({ error: verify.error });
   }
 
-  const clean = cleanPhoneNumber(phone);
-  const user = db.prepare('SELECT * FROM users WHERE phone LIKE ? OR phone LIKE ?').get(`%${clean}`, clean);
+  // 2. If user wasn't found by email, find by phone
   if (!user) {
-    return res.status(404).json({ error: 'No account registered with this mobile number. Please create an account.' });
+    const allUsers = db.prepare('SELECT * FROM users').all();
+    user = allUsers.find(u => {
+      if (!u.phone) return false;
+      const uClean = cleanPhoneNumber(u.phone);
+      return uClean === clean || uClean.endsWith(clean) || clean.endsWith(uClean);
+    });
+  }
+
+  if (!user) {
+    return res.status(404).json({ error: 'No account registered with this mobile number. Please check the number or create an account.' });
   }
   if (user.status !== 'active') {
     return res.status(403).json({ error: 'Account has been deactivated. Please contact fleet administrator.' });
   }
 
-  smsService.consumePhoneOtp(phone);
+  smsService.consumePhoneOtp(clean);
 
   recordUserLogin({
     userId: user.id,
@@ -2274,12 +2329,15 @@ app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
     const sql = `
       SELECT 
         ft.*,
+        r.route_name,
+        r.trip_date as route_trip_date,
         v.name_model as vehicle_model,
         v.vehicle_type,
         u.name as driver_name,
         u.phone as driver_phone
       FROM fastag_transactions ft
       LEFT JOIN vehicles v ON ft.vehicle_id = v.id
+      LEFT JOIN routes r ON ft.route_id = r.id
       LEFT JOIN users u ON v.assigned_user_id = u.id
       ${whereClause}
       ORDER BY ft.crossing_time DESC, ft.id DESC

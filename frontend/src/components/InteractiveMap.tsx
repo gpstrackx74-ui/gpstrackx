@@ -37,6 +37,7 @@ interface InteractiveMapProps {
   isDraggableRoute?: boolean;
   hideEditTools?: boolean;
   hideBreadcrumbs?: boolean;
+  searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }

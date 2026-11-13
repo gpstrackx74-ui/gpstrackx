@@ -133,6 +133,8 @@ export interface FastagTransaction {
   vehicle_registration_no: string;
   vehicle_class: string;
   route_id?: number | null;
+  route_name?: string;
+  route_trip_date?: string;
   toll_plaza_name: string;
   highway_name?: string;
   lat: number;

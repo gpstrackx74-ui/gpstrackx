@@ -35,7 +35,9 @@ import {
   Layers,
   Edit3,
   FileSpreadsheet,
-  Search
+  Search,
+  Loader2,
+  X
 } from 'lucide-react';
 
 interface ParkingPoint {
@@ -172,6 +174,54 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [customWaypoints, setCustomWaypoints] = useState<Array<{ lat: number; lng: number; name?: string }>>([]);
   const [snapToRoads, setSnapToRoads] = useState(true);
   const [isApplyingCustomRoute, setIsApplyingCustomRoute] = useState(false);
+
+  // Map Search across India (Cities, States, Streets, Towns)
+  const [showMapSearch, setShowMapSearch] = useState<boolean>(false);
+  const [mapSearchQuery, setMapSearchQuery] = useState<string>('');
+  const [mapSearchResults, setMapSearchResults] = useState<any[]>([]);
+  const [mapSearchLoading, setMapSearchLoading] = useState<boolean>(false);
+  const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; name?: string; address?: string } | null>(null);
+  const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
+  const [mapZoom, setMapZoom] = useState<number>(8);
+
+  // Debounced search for locations across India
+  useEffect(() => {
+    if (!mapSearchQuery || mapSearchQuery.trim().length < 2) {
+      setMapSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setMapSearchLoading(true);
+        const res = await fetch(`/api/locations/search?q=${encodeURIComponent(mapSearchQuery.trim())}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMapSearchResults(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error('Error searching map locations:', err);
+      } finally {
+        setMapSearchLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [mapSearchQuery]);
+
+  const handleSelectMapSearchResult = (item: any) => {
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      setSearchedLocation({
+        lat,
+        lng,
+        name: item.name || item.address,
+        address: item.address || ''
+      });
+      setMapCenter([lat, lng]);
+      setMapZoom(16); // High zoom street level view
+      setMapSearchResults([]);
+    }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -2536,12 +2586,28 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       setStoppages([]);
                       setManualTolls([]);
                       setCustomTollsAdded([]);
+                      setSearchedLocation(null);
                     }}
                     className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-700 border border-slate-200 hover:border-red-200 transition cursor-pointer"
                     title="Clear all points, routes and custom drawing from map"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Clear Map</span>
+                  </button>
+
+                  {/* Map Search Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowMapSearch(prev => !prev)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      showMapSearch
+                        ? 'bg-blue-600 text-white shadow-2xs'
+                        : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+                    }`}
+                    title="Search any street, city, state, or landmark across India"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Search Map</span>
                   </button>
 
                   {clickMode !== 'none' && (
@@ -2601,10 +2667,94 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
               {/* Interactive Google Map Container - Completely Unobstructed */}
               <div className="relative rounded-2xl overflow-hidden min-h-[520px]">
+                {/* Floating Search Bar with Autocomplete across India */}
+                {showMapSearch && (
+                  <div className="absolute top-3 left-3 right-3 sm:right-auto sm:w-96 z-30 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-blue-200 p-2.5 transition-all">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                        {mapSearchLoading ? <Loader2 className="w-4 h-4 animate-spin text-blue-600" /> : <Search className="w-4 h-4 text-blue-600" />}
+                      </div>
+                      <input
+                        type="text"
+                        value={mapSearchQuery}
+                        onChange={(e) => setMapSearchQuery(e.target.value)}
+                        placeholder="Search street, town, city, state in India..."
+                        className="w-full text-xs font-semibold text-slate-800 placeholder-slate-400 bg-transparent border-none outline-none focus:ring-0"
+                        autoFocus
+                      />
+                      {mapSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => { setMapSearchQuery(''); setMapSearchResults([]); }}
+                          className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowMapSearch(false)}
+                        className="text-slate-400 hover:text-slate-600 text-xs px-1.5 py-0.5 rounded font-bold cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Autocomplete Suggestions */}
+                    {mapSearchResults.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-100 max-h-60 overflow-y-auto divide-y divide-slate-50">
+                        {mapSearchResults.map((item, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleSelectMapSearchResult(item)}
+                            className="w-full text-left p-2 hover:bg-blue-50/70 rounded-xl transition flex items-start gap-2.5 group cursor-pointer"
+                          >
+                            <MapPin className="w-4 h-4 text-blue-500 mt-0.5 shrink-0 group-hover:scale-110 transition" />
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-800 truncate">{item.name || item.address}</div>
+                              {item.address && item.address !== item.name && (
+                                <div className="text-[10px] text-slate-500 truncate">{item.address}</div>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {mapSearchLoading && mapSearchResults.length === 0 && (
+                      <div className="mt-2 text-center py-2 text-[11px] text-slate-500 font-medium flex items-center justify-center gap-1.5">
+                        <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                        <span>Searching across India...</span>
+                      </div>
+                    )}
+
+                    {searchedLocation && (
+                      <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600">
+                        <span className="truncate max-w-[220px]">📍 Zoomed: <strong className="text-blue-700">{searchedLocation.name}</strong></span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchedLocation(null);
+                            if (startPoint) {
+                              setMapCenter([startPoint.lat, startPoint.lng]);
+                              setMapZoom(8);
+                            }
+                          }}
+                          className="text-red-500 hover:text-red-700 font-bold ml-2 shrink-0 cursor-pointer"
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <InteractiveMap
                   height="540px"
-                  center={startPoint ? [startPoint.lat, startPoint.lng] : [21.2580, 81.5645]}
-                  zoom={8}
+                  center={mapCenter || (startPoint ? [startPoint.lat, startPoint.lng] : [21.2580, 81.5645])}
+                  zoom={mapZoom}
+                  searchLocation={searchedLocation}
                   routes={routes}
                   selectedRouteId={selectedRouteId}
                   onSelectRoute={(id) => {

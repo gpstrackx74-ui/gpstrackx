@@ -43,6 +43,7 @@ interface LeafletRouteMapProps {
   isManualDrawing?: boolean;
   hideEditTools?: boolean;
   hideBreadcrumbs?: boolean;
+  searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -93,6 +94,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   isManualDrawing = false,
   hideEditTools = false,
   hideBreadcrumbs = false,
+  searchLocation,
   onRouteChange,
   height = '500px'
 }) => {
@@ -425,12 +427,46 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     };
   }, []);
 
-  // Center update
+  // Center & zoom update
   useEffect(() => {
     if (mapRef.current && center) {
-      mapRef.current.setView(center, mapRef.current.getZoom());
+      mapRef.current.setView(center, typeof zoom === 'number' && zoom > 0 ? zoom : mapRef.current.getZoom());
     }
-  }, [center?.[0], center?.[1]]);
+  }, [center?.[0], center?.[1], zoom]);
+
+  // Search Location Pin
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (layersRef.current['search_marker']) {
+      map.removeLayer(layersRef.current['search_marker']);
+      delete layersRef.current['search_marker'];
+    }
+    if (searchLocation && searchLocation.lat && searchLocation.lng) {
+      const searchIcon = L.divIcon({
+        className: 'search-location-pin',
+        html: `
+          <div style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:#2563EB;border:3px solid #FFFFFF;border-radius:50%;box-shadow:0 4px 12px rgba(37,99,235,0.5);">
+            <svg style="width:16px;height:16px;color:#FFFFFF;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16]
+      });
+      const marker = L.marker([searchLocation.lat, searchLocation.lng], { icon: searchIcon, zIndexOffset: 9000 });
+      marker.bindPopup(`
+        <div style="font-family: 'Plus Jakarta Sans', sans-serif; padding: 4px;">
+          <div style="font-size: 10px; font-weight: bold; color: #2563EB; text-transform: uppercase;">📍 Searched Location</div>
+          <div style="font-size: 13px; font-weight: bold; color: #0F172A; margin-top: 2px;">${searchLocation.name || 'Location'}</div>
+          ${searchLocation.address ? `<div style="font-size: 11px; color: #64748B; margin-top: 2px;">${searchLocation.address}</div>` : ''}
+        </div>
+      `);
+      marker.addTo(map);
+      marker.openPopup();
+      layersRef.current['search_marker'] = marker;
+    }
+  }, [searchLocation]);
 
   // Live Vehicle Marker
   useEffect(() => {

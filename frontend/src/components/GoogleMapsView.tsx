@@ -128,6 +128,7 @@ interface GoogleMapsViewProps {
   isDraggableRoute?: boolean;
   hideEditTools?: boolean;
   hideBreadcrumbs?: boolean;
+  searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -157,6 +158,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   isDraggableRoute = false,
   hideEditTools = false,
   hideBreadcrumbs = false,
+  searchLocation,
   onRouteChange,
   height = '520px'
 }) => {
@@ -220,8 +222,9 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
     const tollKey = (tollGates || []).map(t => t && t.lat ? `${t.id || t.name || ''}_${Number(t.lat).toFixed(4)}_${Number(t.lng).toFixed(4)}_${t.charges || ''}` : '').join('|');
     const parkKey = (parkingPoints || []).map(p => p && p.lat ? `${p.id || p.name || ''}_${Number(p.lat).toFixed(4)}_${Number(p.lng).toFixed(4)}` : '').join('|');
     const wayKey = (customWaypoints || []).map(w => w && w.lat ? `${Number(w.lat).toFixed(4)}_${Number(w.lng).toFixed(4)}` : '').join('|');
-    return `${selectedRouteId || ''}::${rIds}::${sKey}::${eKey}::${stopKey}::${tollKey}::${parkKey}::${wayKey}::${isManualDrawing}::${isTrimMode}::${showBreadcrumbs}::${cutStartIndex}::${cutEndIndex}::${trimSubMode}`;
-  }, [routes, selectedRouteId, startPoint, endPoint, stoppages, tollGates, parkingPoints, customWaypoints, isManualDrawing, isTrimMode, showBreadcrumbs, cutStartIndex, cutEndIndex, trimSubMode]);
+    const searchKey = searchLocation && searchLocation.lat ? `${Number(searchLocation.lat).toFixed(4)}_${Number(searchLocation.lng).toFixed(4)}` : 'none';
+    return `${selectedRouteId || ''}::${rIds}::${sKey}::${eKey}::${stopKey}::${tollKey}::${parkKey}::${wayKey}::${searchKey}::${isManualDrawing}::${isTrimMode}::${showBreadcrumbs}::${cutStartIndex}::${cutEndIndex}::${trimSubMode}`;
+  }, [routes, selectedRouteId, startPoint, endPoint, stoppages, tollGates, parkingPoints, customWaypoints, searchLocation, isManualDrawing, isTrimMode, showBreadcrumbs, cutStartIndex, cutEndIndex, trimSubMode]);
 
   // Zoom handlers
   const handleZoomIn = () => {
@@ -326,8 +329,11 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   useEffect(() => {
     if (mapInstanceRef.current && center && center.lat && center.lng) {
       mapInstanceRef.current.panTo(center);
+      if (typeof zoom === 'number' && zoom > 0) {
+        mapInstanceRef.current.setZoom(zoom);
+      }
     }
-  }, [center?.lat, center?.lng]);
+  }, [center?.lat, center?.lng, zoom]);
 
   const onMapClickRef = useRef(onMapClick);
   useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
@@ -1012,6 +1018,38 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         <circle cx="17" cy="12" r="2.5" fill="#FFFFFF"/>
       </svg>
     `)}`;
+
+    // Search Result Pin (Across India Search)
+    if (searchLocation && searchLocation.lat && searchLocation.lng) {
+      const pos = new google.maps.LatLng(searchLocation.lat, searchLocation.lng);
+      const searchMarker = new google.maps.Marker({
+        position: pos,
+        map,
+        title: `Search Result: ${searchLocation.name || 'Location'}`,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 9,
+          fillColor: '#2563EB',
+          fillOpacity: 1,
+          strokeColor: '#FFFFFF',
+          strokeWeight: 2.5,
+        },
+        zIndex: 9999
+      });
+
+      const searchInfoWindow = new google.maps.InfoWindow({
+        content: `
+          <div style="padding: 4px; font-family: 'Plus Jakarta Sans', sans-serif;">
+            <div style="font-size: 10px; font-weight: bold; color: #2563EB; text-transform: uppercase;">📍 Searched Location</div>
+            <div style="font-size: 13px; font-weight: 800; color: #0F172A; margin-top: 2px;">${searchLocation.name || 'Location'}</div>
+            ${searchLocation.address ? `<div style="font-size: 11px; color: #64748B; margin-top: 2px;">${searchLocation.address}</div>` : ''}
+          </div>
+        `
+      });
+
+      searchMarker.addListener('click', () => openPopup(searchInfoWindow, searchMarker));
+      markersRef.current.push(searchMarker);
+    }
 
     // 2. Start Marker
     if (startPoint?.lat && startPoint?.lng) {
