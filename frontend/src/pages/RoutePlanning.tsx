@@ -115,6 +115,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [customTollsAdded, setCustomTollsAdded] = useState<TollGate[]>([]);
   const [showAddCustomToll, setShowAddCustomToll] = useState<boolean>(false);
   const [newCustomTollName, setNewCustomTollName] = useState<string>('');
+  const [newCustomTollLat, setNewCustomTollLat] = useState<string>('');
+  const [newCustomTollLng, setNewCustomTollLng] = useState<string>('');
   const [newCustomTollPrice, setNewCustomTollPrice] = useState<string>('');
 
   // Start & End Points (Default completely blank so search bars are empty on page open)
@@ -1005,24 +1007,84 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     }));
   };
 
+  const handleUpdateToll = (oldName: string, newName: string, newPrice: number) => {
+    const finalName = newName.trim() || oldName;
+    setCustomTollOverrides(prev => {
+      const copy = { ...prev };
+      if (oldName !== finalName) {
+        delete copy[oldName];
+      }
+      copy[finalName] = newPrice;
+      return copy;
+    });
+    setCustomTollsAdded(prev => prev.map(t =>
+      t.name === oldName ? { ...t, name: finalName, charges: newPrice, is_manual: true } : t
+    ));
+    setRoutes(prev => prev.map(r => {
+      const updatedTolls = (r.tollGates || []).map(tg =>
+        tg.name === oldName ? { ...tg, name: finalName, charges: newPrice, is_manual: true } : tg
+      );
+      return {
+        ...r,
+        tollGates: updatedTolls
+      };
+    }));
+  };
+
   const handleAddCustomToll = () => {
-    if (!newCustomTollName.trim()) return;
+    const rawLat = newCustomTollLat.trim();
+    const rawLng = newCustomTollLng.trim();
+    let lat: number | null = null;
+    let lng: number | null = null;
+
+    if (rawLat.includes(',')) {
+      const parts = rawLat.split(',').map(s => parseFloat(s.trim()));
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        lat = parts[0];
+        lng = parts[1];
+      }
+    } else if (rawLat && rawLng) {
+      const pLat = parseFloat(rawLat);
+      const pLng = parseFloat(rawLng);
+      if (!isNaN(pLat) && !isNaN(pLng)) {
+        lat = pLat;
+        lng = pLng;
+      }
+    }
+
+    if (lat === null || lng === null) {
+      const midCoord = (activeRoute?.coordinates && activeRoute.coordinates.length > 0)
+        ? activeRoute.coordinates[Math.floor(activeRoute.coordinates.length / 2)]
+        : (startPoint ? [startPoint.lat + 0.05, startPoint.lng + 0.05] : [21.5, 82.0]);
+      lat = midCoord[0];
+      lng = midCoord[1];
+    }
+
     const price = parseFloat(newCustomTollPrice) || 250;
-    const midCoord = (activeRoute?.coordinates && activeRoute.coordinates.length > 0)
-      ? activeRoute.coordinates[Math.floor(activeRoute.coordinates.length / 2)]
-      : (startPoint ? [startPoint.lat + 0.05, startPoint.lng + 0.05] : [21.5, 82.0]);
+    const tollName = newCustomTollName.trim() || `Toll Gate (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
 
     const newToll: TollGate = {
-      name: newCustomTollName.trim(),
-      lat: midCoord[0],
-      lng: midCoord[1],
+      id: Date.now(),
+      name: tollName,
+      lat,
+      lng,
       charges: price,
       is_manual: true,
-      toll_type: 'Custom Commercial Toll Barrier'
+      toll_type: 'FASTag Commercial Toll Barrier'
     };
 
     setCustomTollsAdded(prev => [...prev, newToll]);
+    setRoutes(prev => prev.map(r => ({
+      ...r,
+      tollGates: [...(r.tollGates || []), newToll],
+      tollGatesCount: (r.tollGates || []).length + 1
+    })));
+
+    setMapCenter([lat, lng]);
+    setMapZoom(14);
     setNewCustomTollName('');
+    setNewCustomTollLat('');
+    setNewCustomTollLng('');
     setNewCustomTollPrice('');
     setShowAddCustomToll(false);
   };
@@ -2342,9 +2404,12 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       </button>
                     </div>
                   ) : (
-                    <div className="p-2 rounded-lg border border-slate-200 bg-slate-50/80 space-y-1.5">
+                    <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/90 space-y-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-700 text-[11px]">Add Toll Gate</span>
+                        <span className="font-bold text-slate-700 text-[11px] flex items-center gap-1">
+                          <Plus className="w-3 h-3 text-amber-500" />
+                          <span>Add Toll Gate by GPS Coordinates</span>
+                        </span>
                         <button
                           type="button"
                           onClick={() => setShowAddCustomToll(false)}
@@ -2353,31 +2418,52 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                           Cancel
                         </button>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                      <div className="space-y-1.5">
                         <input
                           type="text"
                           value={newCustomTollName}
                           onChange={(e) => setNewCustomTollName(e.target.value)}
-                          placeholder="Toll name..."
-                          className="sm:col-span-2 px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
+                          placeholder="Toll Plaza Name (e.g., Bilaspur Plaza)..."
+                          className="w-full px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
                         />
-                        <input
-                          type="number"
-                          min="0"
-                          value={newCustomTollPrice}
-                          onChange={(e) => setNewCustomTollPrice(e.target.value)}
-                          placeholder="₹..."
-                          className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
-                        />
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <input
+                            type="text"
+                            value={newCustomTollLat}
+                            onChange={(e) => setNewCustomTollLat(e.target.value)}
+                            placeholder="Latitude (e.g. 22.8707)"
+                            className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-800"
+                          />
+                          <input
+                            type="text"
+                            value={newCustomTollLng}
+                            onChange={(e) => setNewCustomTollLng(e.target.value)}
+                            placeholder="Longitude (e.g. 78.8579)"
+                            className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-800"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="relative flex-1">
+                            <span className="absolute left-2 top-1 text-slate-400 font-bold text-xs">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={newCustomTollPrice}
+                              onChange={(e) => setNewCustomTollPrice(e.target.value)}
+                              placeholder="Tariff (₹)..."
+                              className="w-full pl-6 pr-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddCustomToll}
+                            disabled={!newCustomTollName.trim() && !newCustomTollLat.trim()}
+                            className="px-3 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition cursor-pointer disabled:opacity-40 shrink-0"
+                          >
+                            + Add Toll
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleAddCustomToll}
-                        disabled={!newCustomTollName.trim()}
-                        className="w-full py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition cursor-pointer disabled:opacity-40"
-                      >
-                        Add Toll
-                      </button>
                     </div>
                   )}
                 </div>
@@ -2407,40 +2493,65 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 </div>
               )}
               {currentTolls.length === 0 && showAddCustomToll && (
-                <div className="p-2 rounded-lg border border-slate-200 bg-white space-y-1.5">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/90 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-700 text-[11px] flex items-center gap-1">
+                      <Plus className="w-3 h-3 text-amber-500" />
+                      <span>Add Toll Gate by GPS Coordinates</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCustomToll(false)}
+                      className="text-slate-400 hover:text-slate-600 text-[10px] cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
                     <input
                       type="text"
                       value={newCustomTollName}
                       onChange={(e) => setNewCustomTollName(e.target.value)}
-                      placeholder="Toll name..."
-                      className="sm:col-span-2 px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
+                      placeholder="Toll Plaza Name (e.g., Bilaspur Plaza)..."
+                      className="w-full px-2 py-1 rounded-md border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-slate-800"
                     />
-                    <input
-                      type="number"
-                      min="0"
-                      value={newCustomTollPrice}
-                      onChange={(e) => setNewCustomTollPrice(e.target.value)}
-                      placeholder="₹..."
-                      className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
-                    />
-                  </div>
-                  <div className="flex items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setShowAddCustomToll(false)}
-                      className="px-2 py-0.5 rounded text-xs font-bold text-slate-500 hover:bg-slate-100 cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleAddCustomToll}
-                      disabled={!newCustomTollName.trim()}
-                      className="px-2.5 py-0.5 rounded bg-slate-900 text-white font-bold text-xs disabled:opacity-40 cursor-pointer"
-                    >
-                      Add
-                    </button>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input
+                        type="text"
+                        value={newCustomTollLat}
+                        onChange={(e) => setNewCustomTollLat(e.target.value)}
+                        placeholder="Latitude (e.g. 22.8707)"
+                        className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-800"
+                      />
+                      <input
+                        type="text"
+                        value={newCustomTollLng}
+                        onChange={(e) => setNewCustomTollLng(e.target.value)}
+                        placeholder="Longitude (e.g. 78.8579)"
+                        className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-800"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative flex-1">
+                        <span className="absolute left-2 top-1 text-slate-400 font-bold text-xs">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={newCustomTollPrice}
+                          onChange={(e) => setNewCustomTollPrice(e.target.value)}
+                          placeholder="Tariff (₹)..."
+                          className="w-full pl-6 pr-2 py-1 rounded-md border border-slate-200 bg-white font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-slate-800"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddCustomToll}
+                        disabled={!newCustomTollName.trim() && !newCustomTollLat.trim()}
+                        className="px-3 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition cursor-pointer disabled:opacity-40 shrink-0"
+                      >
+                        + Add Toll
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2752,21 +2863,6 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     <span>Clear Map</span>
                   </button>
 
-                  {/* Map Search Button */}
-                  <button
-                    type="button"
-                    onClick={() => setShowMapSearch(prev => !prev)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                      showMapSearch
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
-                    }`}
-                    title="Search any street, city, state, or landmark across India"
-                  >
-                    <Search className="w-3.5 h-3.5" />
-                    <span>Search Map</span>
-                  </button>
-
                   {clickMode !== 'none' && (
                     <button
                       type="button"
@@ -2822,101 +2918,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 </div>
               )}
 
-              {/* Interactive Google Map Container - Completely Unobstructed */}
+              {/* Interactive Google Map Container - Completely Unobstructed with Native In-Map Google Search */}
               <div className="relative rounded-2xl overflow-hidden min-h-[520px]">
-                {/* Floating Search Bar with Autocomplete across India */}
-                {showMapSearch && (
-                  <div ref={mapSearchRef} className="absolute top-3 left-3 right-3 sm:right-auto sm:w-96 z-50 bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-blue-300 p-2.5 transition-all">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                        {mapSearchLoading ? <Loader2 className="w-4 h-4 animate-spin text-blue-600" /> : <Search className="w-4 h-4 text-blue-600" />}
-                      </div>
-                      <input
-                        type="text"
-                        value={mapSearchQuery}
-                        onChange={(e) => setMapSearchQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (mapSearchResults.length > 0) {
-                              handleSelectMapSearchResult(mapSearchResults[0]);
-                            } else if (mapSearchQuery.trim()) {
-                              handleDirectGeocodeQuery(mapSearchQuery.trim());
-                            }
-                          }
-                        }}
-                        placeholder="Search street, town, city, state in India..."
-                        className="w-full text-xs font-semibold text-slate-800 placeholder-slate-400 bg-transparent border-none outline-none focus:ring-0"
-                        autoFocus
-                      />
-                      {mapSearchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => { setMapSearchQuery(''); setMapSearchResults([]); }}
-                          className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setShowMapSearch(false)}
-                        className="text-slate-400 hover:text-slate-600 text-xs px-1.5 py-0.5 rounded font-bold cursor-pointer"
-                      >
-                        ✕
-                      </button>
-                    </div>
-
-                    {/* Autocomplete Suggestions */}
-                    {mapSearchResults.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-slate-100 max-h-60 overflow-y-auto divide-y divide-slate-50">
-                        {mapSearchResults.map((item, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => handleSelectMapSearchResult(item)}
-                            className="w-full text-left p-2 hover:bg-blue-50/70 rounded-xl transition flex items-start gap-2.5 group cursor-pointer"
-                          >
-                            <MapPin className="w-4 h-4 text-blue-500 mt-0.5 shrink-0 group-hover:scale-110 transition" />
-                            <div className="min-w-0">
-                              <div className="text-xs font-bold text-slate-800 truncate">{item.name || item.address}</div>
-                              {item.address && item.address !== item.name && (
-                                <div className="text-[10px] text-slate-500 truncate">{item.address}</div>
-                              )}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {mapSearchLoading && mapSearchResults.length === 0 && (
-                      <div className="mt-2 text-center py-2 text-[11px] text-slate-500 font-medium flex items-center justify-center gap-1.5">
-                        <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                        <span>Searching across India...</span>
-                      </div>
-                    )}
-
-                    {searchedLocation && (
-                      <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600">
-                        <span className="truncate max-w-[220px]">📍 Zoomed: <strong className="text-blue-700">{searchedLocation.name}</strong></span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSearchedLocation(null);
-                            if (startPoint) {
-                              setMapCenter([startPoint.lat, startPoint.lng]);
-                              setMapZoom(8);
-                            }
-                          }}
-                          className="text-red-500 hover:text-red-700 font-bold ml-2 shrink-0 cursor-pointer"
-                        >
-                          Reset
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 <InteractiveMap
                   height="540px"
                   center={mapCenter || (startPoint ? [startPoint.lat, startPoint.lng] : [21.2580, 81.5645])}
@@ -2944,6 +2947,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                   onMapClick={handleMapClick}
                   isDraggableRoute={isDraggableRoute}
                   onUpdateTollPrice={handleUpdateTollPrice}
+                  onUpdateToll={handleUpdateToll}
                   onRouteChange={handleRouteDragChange}
                 />
               </div>

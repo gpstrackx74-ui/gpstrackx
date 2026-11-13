@@ -822,6 +822,15 @@ app.get('/api/vehicles', authenticateToken, (req, res) => {
 // Get all trips/routes recorded for a specific vehicle
 app.get('/api/vehicles/:id/trips', authenticateToken, (req, res) => {
   const vehicleId = req.params.id;
+
+  // Strict User Isolation: Regular users can ONLY ever access trips for their own assigned vehicle
+  if (req.user.role !== 'admin') {
+    const checkVeh = db.prepare('SELECT assigned_user_id FROM vehicles WHERE id = ?').get(vehicleId);
+    if (!checkVeh || checkVeh.assigned_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied: You do not have permission to view trips for this vehicle.' });
+    }
+  }
+
   try {
     const trips = db.prepare(`
       SELECT r.*,
@@ -1009,6 +1018,11 @@ app.get('/api/vehicles/:id', authenticateToken, (req, res) => {
 
   if (!vehicle) {
     return res.status(404).json({ error: 'Vehicle not found' });
+  }
+
+  // Strict User Isolation: Regular users can ONLY ever access their own assigned vehicle
+  if (req.user.role !== 'admin' && vehicle.assigned_user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Access denied: You do not have permission to view this vehicle.' });
   }
 
   // Get active route details (or fallback to latest recorded route for this vehicle)

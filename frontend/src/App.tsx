@@ -164,7 +164,7 @@ const AppContent: React.FC = () => {
             />
           ) : (
             <VehicleTracking
-              vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
+              vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 0)}
               viewSource={viewSource}
               onBack={() => setCurrentTab('dashboard')}
               onSwitchVehicle={(vId) => setSelectedVehicleId(vId)}
@@ -203,7 +203,7 @@ const AppContent: React.FC = () => {
           ) : (
             <ErrorBoundary title="Vehicle Live Map View">
               <VehicleTracking
-                vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 1)}
+                vehicleId={selectedVehicleId || (userVehicles[0] ? userVehicles[0].id : 0)}
                 historicalTrip={selectedHistoricalTrip}
                 viewSource={viewSource}
                 onBack={() => {

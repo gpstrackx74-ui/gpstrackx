@@ -155,6 +155,15 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   }, []);
 
   const fetchVehicleDetails = async (targetId: number, isInitial = false) => {
+    if (!targetId || targetId <= 0) {
+      setVehicle(null);
+      setActiveRoute(null);
+      setStoppages([]);
+      setManualTolls([]);
+      setAllTrips([]);
+      setLoading(false);
+      return;
+    }
     try {
       if (isInitial) setLoading(true);
       const [data, trips] = await Promise.all([
@@ -229,6 +238,11 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       }
     } catch (err) {
       console.error('Failed to load vehicle telemetry:', err);
+      setVehicle(null);
+      setActiveRoute(null);
+      setStoppages([]);
+      setManualTolls([]);
+      setAllTrips([]);
     } finally {
       if (isInitial) setLoading(false);
     }
@@ -582,27 +596,74 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
 
   if (!vehicle) {
     return (
-      <div className="p-8 text-center text-slate-500 max-w-md mx-auto my-12 bg-white rounded-3xl border border-slate-200 shadow-xs">
-        <AlertCircle className="w-9 h-9 text-red-500 mx-auto mb-3" />
-        <p className="font-extrabold text-slate-900 text-sm">Vehicle Map Not Found</p>
-        <p className="text-xs text-slate-500 mt-1">
-          This vehicle record may not be assigned to your account or has been updated.
-        </p>
-        <div className="mt-4 flex items-center justify-center gap-2">
-          {vehicleList.length > 0 && onSwitchVehicle && (
-            <button
-              onClick={() => onSwitchVehicle(vehicleList[0].id)}
-              className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer"
-            >
-              Open {vehicleList[0].registration_no}
-            </button>
-          )}
-          <button
-            onClick={onBack}
-            className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs transition cursor-pointer"
-          >
-            ← Back
-          </button>
+      <div className="p-4 sm:p-6 lg:p-7 space-y-4 max-w-7xl mx-auto w-full min-w-0 font-sans">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
+          {/* Header Bar */}
+          <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onBack}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                title="Go Back"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div>
+                <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Live Vehicle Tracking</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">
+                    No Vehicle Allotted
+                  </span>
+                </h1>
+                <p className="text-xs text-slate-500 font-medium">Real-time GPS telematics & road telemetry map</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Blank Map Container with Centered English Notice Card */}
+          <div className="relative w-full h-[580px] bg-slate-100 overflow-hidden">
+            <InteractiveMap
+              height="580px"
+              center={[21.2580, 81.5645]}
+              zoom={5}
+              routes={[]}
+              stoppages={[]}
+              tollGates={[]}
+              parkingPoints={[]}
+              clickMode="none"
+            />
+            {/* Center Glass Card Notification */}
+            <div className="absolute inset-0 z-20 flex items-center justify-center p-4 pointer-events-none">
+              <div className="bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200 text-center pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+                <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-xs">
+                  <Truck className="w-7 h-7" />
+                </div>
+                <h2 className="text-lg font-black text-slate-900 tracking-tight">No Vehicle Allotted</h2>
+                <p className="text-xs font-semibold text-slate-500 mt-2 leading-relaxed">
+                  No vehicle has been allotted to this account yet. Please contact your fleet administrator to allocate a vehicle to your account.
+                </p>
+                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-center gap-2">
+                  {vehicleList.length > 0 && onSwitchVehicle ? (
+                    <button
+                      type="button"
+                      onClick={() => onSwitchVehicle(vehicleList[0].id)}
+                      className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer"
+                    >
+                      Open {vehicleList[0].registration_no}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs transition cursor-pointer"
+                  >
+                    ← Back to Dashboard
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );

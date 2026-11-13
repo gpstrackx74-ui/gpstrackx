@@ -16,7 +16,10 @@ import {
   Globe,
   Mountain,
   ArrowLeft,
-  ExternalLink
+  ExternalLink,
+  Search,
+  Loader2,
+  MapPin
 } from 'lucide-react';
 import {
   deleteSinglePoint,
@@ -130,6 +133,7 @@ interface GoogleMapsViewProps {
   hideBreadcrumbs?: boolean;
   searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
   onUpdateTollPrice?: (tollName: string, newPrice: number) => void;
+  onUpdateToll?: (oldName: string, newName: string, newPrice: number) => void;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -161,6 +165,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   hideBreadcrumbs = false,
   searchLocation,
   onUpdateTollPrice,
+  onUpdateToll,
   onRouteChange,
   height = '520px'
 }) => {
@@ -202,6 +207,177 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   const [cutStartIndex, setCutStartIndex] = useState<number | null>(null);
   const [cutEndIndex, setCutEndIndex] = useState<number | null>(null);
   const [undoHistory, setUndoHistory] = useState<Array<{ coordinates: [number, number][]; distanceKm: number; timeMinutes: number }>>([]);
+
+  // Native In-Map Google Places Search Engine
+  const [mapSearchText, setMapSearchText] = useState<string>('');
+  const [mapSearchSuggestions, setMapSearchSuggestions] = useState<any[]>([]);
+  const [isSearchingMap, setIsSearchingMap] = useState<boolean>(false);
+  const [showSuggestionsMenu, setShowSuggestionsMenu] = useState<boolean>(false);
+  const mapSearchBoxRef = useRef<HTMLDivElement>(null);
+  const gmapAutocompleteServiceRef = useRef<any>(null);
+  const gmapGeocoderRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.places?.AutocompleteService) {
+      try {
+        gmapAutocompleteServiceRef.current = new (window as any).google.maps.places.AutocompleteService();
+      } catch (_) {}
+    }
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder) {
+      try {
+        gmapGeocoderRef.current = new (window as any).google.maps.Geocoder();
+      } catch (_) {}
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (mapSearchBoxRef.current && !mapSearchBoxRef.current.contains(e.target as Node)) {
+        setShowSuggestionsMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    const q = mapSearchText.trim();
+    if (!q || q.length < 1) {
+      setMapSearchSuggestions([]);
+      setIsSearchingMap(false);
+      setShowSuggestionsMenu(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setIsSearchingMap(true);
+      if ((window as any).google?.maps?.places?.AutocompleteService) {
+        if (!gmapAutocompleteServiceRef.current) {
+          try {
+            gmapAutocompleteServiceRef.current = new (window as any).google.maps.places.AutocompleteService();
+          } catch (_) {}
+        }
+        if (gmapAutocompleteServiceRef.current) {
+          try {
+            gmapAutocompleteServiceRef.current.getPlacePredictions(
+              {
+                input: q,
+                componentRestrictions: { country: 'in' }
+              },
+              (predictions: any, status: any) => {
+                if (
+                  status === (window as any).google?.maps?.places?.PlacesServiceStatus?.OK &&
+                  Array.isArray(predictions) &&
+                  predictions.length > 0
+                ) {
+                  const formatted = predictions.map((p: any) => ({
+                    place_id: p.place_id,
+                    name: p.structured_formatting?.main_text || p.description,
+                    address: p.structured_formatting?.secondary_text || p.description,
+                    description: p.description
+                  }));
+                  setMapSearchSuggestions(formatted);
+                  setShowSuggestionsMenu(true);
+                  setIsSearchingMap(false);
+                  return;
+                }
+                fetchBackendSuggestions(q);
+              }
+            );
+            return;
+          } catch (e) {}
+        }
+      }
+      fetchBackendSuggestions(q);
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [mapSearchText]);
+
+  const fetchBackendSuggestions = async (q: string) => {
+    try {
+      const res = await fetch(`/api/locations/search?q=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMapSearchSuggestions(Array.isArray(data) ? data : []);
+        setShowSuggestionsMenu(true);
+      }
+    } catch (_) {
+    } finally {
+      setIsSearchingMap(false);
+    }
+  };
+
+  const handleSelectMapPlace = (item: any) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (item.place_id && (window as any).google?.maps?.Geocoder) {
+      if (!gmapGeocoderRef.current) {
+        try {
+          gmapGeocoderRef.current = new (window as any).google.maps.Geocoder();
+        } catch (_) {}
+      }
+      if (gmapGeocoderRef.current) {
+        gmapGeocoderRef.current.geocode({ placeId: item.place_id }, (results: any, status: any) => {
+          if (status === 'OK' && results && results[0]?.geometry?.location) {
+            const loc = results[0].geometry.location;
+            const lat = typeof loc.lat === 'function' ? loc.lat() : Number(loc.lat);
+            const lng = typeof loc.lng === 'function' ? loc.lng() : Number(loc.lng);
+            const pos = new (window as any).google.maps.LatLng(lat, lng);
+            map.panTo(pos);
+            map.setZoom(16);
+
+            // Drop Search Marker
+            const marker = new (window as any).google.maps.Marker({
+              position: pos,
+              map,
+              title: item.name || results[0].formatted_address,
+              icon: {
+                path: (window as any).google.maps.SymbolPath.CIRCLE,
+                scale: 9,
+                fillColor: '#2563EB',
+                fillOpacity: 1,
+                strokeColor: '#FFFFFF',
+                strokeWeight: 2.5
+              },
+              zIndex: 9999
+            });
+            const info = new (window as any).google.maps.InfoWindow({
+              content: `
+                <div style="padding: 4px; font-family: 'Plus Jakarta Sans', sans-serif;">
+                  <div style="font-size: 10px; font-weight: bold; color: #2563EB; text-transform: uppercase;">📍 Searched Location</div>
+                  <div style="font-size: 13px; font-weight: 800; color: #0F172A; margin-top: 2px;">${item.name || results[0].formatted_address}</div>
+                  <div style="font-size: 11px; color: #64748B; margin-top: 2px;">${item.address || results[0].formatted_address}</div>
+                </div>
+              `
+            });
+            marker.addListener('click', () => openPopup(info, marker));
+            openPopup(info, marker);
+            markersRef.current.push(marker);
+
+            setShowSuggestionsMenu(false);
+          }
+        });
+        return;
+      }
+    }
+
+    if (item.lat && item.lng) {
+      const lat = Number(item.lat);
+      const lng = Number(item.lng);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        const pos = new (window as any).google.maps.LatLng(lat, lng);
+        map.panTo(pos);
+        map.setZoom(16);
+        setShowSuggestionsMenu(false);
+      }
+    }
+  };
 
   // Active route coordinates
   const activeRoute = React.useMemo(() => {
@@ -1217,22 +1393,22 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       const safeId = (toll.id || toll.name).toString().replace(/[^a-zA-Z0-9]/g, '');
       const tollInfoWindow = new google.maps.InfoWindow({
         content: `
-          <div style="padding: 6px; font-family: 'Plus Jakarta Sans', sans-serif; min-width: 200px;">
-            <div style="font-size: 10px; font-weight: bold; color: #D97706; text-transform: uppercase;">
-              🛑 NHAI FASTag Toll Plaza
+          <div style="padding: 6px 8px; font-family: 'Plus Jakarta Sans', sans-serif; min-width: 210px;">
+            <div style="font-size: 10px; font-weight: bold; color: #D97706; text-transform: uppercase; letter-spacing: 0.5px;">
+              🛑 FASTag Toll Plaza
             </div>
-            <div style="font-size: 13px; font-weight: 800; color: #0F172A; margin-top: 2px;">
-              ${toll.name}
+            <div style="margin-top: 4px;">
+              <input type="text" value="${toll.name || ''}" id="gmap-toll-name-${safeId}" style="width: 100%; padding: 4px 6px; font-size: 12px; font-weight: 700; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 6px; box-sizing: border-box;" placeholder="Toll Plaza Name" />
             </div>
-            <div style="font-size: 10px; color: #64748B; margin-top: 2px;">
+            <div style="font-size: 10px; color: #64748B; margin-top: 3px;">
               GPS: ${Number(toll.lat).toFixed(4)}, ${Number(toll.lng).toFixed(4)}
             </div>
-            <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-              <span style="font-size: 11px; font-weight: 700; color: #334155;">Toll Tariff:</span>
+            <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 700; color: #334155;">Tariff:</span>
               <div style="display: flex; align-items: center; gap: 4px;">
                 <span style="font-size: 12px; font-weight: 800; color: #16A34A;">₹</span>
-                <input type="number" min="0" value="${toll.charges || 0}" id="gmap-toll-input-${safeId}" style="width: 70px; padding: 2px 6px; font-size: 12px; font-weight: 800; font-family: monospace; border: 1px solid #CBD5E1; border-radius: 6px; text-align: right;" />
-                <button id="gmap-toll-btn-${safeId}" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: #E60012; color: #FFFFFF; border: none; border-radius: 6px; cursor: pointer;">Save</button>
+                <input type="number" min="0" value="${toll.charges || 0}" id="gmap-toll-input-${safeId}" style="width: 65px; padding: 3px 6px; font-size: 12px; font-weight: 800; font-family: monospace; border: 1px solid #CBD5E1; border-radius: 6px; text-align: right;" />
+                <button id="gmap-toll-btn-${safeId}" style="padding: 3px 8px; font-size: 11px; font-weight: 700; background: #0F172A; color: #FFFFFF; border: none; border-radius: 6px; cursor: pointer;">Save</button>
               </div>
             </div>
           </div>
@@ -1242,18 +1418,30 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       tollInfoWindow.addListener('domready', () => {
         const btn = document.getElementById(`gmap-toll-btn-${safeId}`);
         const input = document.getElementById(`gmap-toll-input-${safeId}`) as HTMLInputElement;
-        if (btn && input) {
-          btn.onclick = () => {
-            const val = parseFloat(input.value);
-            if (!isNaN(val) && onUpdateTollPrice) {
-              onUpdateTollPrice(toll.name, val);
-            }
+        const nameInput = document.getElementById(`gmap-toll-name-${safeId}`) as HTMLInputElement;
+
+        const handleSaveToll = () => {
+          const val = parseFloat(input?.value || '0');
+          const newName = nameInput?.value?.trim() || toll.name;
+          const parsedVal = isNaN(val) ? 0 : val;
+          if (onUpdateToll) {
+            onUpdateToll(toll.name, newName, parsedVal);
+          } else if (onUpdateTollPrice) {
+            onUpdateTollPrice(toll.name, parsedVal);
+          }
+        };
+
+        if (btn) {
+          btn.onclick = handleSaveToll;
+        }
+        if (input) {
+          input.onkeydown = (e) => {
+            if (e.key === 'Enter') handleSaveToll();
           };
-          input.onchange = () => {
-            const val = parseFloat(input.value);
-            if (!isNaN(val) && onUpdateTollPrice) {
-              onUpdateTollPrice(toll.name, val);
-            }
+        }
+        if (nameInput) {
+          nameInput.onkeydown = (e) => {
+            if (e.key === 'Enter') handleSaveToll();
           };
         }
       });
@@ -1353,6 +1541,65 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
           : 'relative w-full rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs bg-white'
       }
     >
+      {/* Native In-Map Google Places Search Engine (Top Left of Map) */}
+      <div
+        ref={mapSearchBoxRef}
+        className="absolute top-3 left-3 z-30 w-72 sm:w-80 md:w-96"
+      >
+        <div className="bg-white/98 backdrop-blur-md rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.18)] border border-slate-200/90 p-1.5 flex items-center gap-2 transition-all focus-within:ring-2 focus-within:ring-blue-500/25 focus-within:border-blue-500">
+          <div className="w-7 h-7 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            {isSearchingMap ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" /> : <Search className="w-3.5 h-3.5 text-blue-600" />}
+          </div>
+          <input
+            type="text"
+            value={mapSearchText}
+            onChange={(e) => setMapSearchText(e.target.value)}
+            onFocus={() => { if (mapSearchSuggestions.length > 0) setShowSuggestionsMenu(true); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (mapSearchSuggestions.length > 0) {
+                  handleSelectMapPlace(mapSearchSuggestions[0]);
+                }
+              }
+            }}
+            placeholder="Search Google Maps across India..."
+            className="w-full text-xs font-semibold text-slate-800 placeholder-slate-400 bg-transparent border-none outline-none focus:ring-0"
+          />
+          {mapSearchText && (
+            <button
+              type="button"
+              onClick={() => { setMapSearchText(''); setMapSearchSuggestions([]); setShowSuggestionsMenu(false); }}
+              className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Google Places Dropdown Suggestions */}
+        {showSuggestionsMenu && mapSearchSuggestions.length > 0 && (
+          <div className="mt-1.5 bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/90 max-h-60 overflow-y-auto divide-y divide-slate-50 p-1">
+            {mapSearchSuggestions.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSelectMapPlace(item)}
+                className="w-full text-left p-2 hover:bg-blue-50/70 rounded-xl transition flex items-start gap-2.5 group cursor-pointer"
+              >
+                <MapPin className="w-4 h-4 text-blue-500 mt-0.5 shrink-0 group-hover:scale-110 transition" />
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-slate-800 truncate">{item.name || item.address}</div>
+                  {item.address && item.address !== item.name && (
+                    <div className="text-[10px] text-slate-500 truncate">{item.address}</div>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Top Map Action Bar (Toolbar) */}
       <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 bg-white/95 backdrop-blur-md p-1.5 rounded-xl border border-slate-200 shadow-md">
         {/* Polyline Trim / Delete Wrong Line Button */}
@@ -1553,7 +1800,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
 
       {/* Mode Indicator Overlay */}
       {clickMode !== 'none' && clickMode !== 'manual-route' && (
-        <div className="absolute top-3 left-3 z-20 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200 shadow-md flex items-center gap-2">
+        <div className="absolute top-14 left-3 z-20 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200 shadow-md flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
           <span className="text-xs font-bold text-slate-900">
             {clickMode === 'start' && '👉 Click map to set Start Location (Green Flag)'}
