@@ -583,7 +583,9 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           let finalDistKm = 0;
           let totalMins = 0;
           try {
-            const googleRoad = await fetchGoogleRoadDistance(start, end);
+            const googleRoadPromise = fetchGoogleRoadDistance(start, end);
+            const roadTimeout = new Promise<null>((r) => setTimeout(() => r(null), 1200));
+            const googleRoad = await Promise.race([googleRoadPromise, roadTimeout]);
             if (googleRoad && googleRoad.distanceKm > 0) {
               finalDistKm = googleRoad.distanceKm;
               totalMins = googleRoad.durationMins || Math.round((finalDistKm / 45) * 60);
@@ -2385,22 +2387,23 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
-                        className={`flex-1 py-1 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer ${clickMode === 'toll'
-                          ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
-                          : 'border-dashed border-slate-300 hover:border-slate-400 text-slate-700 bg-slate-50 hover:bg-slate-100'
-                          }`}
+                        onClick={() => setShowAddCustomToll(true)}
+                        className="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition shadow-2xs cursor-pointer"
                       >
-                        <Plus className="w-3 h-3" />
-                        <span>{clickMode === 'toll' ? 'Click Map to Place' : '+ Add Toll (Map)'}</span>
+                        <Plus className="w-3.5 h-3.5 text-amber-400" />
+                        <span>+ Add Toll Gate (Lat / Long)</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => setShowAddCustomToll(true)}
-                        className="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium bg-white cursor-pointer"
-                        title="Manual Entry"
+                        onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
+                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${clickMode === 'toll'
+                          ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-100 bg-white'
+                          }`}
+                        title="Click on map to drop a toll pin"
                       >
-                        Manual
+                        <MapPin className="w-3 h-3" />
+                        <span>{clickMode === 'toll' ? 'Click Map...' : 'Map Pin'}</span>
                       </button>
                     </div>
                   ) : (
@@ -2430,15 +2433,24 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                           <input
                             type="text"
                             value={newCustomTollLat}
-                            onChange={(e) => setNewCustomTollLat(e.target.value)}
-                            placeholder="Latitude (e.g. 22.8707)"
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v.includes(',')) {
+                                const parts = v.split(',');
+                                setNewCustomTollLat(parts[0].trim());
+                                if (parts[1]) setNewCustomTollLng(parts[1].trim());
+                              } else {
+                                setNewCustomTollLat(v);
+                              }
+                            }}
+                            placeholder="Latitude (e.g. 21.8500 or paste Lat, Lng)"
                             className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-800"
                           />
                           <input
                             type="text"
                             value={newCustomTollLng}
                             onChange={(e) => setNewCustomTollLng(e.target.value)}
-                            placeholder="Longitude (e.g. 78.8579)"
+                            placeholder="Longitude (e.g. 81.8200)"
                             className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-800"
                           />
                         </div>
@@ -2473,21 +2485,23 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition ${clickMode === 'toll'
-                        ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                        }`}
+                      onClick={() => setShowAddCustomToll(true)}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer transition shadow-2xs"
                     >
-                      <Plus className="w-3 h-3" />
-                      <span>{clickMode === 'toll' ? 'Click Map' : '+ Add Toll'}</span>
+                      <Plus className="w-3.5 h-3.5 text-amber-400" />
+                      <span>+ Add Toll Gate (Lat / Long)</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => setShowAddCustomToll(true)}
-                      className="px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-medium bg-white cursor-pointer"
+                      onClick={() => setClickMode(clickMode === 'toll' ? 'none' : 'toll')}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-bold cursor-pointer transition ${clickMode === 'toll'
+                        ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      title="Click on map to drop a toll pin"
                     >
-                      Manual
+                      <MapPin className="w-3 h-3" />
+                      <span>{clickMode === 'toll' ? 'Click Map...' : 'Map Pin'}</span>
                     </button>
                   </div>
                 </div>
@@ -2519,15 +2533,24 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       <input
                         type="text"
                         value={newCustomTollLat}
-                        onChange={(e) => setNewCustomTollLat(e.target.value)}
-                        placeholder="Latitude (e.g. 22.8707)"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v.includes(',')) {
+                            const parts = v.split(',');
+                            setNewCustomTollLat(parts[0].trim());
+                            if (parts[1]) setNewCustomTollLng(parts[1].trim());
+                          } else {
+                            setNewCustomTollLat(v);
+                          }
+                        }}
+                        placeholder="Latitude (e.g. 21.8500 or paste Lat, Lng)"
                         className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-800"
                       />
                       <input
                         type="text"
                         value={newCustomTollLng}
                         onChange={(e) => setNewCustomTollLng(e.target.value)}
-                        placeholder="Longitude (e.g. 78.8579)"
+                        placeholder="Longitude (e.g. 81.8200)"
                         className="px-2 py-1 rounded-md border border-slate-200 bg-white font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-800"
                       />
                     </div>

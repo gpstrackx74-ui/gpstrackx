@@ -162,6 +162,9 @@ function initializeDatabase() {
     if (!routeCols.includes('toll_gates_count')) {
       db.exec('ALTER TABLE routes ADD COLUMN toll_gates_count INTEGER DEFAULT 0');
     }
+    if (!routeCols.includes('vehicle_registration_no')) {
+      db.exec('ALTER TABLE routes ADD COLUMN vehicle_registration_no TEXT');
+    }
   } catch (e) {}
 
   // 4. Stoppages table

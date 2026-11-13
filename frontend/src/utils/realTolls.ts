@@ -879,18 +879,38 @@ export function detectRealTollsOnRoute(
 ): TollGate[] {
   if (!coordinates || coordinates.length < 2) return [];
 
+  // 1. Calculate overall route bounding box to quickly skip 95% of tolls across India in 0ms
+  let rMinLat = Infinity, rMaxLat = -Infinity, rMinLng = Infinity, rMaxLng = -Infinity;
+  const sampleStep = coordinates.length > 500 ? Math.ceil(coordinates.length / 400) : 1;
+  for (let i = 0; i < coordinates.length; i += sampleStep) {
+    const lat = coordinates[i][0];
+    const lng = coordinates[i][1];
+    if (lat < rMinLat) rMinLat = lat;
+    if (lat > rMaxLat) rMaxLat = lat;
+    if (lng < rMinLng) rMinLng = lng;
+    if (lng > rMaxLng) rMaxLng = lng;
+  }
+  const pad = 0.08; // ~8km safety buffer
+  rMinLat -= pad; rMaxLat += pad; rMinLng -= pad; rMaxLng += pad;
+
   const detected: Array<{ toll: VerifiedTollPlaza; routeIdx: number }> = [];
   const added = new Set<string>();
 
   for (const toll of VERIFIED_TOLL_PLAZAS) {
+    // Instant broad-phase bounding box filter
+    if (toll.lat < rMinLat || toll.lat > rMaxLat || toll.lng < rMinLng || toll.lng > rMaxLng) {
+      continue;
+    }
+
     let minDistance = Infinity;
     let closestSegmentIdx = -1;
 
-    for (let i = 0; i < coordinates.length - 1; i++) {
+    for (let i = 0; i < coordinates.length - 1; i += sampleStep) {
+      const nextIdx = Math.min(coordinates.length - 1, i + sampleStep);
       const p1 = { lat: coordinates[i][0], lng: coordinates[i][1] };
-      const p2 = { lat: coordinates[i + 1][0], lng: coordinates[i + 1][1] };
+      const p2 = { lat: coordinates[nextIdx][0], lng: coordinates[nextIdx][1] };
 
-      // Quick bounding box check for speed
+      // Segment bounding box check for speed
       const minLat = Math.min(p1.lat, p2.lat) - 0.02;
       const maxLat = Math.max(p1.lat, p2.lat) + 0.02;
       const minLng = Math.min(p1.lng, p2.lng) - 0.02;
@@ -1047,8 +1067,10 @@ export async function detectAllTollsOnRoute(
   const verifiedTolls = detectRealTollsOnRoute(coordinates, thresholdKm, axle);
 
   try {
-    const googleTolls = await detectGooglePlacesTollsOnRoute(coordinates, thresholdKm, axle);
-    if (googleTolls.length === 0) return verifiedTolls;
+    const placesPromise = detectGooglePlacesTollsOnRoute(coordinates, thresholdKm, axle);
+    const timeoutPromise = new Promise<TollGate[]>((resolve) => setTimeout(() => resolve([]), 1200));
+    const googleTolls = await Promise.race([placesPromise, timeoutPromise]);
+    if (!googleTolls || googleTolls.length === 0) return verifiedTolls;
 
     // Deduplicate against verifiedTolls (by name similarity or distance < 2km)
     const combined = [...verifiedTolls];

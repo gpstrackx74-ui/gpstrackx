@@ -1268,16 +1268,46 @@ app.put('/api/vehicles/:id', authenticateToken, requireAdmin, (req, res) => {
   }
 });
 
-// Delete Vehicle (Admin Only)
+// Delete Vehicle (Admin Only) - PERMANENTLY PRESERVE ALL ROUTES AND CORRIDORS
 app.delete('/api/vehicles/:id', authenticateToken, requireAdmin, async (req, res) => {
   const vehicleId = req.params.id;
   try {
+    // Preserve vehicle registration and name in routes before detaching
+    const veh = db.prepare('SELECT registration_no, name_model FROM vehicles WHERE id = ?').get(vehicleId);
+    if (veh && veh.registration_no) {
+      try {
+        db.prepare('UPDATE routes SET vehicle_registration_no = COALESCE(vehicle_registration_no, ?) WHERE vehicle_id = ?').run(veh.registration_no, vehicleId);
+      } catch (_) {}
+    }
+
+    // Mirror all routes for this vehicle into saved_corridors so they are 100% permanently immortal
+    try {
+      const routesToSave = db.prepare('SELECT * FROM routes WHERE vehicle_id = ?').all(vehicleId);
+      for (const r of routesToSave) {
+        db.prepare(`
+          INSERT OR IGNORE INTO saved_corridors (
+            route_name, start_location_name, start_address, start_lat, start_lng,
+            end_location_name, end_address, end_lat, end_lng,
+            total_distance_km, estimated_travel_time_min,
+            overview_polyline, waypoints_json, toll_gates_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          r.route_name || `${r.start_location_name} to ${r.end_location_name}`,
+          r.start_location_name, r.start_address || '', r.start_lat, r.start_lng,
+          r.end_location_name, r.end_address || '', r.end_lat, r.end_lng,
+          r.total_distance_km || 0, r.estimated_travel_time_min || 0,
+          r.overview_polyline || '[]', r.waypoints_json || '[]', r.toll_gates_json || '[]'
+        );
+      }
+    } catch (_) {}
+
+    // Detach vehicle_id from routes (DO NOT DELETE ROUTES - PRESERVED PERMANENTLY)
+    db.prepare('UPDATE routes SET vehicle_id = NULL WHERE vehicle_id = ?').run(vehicleId);
     db.prepare('DELETE FROM fastag_transactions WHERE vehicle_id = ?').run(vehicleId);
-    db.prepare('DELETE FROM routes WHERE vehicle_id = ?').run(vehicleId);
     db.prepare('DELETE FROM vehicle_allocations WHERE vehicle_id = ?').run(vehicleId);
     db.prepare('DELETE FROM vehicles WHERE id = ?').run(vehicleId);
     await supabaseService.deleteVehicle(vehicleId);
-    res.json({ message: 'Vehicle deleted successfully' });
+    res.json({ message: 'Vehicle deleted successfully. All saved routes permanently preserved.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete vehicle: ' + err.message });
   }
@@ -1523,11 +1553,13 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) =
     return res.status(400).json({ error: 'Cannot delete the currently signed-in admin account.' });
   }
   try {
+    // Unassign vehicles assigned to this user (preserving all vehicles and saved routes)
+    db.prepare('UPDATE vehicles SET assigned_user_id = NULL WHERE assigned_user_id = ?').run(userId);
     db.prepare('DELETE FROM user_logins WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM vehicle_allocations WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
     await supabaseService.deleteUser(userId);
-    res.json({ message: 'User deleted successfully' });
+    res.json({ message: 'User deleted successfully. Vehicles and saved routes preserved.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete user: ' + err.message });
   }
@@ -1811,8 +1843,9 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
         vehicle_id, route_name, start_location_name, start_address, start_lat, start_lng,
         end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
         overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
-        trip_date, end_trip_date, start_trip_time, end_trip_time, total_toll_fee, stoppages_count, toll_gates_count, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        trip_date, end_trip_date, start_trip_time, end_trip_time, total_toll_fee, stoppages_count, toll_gates_count, is_active,
+        vehicle_registration_no
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
     `);
 
     const result = insertRouteStmt.run(
@@ -1839,8 +1872,27 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
       end_trip_time || '06:00 PM',
       Number(total_toll_fee) || 0,
       Number(stoppages_count) || (waypoints ? waypoints.length : 0),
-      Number(toll_gates_count) || (toll_gates ? toll_gates.length : 0)
+      Number(toll_gates_count) || (toll_gates ? toll_gates.length : 0),
+      vehicleRegNo
     );
+
+    // Also mirror into saved_corridors permanently
+    try {
+      db.prepare(`
+        INSERT OR IGNORE INTO saved_corridors (
+          route_name, start_location_name, start_address, start_lat, start_lng,
+          end_location_name, end_address, end_lat, end_lng,
+          total_distance_km, estimated_travel_time_min,
+          overview_polyline, waypoints_json, toll_gates_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        route_name || `${start_location_name} to ${end_location_name}`,
+        start_location_name, start_address || '', start_lat, start_lng,
+        end_location_name, end_address || '', end_lat, end_lng,
+        total_distance_km || 0, estimated_travel_time_min || 0,
+        polylineStr, waypointsJson, tollGatesJson
+      );
+    } catch (_) {}
 
     const routeId = result.lastInsertRowid;
 
@@ -2058,8 +2110,8 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
         r.stoppages_count,
         r.toll_gates_count,
         r.created_at,
-        v.registration_no as vehicle_registration_no,
-        v.name_model as vehicle_name_model,
+        COALESCE(v.registration_no, r.vehicle_registration_no, 'Saved Route') as vehicle_registration_no,
+        COALESCE(v.name_model, 'Saved Vehicle') as vehicle_name_model,
         u.id as user_id,
         u.name as user_name,
         u.email as user_email
@@ -2125,8 +2177,8 @@ app.get('/api/trips/all', authenticateToken, requireAdmin, (req, res) => {
     const trips = db.prepare(`
       SELECT 
         r.*,
-        v.registration_no as vehicle_registration_no,
-        v.name_model as vehicle_name_model,
+        COALESCE(v.registration_no, r.vehicle_registration_no, 'Saved Route') as vehicle_registration_no,
+        COALESCE(v.name_model, 'Saved Vehicle') as vehicle_name_model,
         u.id as user_id,
         u.name as user_name,
         u.email as user_email
