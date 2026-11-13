@@ -123,10 +123,7 @@ const smsService = {
     return {
       success: true,
       phone,
-      message: fast2smsResult.success 
-        ? `OTP successfully sent to +91 ${phone} via Fast2SMS.` 
-        : `Your Verification OTP is: ${otp}. (Fast2SMS Notice: ${fast2smsResult.message || 'Complete website verification in Fast2SMS panel'})`,
-      debugOtp: otp
+      message: `OTP sent successfully to +91 ${phone} via SMS.`
     };
   },
 

@@ -119,6 +119,25 @@ export const UsersManagement: React.FC = () => {
       return;
     }
 
+    const cleanPhone = formData.phone ? formData.phone.replace(/[^0-9]/g, '').slice(-10) : '';
+    if (formData.phone.trim() && cleanPhone.length !== 10) {
+      setFormError('Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+
+    if (cleanPhone) {
+      const existingUserWithPhone = users.find(u => {
+        if (editingUser && u.id === editingUser.id) return false;
+        if (!u.phone) return false;
+        const uClean = u.phone.replace(/[^0-9]/g, '').slice(-10);
+        return uClean === cleanPhone;
+      });
+      if (existingUserWithPhone) {
+        setFormError('This phone number is already in use. Please use another mobile number to create user account.');
+        return;
+      }
+    }
+
     try {
       setSubmitting(true);
       setFormError(null);
@@ -160,6 +179,11 @@ export const UsersManagement: React.FC = () => {
   const totalUsers = users.length;
   const activeUsers = users.filter(u => u.status === 'active').length;
   const inactiveUsers = totalUsers - activeUsers;
+
+  const cleanEnteredPhone = formData.phone ? formData.phone.replace(/[^0-9]/g, '').slice(-10) : '';
+  const duplicatePhoneUser = cleanEnteredPhone.length === 10
+    ? users.find(u => (!editingUser || u.id !== editingUser.id) && u.phone && u.phone.replace(/[^0-9]/g, '').slice(-10) === cleanEnteredPhone)
+    : null;
 
   return (
     <div className="p-4 sm:p-6 lg:p-7 space-y-4 max-w-7xl mx-auto w-full min-w-0 font-sans">
@@ -496,8 +520,13 @@ export const UsersManagement: React.FC = () => {
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="e.g. +91 98112 34567"
-                  className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-slate-900 focus:outline-none focus:border-[#E60012]"
+                  className={`w-full px-3 py-2 rounded-xl border text-slate-900 focus:outline-none transition ${duplicatePhoneUser ? 'border-red-500 bg-red-50/40 focus:border-red-600' : 'border-[#E2E8F0] focus:border-[#E60012]'}`}
                 />
+                {duplicatePhoneUser && (
+                  <p className="text-xs text-red-600 font-semibold mt-1 flex items-center gap-1">
+                    <span>⚠️ This phone number is already in use ({duplicatePhoneUser.name}). Please use another mobile number.</span>
+                  </p>
+                )}
               </div>
 
               <div>

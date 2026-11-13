@@ -75,7 +75,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     return () => clearInterval(timer);
   }, [otpCountdown]);
 
-  // Send OTP handler via Fast2SMS
+  // Send OTP handler via SMS
   const handleSendOtp = async () => {
     setError(null);
     setSuccessMessage(null);
@@ -90,7 +90,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       const res = await api.sendOtp(target);
       setIsOtpSent(true);
       setSentTargetPhone((res as any).maskedPhone || (res as any).phone || target);
-      setSuccessMessage((res as any).message || `OTP sent successfully to ${(res as any).maskedPhone || target} via Fast2SMS.`);
+      setSuccessMessage((res as any).message || `OTP sent successfully to ${(res as any).maskedPhone || target} via SMS.`);
       setOtpCountdown(30);
     } catch (err: any) {
       setError(err.message || 'Failed to send SMS OTP. Please check the mobile number or email.');
@@ -407,7 +407,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 </div>
               </form>
             ) : (
-              // Mode B: SMS OTP Flow (User Mobile Number + Fast2SMS OTP)
+              // Mode B: SMS OTP Flow (User Mobile Number + SMS OTP)
               <form onSubmit={handleOtpLoginSubmit} className="space-y-4">
                 <div>
                   <label htmlFor="login-otp-identifier" className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -448,7 +448,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   {sentTargetPhone && isOtpSent && (
                     <p className="text-[11px] text-emerald-700 font-semibold mt-1.5 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>OTP sent to {sentTargetPhone} via Fast2SMS</span>
+                      <span>OTP sent to {sentTargetPhone} via SMS</span>
                     </p>
                   )}
                 </div>

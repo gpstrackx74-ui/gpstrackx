@@ -301,7 +301,7 @@ app.post('/api/auth/register', (req, res) => {
   const allUsers = db.prepare('SELECT id, phone, email FROM users').all();
   const existingUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
   if (existingUser) {
-    return res.status(409).json({ error: 'An account with this mobile number already exists. Please sign in.' });
+    return res.status(409).json({ error: 'This phone number is already in use. Please use another mobile number to create user account.' });
   }
 
   const userEmail = email && /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim()) 
@@ -507,7 +507,7 @@ app.post('/api/auth/register', (req, res) => {
   const allUsers = db.prepare('SELECT id, phone, email FROM users').all();
   const existingUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
   if (existingUser) {
-    return res.status(409).json({ error: 'An account with this mobile number already exists. Please sign in.' });
+    return res.status(409).json({ error: 'This phone number is already in use. Please use another mobile number to create user account.' });
   }
 
   const userEmail = email && /^[^s@]+@[^s@]+.[^s@]+$/.test(email.trim()) 
@@ -1362,12 +1362,26 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
   }
 
   const cleanPhone = cleanPhoneNumber(phone || '');
+  if (phone && phone.trim() && cleanPhone.length !== 10) {
+    return res.status(400).json({ error: 'Please enter a valid 10-digit Indian mobile number.' });
+  }
+
+  // Strictly enforce 1 user per mobile number
+  if (cleanPhone) {
+    const allUsers = db.prepare('SELECT id, name, phone, email FROM users').all();
+    const existingUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
+    if (existingUser) {
+      return res.status(400).json({
+        error: 'This phone number is already in use. Please use another mobile number to create user account.'
+      });
+    }
+  }
+
   const hasValidEmail = email && email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const userEmail = hasValidEmail
     ? email.trim().toLowerCase()
     : (cleanPhone ? `${cleanPhone}@gpstrackx.in` : `user.${Date.now()}@gpstrackx.in`);
 
-  // Allow multiple users with same email or phone number as requested
   const colors = ['#EF4444', '#DC2626', '#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'];
   const avatarColor = colors[Math.floor(Math.random() * colors.length)];
   const hash = bcrypt.hashSync(password, 10);
@@ -1527,6 +1541,21 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, (req, res) => {
 
   const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const cleanPhone = cleanPhoneNumber(phone || '');
+  if (phone && phone.trim() && cleanPhone.length !== 10) {
+    return res.status(400).json({ error: 'Please enter a valid 10-digit Indian mobile number.' });
+  }
+
+  if (cleanPhone) {
+    const otherUsers = db.prepare('SELECT id, name, phone FROM users WHERE id != ?').all(userId);
+    const duplicatePhoneUser = otherUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
+    if (duplicatePhoneUser) {
+      return res.status(400).json({
+        error: 'This phone number is already in use. Please use another mobile number to create user account.'
+      });
+    }
+  }
 
   try {
     if (password && password.trim() !== '') {
