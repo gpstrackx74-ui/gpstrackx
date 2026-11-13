@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../api/client';
 import { Vehicle, AlternativeRoute, Stoppage, TollGate } from '../types';
 import { InteractiveMap } from '../components/InteractiveMap';
@@ -183,10 +183,29 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; name?: string; address?: string } | null>(null);
   const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
   const [mapZoom, setMapZoom] = useState<number>(8);
+  const mapSearchRef = useRef<HTMLDivElement>(null);
 
-  // Debounced search for locations across India
+  // Outside click & touch listener: hide search bar when clicking anywhere on map or page
   useEffect(() => {
-    if (!mapSearchQuery || mapSearchQuery.trim().length < 2) {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (mapSearchRef.current && !mapSearchRef.current.contains(e.target as Node)) {
+        setShowMapSearch(false);
+        setMapSearchResults([]);
+      }
+    };
+    if (showMapSearch) {
+      document.addEventListener('mousedown', handleOutsideClick);
+      document.addEventListener('touchstart', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [showMapSearch]);
+
+  // Debounced search for locations across India (triggers on 1-2 letters)
+  useEffect(() => {
+    if (!mapSearchQuery || mapSearchQuery.trim().length < 1) {
       setMapSearchResults([]);
       return;
     }
@@ -203,7 +222,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       } finally {
         setMapSearchLoading(false);
       }
-    }, 250);
+    }, 200);
     return () => clearTimeout(timer);
   }, [mapSearchQuery]);
 
@@ -220,6 +239,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       setMapCenter([lat, lng]);
       setMapZoom(16); // High zoom street level view
       setMapSearchResults([]);
+      setShowMapSearch(false); // Hide search bar after selection
     }
   };
 
@@ -535,8 +555,11 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           const highwayDist = finalDistKm;
           const highwayMins = totalMins;
 
-          // Detect all FASTag tolls on this actual route corridor
-          const detectedTolls = detectRealTollsOnRoute(highwayCoords, 1.2, selectedAxle);
+          // Detect all FASTag tolls on this actual route corridor (adaptive threshold for highway routes)
+          let detectedTolls = detectRealTollsOnRoute(highwayCoords, 2.5, selectedAxle);
+          if (detectedTolls.length === 0 && highwayDist > 35) {
+            detectedTolls = detectRealTollsOnRoute(highwayCoords, 3.8, selectedAxle);
+          }
           const realTolls = detectedTolls.map(t => ({
             ...t,
             charges: customTollOverrides[t.name] !== undefined ? customTollOverrides[t.name] : t.charges
@@ -2669,7 +2692,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               <div className="relative rounded-2xl overflow-hidden min-h-[520px]">
                 {/* Floating Search Bar with Autocomplete across India */}
                 {showMapSearch && (
-                  <div className="absolute top-3 left-3 right-3 sm:right-auto sm:w-96 z-30 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-blue-200 p-2.5 transition-all">
+                  <div ref={mapSearchRef} className="absolute top-3 left-3 right-3 sm:right-auto sm:w-96 z-50 bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-blue-300 p-2.5 transition-all">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                         {mapSearchLoading ? <Loader2 className="w-4 h-4 animate-spin text-blue-600" /> : <Search className="w-4 h-4 text-blue-600" />}
@@ -2776,6 +2799,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                   isManualDrawing={isManualDrawing}
                   onMapClick={handleMapClick}
                   isDraggableRoute={isDraggableRoute}
+                  onUpdateTollPrice={handleUpdateTollPrice}
                   onRouteChange={handleRouteDragChange}
                 />
               </div>

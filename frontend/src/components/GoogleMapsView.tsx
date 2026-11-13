@@ -129,6 +129,7 @@ interface GoogleMapsViewProps {
   hideEditTools?: boolean;
   hideBreadcrumbs?: boolean;
   searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
+  onUpdateTollPrice?: (tollName: string, newPrice: number) => void;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -159,6 +160,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   hideEditTools = false,
   hideBreadcrumbs = false,
   searchLocation,
+  onUpdateTollPrice,
   onRouteChange,
   height = '520px'
 }) => {
@@ -1198,7 +1200,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       const marker = new google.maps.Marker({
         position: pos,
         map,
-        title: `${toll.name} (FASTag Toll Plaza)`,
+        title: `${toll.name} (FASTag Toll Plaza) - ₹${toll.charges || 0}`,
         icon: {
           url: tollPlazaSvg,
           scaledSize: new google.maps.Size(34, 34),
@@ -1207,6 +1209,54 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
         zIndex: 45
       });
       markersRef.current.push(marker);
+
+      const safeId = (toll.id || toll.name).toString().replace(/[^a-zA-Z0-9]/g, '');
+      const tollInfoWindow = new google.maps.InfoWindow({
+        content: `
+          <div style="padding: 6px; font-family: 'Plus Jakarta Sans', sans-serif; min-width: 200px;">
+            <div style="font-size: 10px; font-weight: bold; color: #D97706; text-transform: uppercase;">
+              🛑 NHAI FASTag Toll Plaza
+            </div>
+            <div style="font-size: 13px; font-weight: 800; color: #0F172A; margin-top: 2px;">
+              ${toll.name}
+            </div>
+            <div style="font-size: 10px; color: #64748B; margin-top: 2px;">
+              GPS: ${Number(toll.lat).toFixed(4)}, ${Number(toll.lng).toFixed(4)}
+            </div>
+            <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 700; color: #334155;">Toll Tariff:</span>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span style="font-size: 12px; font-weight: 800; color: #16A34A;">₹</span>
+                <input type="number" min="0" value="${toll.charges || 0}" id="gmap-toll-input-${safeId}" style="width: 70px; padding: 2px 6px; font-size: 12px; font-weight: 800; font-family: monospace; border: 1px solid #CBD5E1; border-radius: 6px; text-align: right;" />
+                <button id="gmap-toll-btn-${safeId}" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: #E60012; color: #FFFFFF; border: none; border-radius: 6px; cursor: pointer;">Save</button>
+              </div>
+            </div>
+          </div>
+        `
+      });
+
+      tollInfoWindow.addListener('domready', () => {
+        const btn = document.getElementById(`gmap-toll-btn-${safeId}`);
+        const input = document.getElementById(`gmap-toll-input-${safeId}`) as HTMLInputElement;
+        if (btn && input) {
+          btn.onclick = () => {
+            const val = parseFloat(input.value);
+            if (!isNaN(val) && onUpdateTollPrice) {
+              onUpdateTollPrice(toll.name, val);
+            }
+          };
+          input.onchange = () => {
+            const val = parseFloat(input.value);
+            if (!isNaN(val) && onUpdateTollPrice) {
+              onUpdateTollPrice(toll.name, val);
+            }
+          };
+        }
+      });
+
+      // Show on hover (mouseover) and click
+      marker.addListener('mouseover', () => openPopup(tollInfoWindow, marker));
+      marker.addListener('click', () => openPopup(tollInfoWindow, marker));
     });
 
     // Auto-fit bounds on initial route load

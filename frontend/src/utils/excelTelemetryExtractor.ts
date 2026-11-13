@@ -309,24 +309,40 @@ export function extractAccurateExcelTelemetry(workbook: XLSX.WorkBook): Extracte
       }
     }
 
-    // C. Calculate from Distance column (sum of row distances)
+    // C. Calculate from Distance column (sum of row distances or cumulative distance delta)
     if (!distanceKm && distKey) {
-      let sumDist = 0;
+      const distVals: number[] = [];
       for (const r of rawRows) {
         const v = cleanNumber(r[distKey]);
-        if (v !== null && v > 0) sumDist += v;
+        if (v !== null) distVals.push(v);
       }
-      if (sumDist > 0) {
-        const isMeters = distKey.toLowerCase().includes('(m)') || (sumDist > 5000 && rawRows.length > 5);
-        const km = isMeters ? sumDist / 1000 : sumDist;
+      const isCumulative = distKey.toLowerCase().includes('cumulative') ||
+        distKey.toLowerCase().includes('total') ||
+        (distVals.length > 5 && distVals[distVals.length - 1] > distVals[0] && distVals[1] >= distVals[0] && distVals[distVals.length - 1] >= distVals[distVals.length - 2]);
+
+      if (isCumulative && distVals.length > 0) {
+        const first = distVals[0];
+        const last = distVals[distVals.length - 1];
+        let delta = Math.abs(last - first);
+        if (delta === 0) delta = last;
+        const isMeters = distKey.toLowerCase().includes('(m)') || delta > 10000;
+        const km = isMeters ? delta / 1000 : delta;
         distanceKm = Math.round(km * 10) / 10;
         meterSource = 'distance_column';
+      } else if (distVals.length > 0) {
+        let sumDist = distVals.reduce((acc, v) => acc + (v > 0 ? v : 0), 0);
+        if (sumDist > 0) {
+          const isMeters = distKey.toLowerCase().includes('(m)') || (sumDist > 5000 && rawRows.length > 5);
+          const km = isMeters ? sumDist / 1000 : sumDist;
+          distanceKm = Math.round(km * 10) / 10;
+          meterSource = 'distance_column';
+        }
       }
     }
   }
 
   // ---------------------------------------------------------------------------
-  // STEP 4: Parse GPS Coordinates from rawRows
+  // STEP 4: Parse GPS Coordinates from rawRows (Universal Robust Parser)
   // ---------------------------------------------------------------------------
   const rawPoints: Array<{ lat: number; lng: number; name: string }> = [];
 
@@ -361,8 +377,24 @@ export function extractAccurateExcelTelemetry(workbook: XLSX.WorkBook): Extracte
     for (const key of Object.keys(row)) {
       const k = key.toLowerCase().trim();
       const val = row[key];
+      if (val === undefined || val === null || val === '') continue;
 
-      if (k.includes('start') && (k.includes('lat') || k.includes('coord') || k.includes('point'))) {
+      // 1. Check for single combined Lat-Lng column (e.g. "Lat-Lng", "Lat_Lng", "Lat/Lng", "Lat Lng", "Coordinates", "GPS", "Position")
+      const isCombinedCoordHeader = (
+        k.includes('lat-lng') || k.includes('lat_lng') || k.includes('lat/lng') ||
+        k.includes('lat lng') || k.includes('latlng') || k === 'lat-long' ||
+        k === 'lat_long' || k === 'lat/long' || k === 'lat long' ||
+        k.includes('coordinate') || k.includes('coord') || k === 'position' ||
+        k === 'gps' || k === 'location coords' || k === 'geo'
+      );
+
+      if (isCombinedCoordHeader) {
+        const coords = splitLatLong(val);
+        if (coords) {
+          singleLat = coords.lat;
+          singleLng = coords.lng;
+        }
+      } else if (k.includes('start') && (k.includes('lat') || k.includes('coord') || k.includes('point'))) {
         const coords = splitLatLong(val);
         if (coords) {
           startLat = coords.lat;
@@ -386,12 +418,42 @@ export function extractAccurateExcelTelemetry(workbook: XLSX.WorkBook): Extracte
         endLat = parseSingleCoord(val);
       } else if (['end_longitude', 'end_lng', 'endlng', 'end longitude', 'to_lng', 'dest_lng', 'end_lon'].includes(k)) {
         endLng = parseSingleCoord(val);
-      } else if (['latitude', 'lat', 'y', 'lat.'].includes(k)) {
+      } else if (k === 'latitude' || k === 'lat' || k === 'lat.' || k === 'y' || k.startsWith('lat_') || k.startsWith('lat ') || k.endsWith(' latitude')) {
         singleLat = parseSingleCoord(val);
-      } else if (['longitude', 'lng', 'lon', 'long', 'x', 'long.'].includes(k)) {
+      } else if (k === 'longitude' || k === 'lng' || k === 'lon' || k === 'long' || k === 'long.' || k === 'x' || k.startsWith('lng_') || k.startsWith('lon_') || k.endsWith(' longitude')) {
         singleLng = parseSingleCoord(val);
       } else if (['location', 'location name', 'address', 'name', 'city'].includes(k)) {
         singleLoc = String(val).trim();
+      }
+    }
+
+    // 2. UNIVERSAL STRING SCAN: If coordinates not matched by header, search cell string values for "lat, lng"
+    if (singleLat === null && singleLng === null && startLat === null && endLat === null) {
+      for (const key of Object.keys(row)) {
+        const val = row[key];
+        if (typeof val === 'string' && val.includes(',')) {
+          const coords = splitLatLong(val);
+          if (coords && coords.lat >= 6 && coords.lat <= 38 && coords.lng >= 68 && coords.lng <= 98) {
+            singleLat = coords.lat;
+            singleLng = coords.lng;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. UNIVERSAL NUMERIC COLUMN SCAN: Check if row contains numeric values matching Indian coordinates
+    if (singleLat === null && singleLng === null && startLat === null && endLat === null) {
+      const nums: number[] = [];
+      for (const key of Object.keys(row)) {
+        const n = cleanNumber(row[key]);
+        if (n !== null) nums.push(n);
+      }
+      const latCand = nums.find(n => n >= 6 && n <= 38);
+      const lngCand = nums.find(n => n >= 68 && n <= 98);
+      if (latCand !== undefined && lngCand !== undefined) {
+        singleLat = latCand;
+        singleLng = lngCand;
       }
     }
 

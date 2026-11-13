@@ -44,6 +44,7 @@ interface LeafletRouteMapProps {
   hideEditTools?: boolean;
   hideBreadcrumbs?: boolean;
   searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
+  onUpdateTollPrice?: (tollName: string, newPrice: number) => void;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -95,6 +96,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   hideEditTools = false,
   hideBreadcrumbs = false,
   searchLocation,
+  onUpdateTollPrice,
   onRouteChange,
   height = '500px'
 }) => {
@@ -784,6 +786,63 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       });
 
       L.marker(p, { icon: stopIcon, title: stop.name }).addTo(group);
+    });
+
+    // Toll Gates (Interactive Marker with Hover & Click Price Edit)
+    tollGates.forEach((toll) => {
+      if (!toll.lat || !toll.lng) return;
+      const p = L.latLng(toll.lat, toll.lng);
+      boundsPoints.push(p);
+
+      const tollIcon = L.divIcon({
+        className: 'custom-toll-icon',
+        html: `
+          <div style="background: #D97706; color: white; width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.35);">
+            🛑
+          </div>
+        `,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14]
+      });
+
+      const m = L.marker(p, { icon: tollIcon, title: `${toll.name} (FASTag Toll Plaza) - ₹${toll.charges || 0}` });
+      const safeId = (toll.id || toll.name).toString().replace(/[^a-zA-Z0-9]/g, '');
+      m.bindPopup(`
+        <div style="font-family: 'Plus Jakarta Sans', sans-serif; min-width: 190px; padding: 4px;">
+          <div style="font-size: 10px; font-weight: bold; color: #D97706; text-transform: uppercase;">🛑 NHAI FASTag Toll Plaza</div>
+          <div style="font-size: 13px; font-weight: 800; color: #0F172A; margin-top: 2px;">${toll.name}</div>
+          <div style="font-size: 10px; color: #64748B; margin-top: 2px;">GPS: ${Number(toll.lat).toFixed(4)}, ${Number(toll.lng).toFixed(4)}</div>
+          <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <span style="font-size: 11px; font-weight: bold; color: #334155;">Toll Tariff:</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span style="font-size: 12px; font-weight: bold; color: #16A34A;">₹</span>
+              <input type="number" min="0" value="${toll.charges || 0}" id="leaf-toll-input-${safeId}" style="width: 65px; padding: 2px 4px; font-size: 12px; font-weight: bold; font-family: monospace; border: 1px solid #CBD5E1; border-radius: 6px; text-align: right;" />
+              <button id="leaf-toll-btn-${safeId}" style="padding: 2px 6px; font-size: 10px; font-weight: bold; background: #E60012; color: white; border: none; border-radius: 6px; cursor: pointer;">Save</button>
+            </div>
+          </div>
+        </div>
+      `);
+      m.on('popupopen', () => {
+        const btn = document.getElementById(`leaf-toll-btn-${safeId}`);
+        const input = document.getElementById(`leaf-toll-input-${safeId}`) as HTMLInputElement;
+        if (btn && input) {
+          btn.onclick = () => {
+            const val = parseFloat(input.value);
+            if (!isNaN(val) && onUpdateTollPrice) {
+              onUpdateTollPrice(toll.name, val);
+            }
+          };
+          input.onchange = () => {
+            const val = parseFloat(input.value);
+            if (!isNaN(val) && onUpdateTollPrice) {
+              onUpdateTollPrice(toll.name, val);
+            }
+          };
+        }
+      });
+      m.on('mouseover', () => m.openPopup());
+      m.addTo(group);
     });
 
     // Auto-fit bounds
