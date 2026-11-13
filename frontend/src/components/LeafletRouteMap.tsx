@@ -45,6 +45,7 @@ interface LeafletRouteMapProps {
   hideBreadcrumbs?: boolean;
   searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
   onUpdateTollPrice?: (tollName: string, newPrice: number) => void;
+  onDeleteToll?: (toll: TollGate) => void;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -97,6 +98,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   hideBreadcrumbs = false,
   searchLocation,
   onUpdateTollPrice,
+  onDeleteToll,
   onRouteChange,
   height = '500px'
 }) => {
@@ -810,7 +812,10 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
       const safeId = (toll.id || toll.name).toString().replace(/[^a-zA-Z0-9]/g, '');
       m.bindPopup(`
         <div style="font-family: 'Plus Jakarta Sans', sans-serif; min-width: 190px; padding: 4px;">
-          <div style="font-size: 10px; font-weight: bold; color: #D97706; text-transform: uppercase;">🛑 NHAI FASTag Toll Plaza</div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="font-size: 10px; font-weight: bold; color: #D97706; text-transform: uppercase;">🛑 NHAI FASTag Toll Plaza</div>
+            ${onDeleteToll ? `<button id="leaf-toll-del-${safeId}" style="background: #FEE2E2; border: 1px solid #FECACA; color: #DC2626; font-size: 10px; font-weight: 700; cursor: pointer; padding: 1px 6px; border-radius: 4px;" title="Delete Toll">✕ Delete</button>` : ''}
+          </div>
           <div style="font-size: 13px; font-weight: 800; color: #0F172A; margin-top: 2px;">${toll.name}</div>
           <div style="font-size: 10px; color: #64748B; margin-top: 2px;">GPS: ${Number(toll.lat).toFixed(4)}, ${Number(toll.lng).toFixed(4)}</div>
           <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
@@ -824,6 +829,14 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
         </div>
       `);
       m.on('popupopen', () => {
+        const delBtn = document.getElementById(`leaf-toll-del-${safeId}`);
+        if (delBtn) {
+          delBtn.onclick = () => {
+            m.closePopup();
+            group.removeLayer(m);
+            if (onDeleteToll) onDeleteToll(toll);
+          };
+        }
         const btn = document.getElementById(`leaf-toll-btn-${safeId}`);
         const input = document.getElementById(`leaf-toll-input-${safeId}`) as HTMLInputElement;
         if (btn && input) {

@@ -40,6 +40,7 @@ interface InteractiveMapProps {
   searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
   onUpdateTollPrice?: (tollName: string, newPrice: number) => void;
   onUpdateToll?: (oldName: string, newName: string, newPrice: number) => void;
+  onDeleteToll?: (toll: TollGate) => void;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }

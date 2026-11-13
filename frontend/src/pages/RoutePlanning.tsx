@@ -113,6 +113,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [selectedAxle, setSelectedAxle] = useState<TruckAxleType>('4-axle');
   const [customTollOverrides, setCustomTollOverrides] = useState<Record<string, number>>({});
   const [customTollsAdded, setCustomTollsAdded] = useState<TollGate[]>([]);
+  const [deletedTollKeys, setDeletedTollKeys] = useState<Set<string>>(new Set());
   const [showAddCustomToll, setShowAddCustomToll] = useState<boolean>(false);
   const [newCustomTollName, setNewCustomTollName] = useState<string>('');
   const [newCustomTollLat, setNewCustomTollLat] = useState<string>('');
@@ -905,6 +906,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     }
     // CRITICAL: customTollsAdded MUST be empty [] so tolls are never doubled/accumulated!
     setCustomTollsAdded([]);
+    setDeletedTollKeys(new Set());
     setTollsInput(String(parsedTolls.length));
 
     // 3. Parse Overview Polyline Coordinates
@@ -1075,6 +1077,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       toll_type: 'FASTag Commercial Toll Barrier'
     };
 
+    const tollKey = `${tollName.toLowerCase()}_${lat.toFixed(4)}_${lng.toFixed(4)}`;
+    setDeletedTollKeys(prev => {
+      const next = new Set(prev);
+      next.delete(tollKey);
+      next.delete(tollName.toLowerCase());
+      return next;
+    });
+
     setCustomTollsAdded(prev => [...prev, newToll]);
     setRoutes(prev => prev.map(r => ({
       ...r,
@@ -1091,8 +1101,60 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     setShowAddCustomToll(false);
   };
 
-  const handleRemoveCustomToll = (idx: number) => {
-    setCustomTollsAdded(prev => prev.filter((_, i) => i !== idx));
+  const handleRemoveToll = (tollToRemove: TollGate, idx?: number) => {
+    const tollId = tollToRemove.id;
+    const tollName = (tollToRemove.name || '').trim().toLowerCase();
+    const tollLat = Number(tollToRemove.lat || 0).toFixed(4);
+    const tollLng = Number(tollToRemove.lng || 0).toFixed(4);
+    const tollKey = `${tollName}_${tollLat}_${tollLng}`;
+
+    // 1. Mark key and name in deletedTollKeys so currentTolls instantly excludes it
+    setDeletedTollKeys(prev => {
+      const next = new Set(prev);
+      next.add(tollKey);
+      if (tollId) next.add(String(tollId));
+      if (tollName) next.add(tollName);
+      return next;
+    });
+
+    // 2. Remove from customTollsAdded
+    setCustomTollsAdded(prev => prev.filter((t, i) => {
+      if (tollId && t.id && t.id === tollId) return false;
+      const k = `${(t.name || '').trim().toLowerCase()}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+      if (k === tollKey) return false;
+      if (idx !== undefined && i === idx) return false;
+      return true;
+    }));
+
+    // 3. Remove from manualTolls
+    setManualTolls(prev => prev.filter(t => {
+      if (tollId && t.id && t.id === tollId) return false;
+      const k = `${(t.name || '').trim().toLowerCase()}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+      return k !== tollKey;
+    }));
+
+    // 4. Remove from active route & all routes
+    setRoutes(prev => prev.map(r => {
+      const filtered = (r.tollGates || []).filter(t => {
+        if (tollId && t.id && t.id === tollId) return false;
+        const k = `${(t.name || '').trim().toLowerCase()}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+        return k !== tollKey;
+      });
+      return {
+        ...r,
+        tollGates: filtered,
+        tollGatesCount: filtered.length
+      };
+    }));
+
+    // 5. Remove price override if present
+    if (tollToRemove.name && customTollOverrides[tollToRemove.name] !== undefined) {
+      setCustomTollOverrides(prev => {
+        const copy = { ...prev };
+        delete copy[tollToRemove.name];
+        return copy;
+      });
+    }
   };
 
   const handleSelectVehicle = (vId: string) => {
@@ -1725,7 +1787,16 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     const list: TollGate[] = [];
     const seen = new Set<string>();
 
+    const isDeleted = (t: TollGate) => {
+      if (t.id && deletedTollKeys.has(String(t.id))) return true;
+      const tName = (t.name || '').trim().toLowerCase();
+      if (tName && deletedTollKeys.has(tName)) return true;
+      const key = `${tName}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
+      return deletedTollKeys.has(key);
+    };
+
     for (const t of rawTolls) {
+      if (isDeleted(t)) continue;
       const key = `${t.name || ''}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -1737,6 +1808,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     }
 
     for (const t of customTollsAdded) {
+      if (isDeleted(t)) continue;
       const key = `${t.name || ''}_${Number(t.lat || 0).toFixed(4)}_${Number(t.lng || 0).toFixed(4)}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -1748,7 +1820,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     }
 
     return list;
-  }, [rawTolls, customTollsAdded, customTollOverrides]);
+  }, [rawTolls, customTollsAdded, customTollOverrides, deletedTollKeys]);
   const totalTruckToll = computeTotalTruckToll(currentTolls);
   const effectiveDistanceKm = customDistanceKm !== null ? customDistanceKm : (activeRoute?.distanceKm || 0);
 
@@ -1768,7 +1840,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       setSaving(true);
       setErrorMsg(null);
 
-      const allTolls = currentTolls.length > 0 ? currentTolls : (selectedRoute.tollGates || []);
+      const allTolls = currentTolls;
       const totalEstimatedMinutes = (Number(travelHours) || 0) * 60 + (Number(travelMinutes) || 0);
       const effectiveDistance = customDistanceKm !== null ? customDistanceKm : (selectedRoute.distanceKm || 0);
 
@@ -2366,16 +2438,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                                 ↺
                               </button>
                             )}
-                            {toll.is_manual && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveCustomToll(idx)}
-                                className="text-slate-400 hover:text-red-600 p-0.5"
-                                title="Remove Custom Toll"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveToll(toll, idx)}
+                              className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition cursor-pointer"
+                              title="Delete Toll Gate"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       );
@@ -2877,6 +2947,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                       setStoppages([]);
                       setManualTolls([]);
                       setCustomTollsAdded([]);
+                      setDeletedTollKeys(new Set());
                       setSearchedLocation(null);
                     }}
                     className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-700 border border-slate-200 hover:border-red-200 transition cursor-pointer"
@@ -2971,6 +3042,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                   isDraggableRoute={isDraggableRoute}
                   onUpdateTollPrice={handleUpdateTollPrice}
                   onUpdateToll={handleUpdateToll}
+                  onDeleteToll={handleRemoveToll}
                   onRouteChange={handleRouteDragChange}
                 />
               </div>

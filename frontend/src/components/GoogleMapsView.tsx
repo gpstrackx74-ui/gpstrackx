@@ -134,6 +134,7 @@ interface GoogleMapsViewProps {
   searchLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
   onUpdateTollPrice?: (tollName: string, newPrice: number) => void;
   onUpdateToll?: (oldName: string, newName: string, newPrice: number) => void;
+  onDeleteToll?: (toll: TollGate) => void;
   onRouteChange?: (updated: { coordinates: [number, number][]; distanceKm: number; timeMinutes: number; summary?: string }) => void;
   height?: string;
 }
@@ -166,6 +167,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
   searchLocation,
   onUpdateTollPrice,
   onUpdateToll,
+  onDeleteToll,
   onRouteChange,
   height = '520px'
 }) => {
@@ -1228,8 +1230,11 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       const tollInfoWindow = new google.maps.InfoWindow({
         content: `
           <div style="padding: 6px 8px; font-family: 'Plus Jakarta Sans', sans-serif; min-width: 210px;">
-            <div style="font-size: 10px; font-weight: bold; color: #D97706; text-transform: uppercase; letter-spacing: 0.5px;">
-              🛑 FASTag Toll Plaza
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+              <div style="font-size: 10px; font-weight: bold; color: #D97706; text-transform: uppercase; letter-spacing: 0.5px;">
+                🛑 FASTag Toll Plaza
+              </div>
+              <button id="gmap-toll-del-${safeId}" style="background: none; border: none; color: #EF4444; font-size: 11px; font-weight: 700; cursor: pointer; padding: 1px 4px; border-radius: 4px;" title="Delete this toll">✕ Delete</button>
             </div>
             <div style="margin-top: 4px;">
               <input type="text" value="${toll.name || ''}" id="gmap-toll-name-${safeId}" style="width: 100%; padding: 4px 6px; font-size: 12px; font-weight: 700; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 6px; box-sizing: border-box;" placeholder="Toll Plaza Name" />
@@ -1251,6 +1256,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
 
       tollInfoWindow.addListener('domready', () => {
         const btn = document.getElementById(`gmap-toll-btn-${safeId}`);
+        const delBtn = document.getElementById(`gmap-toll-del-${safeId}`);
         const input = document.getElementById(`gmap-toll-input-${safeId}`) as HTMLInputElement;
         const nameInput = document.getElementById(`gmap-toll-name-${safeId}`) as HTMLInputElement;
 
@@ -1267,6 +1273,13 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
 
         if (btn) {
           btn.onclick = handleSaveToll;
+        }
+        if (delBtn) {
+          delBtn.onclick = () => {
+            tollInfoWindow.close();
+            marker.setMap(null);
+            if (onDeleteToll) onDeleteToll(toll);
+          };
         }
         if (input) {
           input.onkeydown = (e) => {
