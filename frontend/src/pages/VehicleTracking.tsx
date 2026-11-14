@@ -689,6 +689,22 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 <h2 className="text-xl font-black text-slate-900 tracking-tight font-mono">
                   {vehicle.registration_no}
                 </h2>
+
+                {/* Multi-vehicle quick switcher */}
+                {vehicleList.length > 1 && onSwitchVehicle && (
+                  <select
+                    value={vehicle.id}
+                    onChange={(e) => onSwitchVehicle(Number(e.target.value))}
+                    className="text-xs font-mono font-bold bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-slate-800 shadow-2xs hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer"
+                    title="Switch between your assigned vehicles"
+                  >
+                    {vehicleList.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        🚚 {v.registration_no} {v.name_model ? `(${v.name_model})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isMoving
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                   : isStopped

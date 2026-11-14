@@ -610,6 +610,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 type="button"
                                 onClick={() => {
                                   if (isUserMode) {
+                                    api.getVehicleTrips(v.id)
+                                      .then(trips => setUserVehicleTrips(trips || []))
+                                      .catch(() => {});
                                     setUserActiveTab('history');
                                   } else {
                                     handleOpenHistoryModal(v);
@@ -659,11 +662,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       Vehicle Journey Logs & Date-Wise Trip History
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
-                      {vehicles.length > 0 ? `${vehicles[0].registration_no} • ${userVehicleTrips.length} Total Trips Recorded` : 'No vehicle assigned to this account'}
+                      {vehicles.length > 0 ? `${(vehicles.find(v => v.id === userVehicleTrips[0]?.vehicle_id) || vehicles[0]).registration_no} • ${userVehicleTrips.length} Total Trips Recorded` : 'No vehicle assigned to this account'}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {vehicles.length > 1 && (
+                    <select
+                      value={userVehicleTrips[0]?.vehicle_id || vehicles[0].id}
+                      onChange={(e) => {
+                        const targetId = Number(e.target.value);
+                        api.getVehicleTrips(targetId)
+                          .then(trips => setUserVehicleTrips(trips || []))
+                          .catch(() => {});
+                      }}
+                      className="px-2.5 py-1 text-xs font-mono font-bold bg-white border border-slate-300 rounded-xl text-slate-800 shadow-2xs hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer"
+                      title="Select Vehicle for Trip History"
+                    >
+                      {vehicles.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          🚚 {v.registration_no}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <button
                     type="button"
                     onClick={() => setUserActiveTab('vehicle')}

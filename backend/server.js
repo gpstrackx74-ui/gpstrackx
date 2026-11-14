@@ -107,6 +107,47 @@ function cleanPhoneNumber(phone) {
   return String(phone).replace(/[^0-9]/g, '').slice(-10);
 }
 
+// Helper: Get all user IDs associated with a user or sharing the same 10-digit mobile number
+function getUserAssociatedUserIds(userId) {
+  try {
+    const targetId = parseInt(userId);
+    if (!targetId) return [];
+    const user = db.prepare('SELECT id, phone FROM users WHERE id = ?').get(targetId);
+    if (!user) return [targetId];
+    if (!user.phone) return [targetId];
+    const clean = cleanPhoneNumber(user.phone);
+    if (!clean || clean.length < 7) return [targetId];
+    const allUsers = db.prepare('SELECT id, phone FROM users').all();
+    const matched = allUsers
+      .filter(u => u.phone && cleanPhoneNumber(u.phone) === clean)
+      .map(u => u.id);
+    return matched.length > 0 ? Array.from(new Set([targetId, ...matched])) : [targetId];
+  } catch (e) {
+    return [parseInt(userId)];
+  }
+}
+
+// Helper: Get all vehicle IDs assigned or allocated to a user or any user account sharing their mobile number
+function getAccessibleVehicleIdsForUser(userId) {
+  const userIds = getUserAssociatedUserIds(userId);
+  if (!userIds || userIds.length === 0) return [];
+  const placeholders = userIds.map(() => '?').join(',');
+
+  try {
+    const rows = db.prepare(`
+      SELECT DISTINCT id FROM vehicles 
+      WHERE assigned_user_id IN (${placeholders})
+      UNION
+      SELECT DISTINCT vehicle_id AS id FROM vehicle_allocations
+      WHERE user_id IN (${placeholders})
+    `).all(...userIds, ...userIds);
+
+    return rows.map(r => r.id);
+  } catch (e) {
+    return [];
+  }
+}
+
 function getDeviceInfo(userAgent) {
   if (!userAgent) return 'Web Browser';
   if (/android/i.test(userAgent)) return 'Mobile (Android)';
@@ -231,11 +272,17 @@ app.post('/api/auth/login-otp', (req, res) => {
   // 2. If user wasn't found by email, find by phone
   if (!user) {
     const allUsers = db.prepare('SELECT * FROM users').all();
-    user = allUsers.find(u => {
+    const phoneCandidates = allUsers.filter(u => {
       if (!u.phone) return false;
       const uClean = cleanPhoneNumber(u.phone);
       return uClean === clean || uClean.endsWith(clean) || clean.endsWith(uClean);
     });
+    if (phoneCandidates.length > 0) {
+      const active = phoneCandidates.filter(u => u.status === 'active');
+      const pool = active.length > 0 ? active : phoneCandidates;
+      pool.sort((a, b) => b.id - a.id);
+      user = pool[0];
+    }
   }
 
   if (!user) {
@@ -554,20 +601,28 @@ app.get('/api/dashboard/stats', authenticateToken, (req, res) => {
   let params = [];
 
   if (!isAdmin) {
-    vehicleFilter = 'WHERE assigned_user_id = ?';
-    params = [req.user.id];
+    const accessibleVehicleIds = getAccessibleVehicleIdsForUser(req.user.id);
+    if (accessibleVehicleIds.length === 0) {
+      vehicleFilter = 'WHERE 1 = 0';
+      params = [];
+    } else {
+      const vPlaceholders = accessibleVehicleIds.map(() => '?').join(',');
+      vehicleFilter = `WHERE v.id IN (${vPlaceholders})`;
+      params = [...accessibleVehicleIds];
+    }
   }
 
-  const totalVehicles = db.prepare(`SELECT COUNT(*) as count FROM vehicles ${vehicleFilter}`).get(...params).count;
-  const activeVehicles = db.prepare(`SELECT COUNT(*) as count FROM vehicles ${isAdmin ? "WHERE status = 'active' OR status = 'moving'" : "WHERE assigned_user_id = ? AND (status = 'active' OR status = 'moving')"}`).get(...params).count;
-  const inactiveVehicles = db.prepare(`SELECT COUNT(*) as count FROM vehicles ${isAdmin ? "WHERE status = 'inactive'" : "WHERE assigned_user_id = ? AND status = 'inactive'"}`).get(...params).count;
-  const movingVehicles = db.prepare(`SELECT COUNT(*) as count FROM vehicles ${isAdmin ? "WHERE status = 'moving'" : "WHERE assigned_user_id = ? AND status = 'moving'"}`).get(...params).count;
+  const vFilterBase = vehicleFilter ? vehicleFilter.replace(/^WHERE\s+/, '') : '';
+  const totalVehicles = db.prepare(`SELECT COUNT(*) as count FROM vehicles v ${vehicleFilter}`).get(...params).count;
+  const activeVehicles = db.prepare(`SELECT COUNT(*) as count FROM vehicles v WHERE ${vFilterBase ? `(${vFilterBase}) AND ` : ''}(v.status = 'active' OR v.status = 'moving')`).get(...params).count;
+  const inactiveVehicles = db.prepare(`SELECT COUNT(*) as count FROM vehicles v WHERE ${vFilterBase ? `(${vFilterBase}) AND ` : ''}v.status = 'inactive'`).get(...params).count;
+  const movingVehicles = db.prepare(`SELECT COUNT(*) as count FROM vehicles v WHERE ${vFilterBase ? `(${vFilterBase}) AND ` : ''}v.status = 'moving'`).get(...params).count;
 
-  const avgSpeedRow = db.prepare(`SELECT AVG(current_speed) as avgSpeed FROM vehicles ${isAdmin ? "WHERE status = 'moving'" : "WHERE assigned_user_id = ? AND status = 'moving'"}`).get(...params);
+  const avgSpeedRow = db.prepare(`SELECT AVG(v.current_speed) as avgSpeed FROM vehicles v WHERE ${vFilterBase ? `(${vFilterBase}) AND ` : ''}v.status = 'moving'`).get(...params);
   const avgSpeed = avgSpeedRow && avgSpeedRow.avgSpeed ? parseFloat(avgSpeedRow.avgSpeed.toFixed(1)) : 0;
 
   const totalUsers = isAdmin ? db.prepare('SELECT COUNT(*) as count FROM users').get().count : 1;
-  const totalRoutes = db.prepare(`SELECT COUNT(*) as count FROM routes r JOIN vehicles v ON r.vehicle_id = v.id ${isAdmin ? '' : 'WHERE v.assigned_user_id = ?'}`).get(...params).count;
+  const totalRoutes = db.prepare(`SELECT COUNT(*) as count FROM routes r JOIN vehicles v ON r.vehicle_id = v.id ${vehicleFilter}`).get(...params).count;
 
   // Recent vehicles with route info
   const recentVehiclesQuery = `
@@ -608,13 +663,25 @@ app.get('/api/vehicles', authenticateToken, (req, res) => {
   let conditions = [];
   let params = [];
 
-  // Strict RBAC: normal users can ONLY ever see their own vehicles
+  // Strict RBAC: normal users can ONLY ever see their own vehicles (and all vehicles allocated to their mobile number)
   if (!isAdmin) {
-    conditions.push('v.assigned_user_id = ?');
-    params.push(req.user.id);
+    const accessibleVehicleIds = getAccessibleVehicleIdsForUser(req.user.id);
+    if (accessibleVehicleIds.length === 0) {
+      conditions.push('1 = 0');
+    } else {
+      const vPlaceholders = accessibleVehicleIds.map(() => '?').join(',');
+      conditions.push(`v.id IN (${vPlaceholders})`);
+      params.push(...accessibleVehicleIds);
+    }
   } else if (userId && userId !== 'all') {
-    conditions.push('v.assigned_user_id = ?');
-    params.push(userId);
+    const accessibleVehicleIds = getAccessibleVehicleIdsForUser(userId);
+    if (accessibleVehicleIds.length === 0) {
+      conditions.push('1 = 0');
+    } else {
+      const vPlaceholders = accessibleVehicleIds.map(() => '?').join(',');
+      conditions.push(`v.id IN (${vPlaceholders})`);
+      params.push(...accessibleVehicleIds);
+    }
   }
 
   if (search && search.trim() !== '') {
@@ -681,10 +748,10 @@ app.get('/api/vehicles', authenticateToken, (req, res) => {
 app.get('/api/vehicles/:id/trips', authenticateToken, (req, res) => {
   const vehicleId = req.params.id;
 
-  // Strict User Isolation: Regular users can ONLY ever access trips for their own assigned vehicle
+  // Strict User Isolation: Regular users can ONLY ever access trips for their own accessible vehicles
   if (req.user.role !== 'admin') {
-    const checkVeh = db.prepare('SELECT assigned_user_id FROM vehicles WHERE id = ?').get(vehicleId);
-    if (!checkVeh || checkVeh.assigned_user_id !== req.user.id) {
+    const accessibleIds = getAccessibleVehicleIdsForUser(req.user.id);
+    if (!accessibleIds.includes(parseInt(vehicleId))) {
       return res.status(403).json({ error: 'Access denied: You do not have permission to view trips for this vehicle.' });
     }
   }
@@ -763,8 +830,8 @@ app.put('/api/routes/:id/activate', authenticateToken, (req, res) => {
 
     // If regular user, verify vehicle assignment
     if (req.user.role !== 'admin') {
-      const vehicle = db.prepare('SELECT assigned_user_id FROM vehicles WHERE id = ?').get(route.vehicle_id);
-      if (!vehicle || vehicle.assigned_user_id !== req.user.id) {
+      const accessibleIds = getAccessibleVehicleIdsForUser(req.user.id);
+      if (!accessibleIds.includes(route.vehicle_id)) {
         return res.status(403).json({ error: 'Unauthorized: You can only activate trips for your assigned vehicle.' });
       }
     }
@@ -802,8 +869,8 @@ app.put('/api/routes/:id/operational-status', authenticateToken, (req, res) => {
 
     // Regular users can only update routes for their assigned vehicles
     if (req.user.role !== 'admin') {
-      const vehicle = db.prepare('SELECT assigned_user_id FROM vehicles WHERE id = ?').get(route.vehicle_id);
-      if (!vehicle || vehicle.assigned_user_id !== req.user.id) {
+      const accessibleIds = getAccessibleVehicleIdsForUser(req.user.id);
+      if (!accessibleIds.includes(route.vehicle_id)) {
         return res.status(403).json({ error: 'Unauthorized' });
       }
     }
@@ -878,9 +945,12 @@ app.get('/api/vehicles/:id', authenticateToken, (req, res) => {
     return res.status(404).json({ error: 'Vehicle not found' });
   }
 
-  // Strict User Isolation: Regular users can ONLY ever access their own assigned vehicle
-  if (req.user.role !== 'admin' && vehicle.assigned_user_id !== req.user.id) {
-    return res.status(403).json({ error: 'Access denied: You do not have permission to view this vehicle.' });
+  // Strict User Isolation: Regular users can ONLY ever access their own assigned vehicles
+  if (req.user.role !== 'admin') {
+    const accessibleIds = getAccessibleVehicleIdsForUser(req.user.id);
+    if (!accessibleIds.includes(vehicle.id)) {
+      return res.status(403).json({ error: 'Access denied: You do not have permission to view this vehicle.' });
+    }
   }
 
   // Get active route details (or fallback to latest recorded route for this vehicle)
@@ -1193,13 +1263,19 @@ app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
 
   const sql = `
     SELECT 
-      u.id, u.name, u.email, u.phone, u.role, u.status, u.avatar_color, u.created_at,
-      COUNT(DISTINCT v.id) as vehicle_count,
+      u.id, u.name, u.email, u.phone, u.role, u.status, u.avatar_color, u.company_name, u.created_at,
+      COUNT(DISTINCT coalesce_v.id) as vehicle_count,
       COUNT(DISTINCT r.id) as trip_count,
-      GROUP_CONCAT(DISTINCT v.registration_no) as assigned_reg_nos
+      GROUP_CONCAT(DISTINCT coalesce_v.registration_no) as assigned_reg_nos
     FROM users u
-    LEFT JOIN vehicles v ON u.id = v.assigned_user_id
-    LEFT JOIN routes r ON v.id = r.vehicle_id
+    LEFT JOIN (
+      SELECT id, registration_no, assigned_user_id FROM vehicles
+      UNION
+      SELECT v2.id, v2.registration_no, va.user_id as assigned_user_id
+      FROM vehicle_allocations va
+      JOIN vehicles v2 ON va.vehicle_id = v2.id
+    ) coalesce_v ON u.id = coalesce_v.assigned_user_id
+    LEFT JOIN routes r ON coalesce_v.id = r.vehicle_id
     ${whereClause}
     GROUP BY u.id
     ORDER BY u.id DESC
@@ -2312,8 +2388,10 @@ app.get('/api/allocations', authenticateToken, (req, res) => {
   let params = [];
 
   if (!isAdmin) {
-    conditions.push('va.user_id = ?');
-    params.push(req.user.id);
+    const userIds = getUserAssociatedUserIds(req.user.id);
+    const uPlaceholders = userIds.map(() => '?').join(',');
+    conditions.push(`va.user_id IN (${uPlaceholders})`);
+    params.push(...userIds);
   }
 
   if (status && status !== 'all') {
@@ -2390,6 +2468,9 @@ app.get('/api/allocations', authenticateToken, (req, res) => {
 
 // Single Driver Active Allocation Endpoint (For Driver Mobile/Desktop Dashboard)
 app.get('/api/allocations/my', authenticateToken, (req, res) => {
+  const userIds = getUserAssociatedUserIds(req.user.id);
+  const uPlaceholders = userIds.map(() => '?').join(',');
+
   const allocation = db.prepare(`
     SELECT 
       va.id as allocation_id,
@@ -2424,10 +2505,10 @@ app.get('/api/allocations/my', authenticateToken, (req, res) => {
     FROM vehicle_allocations va
     JOIN vehicles v ON va.vehicle_id = v.id
     LEFT JOIN routes r ON (va.route_id = r.id OR (v.id = r.vehicle_id AND r.is_active = 1))
-    WHERE va.user_id = ? AND va.allocation_status = 'ACTIVE'
+    WHERE va.user_id IN (${uPlaceholders}) AND va.allocation_status = 'ACTIVE'
     ORDER BY va.id DESC
     LIMIT 1
-  `).get(req.user.id);
+  `).get(...userIds);
 
   if (!allocation) {
     return res.json({ allocated: false, message: 'No vehicle or route currently assigned by fleet administrator.' });
@@ -2461,15 +2542,16 @@ app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
   let conditions = [];
   let params = [];
 
-  // RBAC: Non-admin users see transactions for vehicles assigned or allocated to them
+  // RBAC: Non-admin users see transactions for all vehicles assigned or allocated to them or their mobile number
   if (!isAdmin) {
-    conditions.push(`(
-      ft.vehicle_id IN (SELECT id FROM vehicles WHERE assigned_user_id = ?)
-      OR ft.vehicle_id IN (SELECT vehicle_id FROM vehicle_allocations WHERE user_id = ?)
-      OR ft.route_id IN (SELECT route_id FROM vehicle_allocations WHERE user_id = ? AND route_id IS NOT NULL)
-      OR ft.route_id IN (SELECT r.id FROM routes r JOIN vehicles v ON r.vehicle_id = v.id WHERE v.assigned_user_id = ?)
-    )`);
-    params.push(req.user.id, req.user.id, req.user.id, req.user.id);
+    const accessibleVehicleIds = getAccessibleVehicleIdsForUser(req.user.id);
+    if (accessibleVehicleIds.length === 0) {
+      conditions.push('1 = 0');
+    } else {
+      const vPlaceholders = accessibleVehicleIds.map(() => '?').join(',');
+      conditions.push(`ft.vehicle_id IN (${vPlaceholders})`);
+      params.push(...accessibleVehicleIds);
+    }
   }
 
   if (vehicle_id && vehicle_id !== 'all') {
@@ -2596,6 +2678,13 @@ app.get('/api/fastag/transactions/:id', authenticateToken, (req, res) => {
 
     if (!tx) {
       return res.status(404).json({ error: 'FASTag transaction not found.' });
+    }
+
+    if (req.user.role !== 'admin') {
+      const accessibleVehicleIds = getAccessibleVehicleIdsForUser(req.user.id);
+      if (!accessibleVehicleIds.includes(tx.vehicle_id)) {
+        return res.status(403).json({ error: 'Access denied: You do not have permission to view this transaction.' });
+      }
     }
 
     res.json(tx);

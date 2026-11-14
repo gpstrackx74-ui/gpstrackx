@@ -19,7 +19,8 @@ import {
   Building2,
   FileSpreadsheet,
   CheckCircle2,
-  Loader2
+  Loader2,
+  ChevronDown
 } from 'lucide-react';
 
 export const UsersManagement: React.FC = () => {
@@ -34,6 +35,7 @@ export const UsersManagement: React.FC = () => {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [openVehiclePopoverId, setOpenVehiclePopoverId] = useState<number | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -628,16 +630,71 @@ export const UsersManagement: React.FC = () => {
 
                       <td className="px-5 py-3.5">
                         {hasAssigned ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {assignedList.map((v) => (
-                              <span
-                                key={v.registration_no}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#0F172A] font-mono text-[10px] font-bold border border-emerald-200"
-                              >
-                                <Truck className="w-2.5 h-2.5" />
-                                {v.registration_no}
-                              </span>
-                            ))}
+                          <div className="relative inline-flex items-center gap-1.5 flex-nowrap">
+                            {/* Always show the first vehicle badge in front */}
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#0F172A] font-mono text-[10px] font-bold border border-emerald-200 whitespace-nowrap shadow-2xs"
+                              title={assignedList[0].registration_no}
+                            >
+                              <Truck className="w-2.5 h-2.5 text-emerald-600" />
+                              {assignedList[0].registration_no}
+                            </span>
+
+                            {/* Show More toggle if multiple vehicles are assigned */}
+                            {assignedList.length > 1 && (
+                              <div className="relative inline-block">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenVehiclePopoverId(openVehiclePopoverId === u.id ? null : u.id);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 font-mono text-[10px] font-bold border border-blue-200 transition cursor-pointer shadow-2xs whitespace-nowrap"
+                                  title={`Click to view all ${assignedList.length} assigned vehicles`}
+                                >
+                                  <span>+{assignedList.length - 1} more</span>
+                                  <ChevronDown className={`w-2.5 h-2.5 transition-transform ${openVehiclePopoverId === u.id ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {openVehiclePopoverId === u.id && (
+                                  <>
+                                    <div
+                                      className="fixed inset-0 z-30 cursor-default"
+                                      onClick={() => setOpenVehiclePopoverId(null)}
+                                    />
+                                    <div
+                                      className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1.5 z-40 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 min-w-[210px] max-w-[280px] animate-in fade-in zoom-in-95 duration-150"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-100 text-[11px] font-bold text-slate-800">
+                                        <span className="flex items-center gap-1">
+                                          <Truck className="w-3 h-3 text-slate-600" />
+                                          Assigned Vehicles ({assignedList.length})
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setOpenVehiclePopoverId(null)}
+                                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded-md hover:bg-slate-100 cursor-pointer"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                                        {assignedList.map((v: any, vIdx: number) => (
+                                          <span
+                                            key={v.registration_no || vIdx}
+                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#F1F5F9] text-[#0F172A] font-mono text-[10px] font-bold border border-emerald-200"
+                                          >
+                                            <Truck className="w-2.5 h-2.5 text-emerald-600" />
+                                            {v.registration_no}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <span className="text-slate-400 text-[11px] italic">None assigned</span>
