@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { FastagTransaction } from '../types';
+import { AXIS_BANK_LOGO_BASE64 } from './axisBankLogoBase64';
 
 export interface FastagStatementReportData {
   customerName?: string;
@@ -104,18 +105,18 @@ function drawLogoBox(doc: jsPDF, x: number, y: number, w: number, h: number) {
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(x, y, w, h, 2, 2, 'FD');
 
-  // Axis Bank Burgundy Triangle Emblem
-  doc.setFillColor(151, 20, 77); // #97144D
-  doc.triangle(x + 4, y + h - 3, x + 8, y + 3, x + 11.5, y + h - 3, 'F');
-  // Inner white chevron cutout
-  doc.setFillColor(255, 255, 255);
-  doc.triangle(x + 5.5, y + h - 3.5, x + 8, y + 5.5, x + 10, y + h - 3.5, 'F');
-
-  // AXIS BANK text
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(151, 20, 77);
-  doc.text('AXIS BANK', x + 13.5, y + h / 2 + 1.2);
+  // Axis Bank Logo Image (Official logo uploaded by user)
+  try {
+    doc.addImage(AXIS_BANK_LOGO_BASE64, 'PNG', x + 3, y + (h - 7.5) / 2, 23.3, 7.5);
+  } catch (e) {
+    // Fallback vector
+    doc.setFillColor(151, 20, 77); // #97144D
+    doc.triangle(x + 4, y + h - 3, x + 8, y + 3, x + 11.5, y + h - 3, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(151, 20, 77);
+    doc.text('AXIS BANK', x + 13.5, y + h / 2 + 1.2);
+  }
 
   // Center vertical divider
   const divX = x + 30;

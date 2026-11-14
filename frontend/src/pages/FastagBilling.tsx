@@ -473,10 +473,10 @@ export const FastagBilling: React.FC = () => {
                   onClick={() => handleOpenStatement()}
                   disabled={vehicleTransactions.length === 0}
                   className="px-4 py-2.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-black text-xs flex items-center gap-2 transition shadow-xs cursor-pointer disabled:opacity-50"
-                  title="Generate Official FASTag Statement Receipt"
+                  title="View Bill"
                 >
                   <FileText className="w-4 h-4" />
-                  <span>Generate Statement ({vehicleTransactions.length} Tolls • ₹{totalDebitAmount.toLocaleString('en-IN')})</span>
+                  <span>View Bill ({vehicleTransactions.length} Tolls • ₹{totalDebitAmount.toLocaleString('en-IN')})</span>
                 </button>
               </div>
             </div>
@@ -615,7 +615,6 @@ export const FastagBilling: React.FC = () => {
                         <th className="py-2.5 px-3 text-center">Closing Balance (₹)</th>
                         <th className="py-2.5 px-3">Description</th>
                         <th className="py-2.5 px-3 text-center">Transaction ID</th>
-                        <th className="py-2.5 px-3 text-center">Receipt</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-slate-800 font-medium">
@@ -687,19 +686,6 @@ export const FastagBilling: React.FC = () => {
                                   )}
                                 </button>
                               </div>
-                            </td>
-
-                            {/* View Bill Button */}
-                            <td className="py-3 px-3 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenStatement([tx])}
-                                className="px-3 py-1 rounded-lg bg-[#E60012] hover:bg-[#CC0010] text-white text-[11px] font-bold inline-flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                title="View Bill"
-                              >
-                                <FileText className="w-3 h-3" />
-                                <span>View Bill</span>
-                              </button>
                             </td>
                           </tr>
                         );
@@ -807,15 +793,11 @@ export const FastagBilling: React.FC = () => {
                     {/* AXIS BANK | GPSTRACKX Logo Container */}
                     <div className="flex items-center gap-3 border border-slate-300 rounded-xl px-3 py-1.5 bg-white shadow-2xs">
                       {/* Axis Bank Logo */}
-                      <div className="flex items-center gap-1.5">
-                        <svg className="w-4 h-4" viewBox="0 0 40 40">
-                          <polygon points="6,34 20,6 34,34" fill="#97144D" />
-                          <polygon points="12,32 20,16 28,32" fill="#FFFFFF" />
-                        </svg>
-                        <span className="text-[11px] font-black text-[#97144D] tracking-wide">
-                          AXIS BANK
-                        </span>
-                      </div>
+                      <img
+                        src="/axis_bank_logo.png"
+                        alt="AXIS BANK"
+                        className="h-6 w-auto object-contain"
+                      />
 
                       <div className="h-4 w-px bg-slate-300" />
 
