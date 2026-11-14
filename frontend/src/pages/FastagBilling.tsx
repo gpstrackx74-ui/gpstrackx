@@ -352,44 +352,33 @@ export const FastagBilling: React.FC = () => {
         {/* VEHICLE SELECTION SECTION                                      */}
         {/* ============================================================== */}
         <div className="p-4 sm:p-5 bg-slate-50/50 border-b border-slate-100">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-red-50 text-[#E60012] flex items-center justify-center shrink-0">
-                <Truck className="w-4 h-4" />
-              </div>
-              <span className="text-xs font-bold text-slate-700">
-                Fleet Vehicle:
-              </span>
+          <div className="flex items-center justify-start gap-2 max-w-lg">
+            {/* Vehicle Selector Dropdown (Left Aligned) */}
+            <div className="relative flex-1">
+              <select
+                value={selectedVehicleId}
+                onChange={(e) => setSelectedVehicleId(e.target.value)}
+                className="w-full bg-white px-3.5 py-2.5 rounded-xl border border-slate-300 font-bold text-xs text-slate-900 focus:outline-none focus:border-red-600 shadow-2xs cursor-pointer"
+              >
+                <option value="">-- Choose Commercial Truck ({vehicles.length}) --</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={String(v.id)}>
+                    {v.registration_no} • {v.name_model} {v.owner_name ? `(Owner: ${v.owner_name})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* Vehicle Selector Dropdown */}
-            <div className="flex items-center gap-2 min-w-[280px]">
-              <div className="relative flex-1">
-                <select
-                  value={selectedVehicleId}
-                  onChange={(e) => setSelectedVehicleId(e.target.value)}
-                  className="w-full bg-white px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-xs text-slate-900 focus:outline-none focus:border-red-600 shadow-2xs cursor-pointer"
-                >
-                  <option value="">-- Choose Commercial Truck ({vehicles.length}) --</option>
-                  {vehicles.map((v) => (
-                    <option key={v.id} value={String(v.id)}>
-                      {v.registration_no} • {v.name_model} {v.owner_name ? `(Owner: ${v.owner_name})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedVehicleId && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedVehicleId('')}
-                  className="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition cursor-pointer"
-                  title="Clear Vehicle Selection"
-                >
-                  Change
-                </button>
-              )}
-            </div>
+            {selectedVehicleId && (
+              <button
+                type="button"
+                onClick={() => setSelectedVehicleId('')}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition cursor-pointer shrink-0"
+                title="Clear Vehicle Selection"
+              >
+                Change
+              </button>
+            )}
           </div>
 
           {/* Quick Click Vehicle Cards when no vehicle is selected */}
@@ -443,12 +432,6 @@ export const FastagBilling: React.FC = () => {
                     <span className="font-mono font-black text-lg text-slate-900 tracking-tight">
                       {selectedVehicle?.registration_no}
                     </span>
-                    <span className="text-[10px] font-bold text-slate-700 bg-white px-2.5 py-0.5 rounded-full border border-slate-200">
-                      {selectedVehicle?.name_model || 'Commercial Truck'}
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-full">
-                      {selectedVehicle?.vehicle_type || 'Heavy Vehicle'}
-                    </span>
                   </div>
                   <div className="text-xs text-slate-500 mt-1 flex items-center gap-3 flex-wrap">
                     <span>
@@ -476,7 +459,7 @@ export const FastagBilling: React.FC = () => {
                   title="View Bill"
                 >
                   <FileText className="w-4 h-4" />
-                  <span>View Bill ({vehicleTransactions.length} Tolls • ₹{totalDebitAmount.toLocaleString('en-IN')})</span>
+                  <span>View Bill</span>
                 </button>
               </div>
             </div>
