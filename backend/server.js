@@ -1261,6 +1261,214 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
   }
 });
 
+// ---------------- EXCEL IMPORT: USER + VEHICLE + FASTAG TRANSACTIONS ---------------- //
+app.post('/api/fleet/import-excel', authenticateToken, requireAdmin, async (req, res) => {
+  const { customerName, customerMobile, truckNumber, truckOwnerName, transactions } = req.body;
+
+  if (!customerName || !customerName.trim()) {
+    return res.status(400).json({ error: 'Customer Name is required from Sheet 0' });
+  }
+  if (!customerMobile || !String(customerMobile).trim()) {
+    return res.status(400).json({ error: 'Customer Mobile is required from Sheet 0' });
+  }
+  if (!truckNumber || !String(truckNumber).trim()) {
+    return res.status(400).json({ error: 'Truck Number is required from Sheet 0' });
+  }
+
+  const cleanPhone = cleanPhoneNumber(customerMobile);
+  if (!cleanPhone || cleanPhone.length !== 10) {
+    return res.status(400).json({ error: 'Please ensure Customer Mobile is a valid 10-digit mobile number' });
+  }
+
+  const cleanReg = String(truckNumber).replace(/[\s-]/g, '').toUpperCase();
+  const ownerName = (truckOwnerName || '').trim() || null;
+  const userName = customerName.trim();
+
+  try {
+    // 1. Resolve or Create User
+    const allUsers = db.prepare('SELECT * FROM users').all();
+    let targetUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
+
+    if (!targetUser) {
+      // Create new user
+      const colors = ['#EF4444', '#DC2626', '#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'];
+      const avatarColor = colors[Math.floor(Math.random() * colors.length)];
+      const defaultPassword = cleanPhone; // User mobile number as initial password
+      const hash = bcrypt.hashSync(defaultPassword, 10);
+      const userEmail = `${cleanPhone}@gpstrackx.in`;
+      const formattedPhone = `+91 ${cleanPhone}`;
+
+      const userInsert = db.prepare(`
+        INSERT INTO users (name, email, password, phone, role, status, avatar_color, company_name)
+        VALUES (?, ?, ?, ?, 'user', 'active', ?, ?)
+      `).run(userName, userEmail, hash, formattedPhone, avatarColor, ownerName);
+
+      targetUser = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(userInsert.lastInsertRowid);
+      try {
+        supabaseService.syncUser({ ...targetUser, password: hash });
+      } catch (e) {}
+    } else {
+      // Update company name if provided and not previously set
+      if (ownerName && (!targetUser.company_name || targetUser.company_name.trim() === '')) {
+        db.prepare('UPDATE users SET company_name = ? WHERE id = ?').run(ownerName, targetUser.id);
+        targetUser.company_name = ownerName;
+        try { supabaseService.syncUser(targetUser); } catch (e) {}
+      }
+    }
+
+    // 2. Resolve or Create Vehicle
+    const allVehicles = db.prepare('SELECT * FROM vehicles').all();
+    let targetVehicle = allVehicles.find(v => v.registration_no && v.registration_no.replace(/[\s-]/g, '').toUpperCase() === cleanReg);
+
+    if (!targetVehicle) {
+      // Create new vehicle
+      const vehInsert = db.prepare(`
+        INSERT INTO vehicles (
+          registration_no, name_model, vehicle_type, fuel_type, assigned_user_id,
+          status, max_speed_limit, current_lat, current_lng, axle_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        cleanReg,
+        `Commercial Truck (${cleanReg})`,
+        'Commercial Truck (HCV / 3-Axle Truck)',
+        'Diesel',
+        targetUser.id,
+        'active',
+        80,
+        23.0125,
+        79.0841,
+        '3-Axle Rigid'
+      );
+      targetVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehInsert.lastInsertRowid);
+      try { supabaseService.syncVehicle(targetVehicle); } catch (e) {}
+    } else {
+      // Link vehicle to this user if not already
+      db.prepare('UPDATE vehicles SET assigned_user_id = ? WHERE id = ?').run(targetUser.id, targetVehicle.id);
+      targetVehicle.assigned_user_id = targetUser.id;
+      try { supabaseService.syncVehicle(targetVehicle); } catch (e) {}
+    }
+
+    // Record allocation in vehicle_allocations
+    try {
+      db.prepare(`
+        INSERT INTO vehicle_allocations (vehicle_id, user_id, allocated_by, allocation_status, notes)
+        VALUES (?, ?, ?, 'active', 'Allocated via Excel Import')
+      `).run(targetVehicle.id, targetUser.id, req.user?.id || 1);
+    } catch (e) {}
+
+    // 3. Process Sheet 1: FASTag Transactions
+    let createdTxnsCount = 0;
+    if (Array.isArray(transactions) && transactions.length > 0) {
+      // Ensure description column exists in fastag_transactions
+      try {
+        const cols = db.prepare('PRAGMA table_info(fastag_transactions)').all().map(c => c.name);
+        if (!cols.includes('description')) {
+          db.exec('ALTER TABLE fastag_transactions ADD COLUMN description TEXT');
+        }
+      } catch (e) {}
+
+      const insertTxStmt = db.prepare(`
+        INSERT INTO fastag_transactions (
+          transaction_id, netc_reference_no, tag_id, vehicle_id, vehicle_registration_no,
+          vehicle_class, route_id, toll_plaza_name, description, highway_name, lat, lng,
+          amount, base_toll_fee, gst_amount, concessionaire_name, gstin,
+          lane_direction, payment_status, crossing_time, wallet_balance_before, wallet_balance_after
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(transaction_id) DO UPDATE SET
+          toll_plaza_name = excluded.toll_plaza_name,
+          description = excluded.description,
+          amount = excluded.amount,
+          crossing_time = excluded.crossing_time,
+          wallet_balance_after = excluded.wallet_balance_after,
+          wallet_balance_before = excluded.wallet_balance_before
+      `);
+
+      for (const tx of transactions) {
+        const txnId = String(tx.transaction_id || tx.transactionId || '').trim() || fastagService.generateTransactionId(tx.crossing_time);
+        const netcRef = `NETC${txnId}`;
+        const tagId = `TAG-${cleanReg}`;
+        const finalTime = tx.crossing_time || `${tx.transaction_date} ${tx.transaction_time || '10:00:00'}`;
+        const amount = Math.abs(Number(tx.amount) || 0);
+        const balAfter = Number(tx.closing_balance ?? tx.closingBalance) || 0;
+        const balBefore = balAfter + amount;
+        const desc = String(tx.description || '').trim();
+
+        // Geocode / resolve plaza info from Description
+        const tariff = fastagService.getTruckTollTariff(23.0125, 79.0841, desc);
+        let plazaLat = tariff.lat || 23.0125;
+        let plazaLng = tariff.lng || 79.0841;
+        let highway = tariff.highway || 'National Highway Expressway Corridor';
+        let concessionaire = tariff.concessionaire || 'National Highways Authority of India (NHAI)';
+        let gstin = tariff.gstin || '23AAACN0123M1Z2';
+
+        // Check specific plaza matches in description
+        const lowerDesc = desc.toLowerCase();
+        if (lowerDesc.includes('titarpani')) {
+          plazaLat = 23.0125;
+          plazaLng = 79.0841;
+          highway = 'NH-44 (Narsinghpur - Lakhnadon Corridor)';
+          concessionaire = 'NHAI Project Implementation Unit Narsinghpur';
+        } else if (lowerDesc.includes('chitora')) {
+          plazaLat = 23.8631;
+          plazaLng = 78.8559;
+          highway = 'NH-44 (Jhansi - Sagar - Lalitpur Corridor)';
+          concessionaire = 'NHAI Project Implementation Unit Sagar';
+        } else if (lowerDesc.includes('karrapur')) {
+          plazaLat = 23.9512;
+          plazaLng = 78.8824;
+          highway = 'NH-44 (Sagar - Karrapur Bypass)';
+          concessionaire = 'NHAI Project Implementation Unit Sagar';
+        }
+
+        insertTxStmt.run(
+          txnId,
+          netcRef,
+          tagId,
+          targetVehicle.id,
+          cleanReg,
+          'Commercial Truck (HCV / 3-Axle Truck)',
+          null, // route_id null -> grouped by Date!
+          desc || tariff.officialName, // toll_plaza_name = description as requested!
+          desc,
+          highway,
+          plazaLat,
+          plazaLng,
+          amount,
+          amount,
+          0,
+          concessionaire,
+          gstin,
+          'Lane 04 - Dedicated FASTag ETC',
+          'SUCCESS',
+          finalTime,
+          balBefore,
+          balAfter
+        );
+        createdTxnsCount++;
+      }
+
+      // Update vehicle's total_toll_fee
+      try {
+        const totalToll = db.prepare('SELECT SUM(amount) as total FROM fastag_transactions WHERE vehicle_id = ?').get(targetVehicle.id);
+        if (totalToll && totalToll.total) {
+          db.prepare('UPDATE vehicles SET total_toll_fee = ? WHERE id = ?').run(totalToll.total, targetVehicle.id);
+        }
+      } catch (e) {}
+    }
+
+    res.json({
+      success: true,
+      user: targetUser,
+      vehicle: targetVehicle,
+      transactionsCount: createdTxnsCount,
+      message: `Successfully imported Excel! User "${targetUser.name}" created, Vehicle "${targetVehicle.registration_no}" allocated, and ${createdTxnsCount} FASTag toll transactions recorded.`
+    });
+  } catch (err) {
+    console.error('Fleet Excel Import Error:', err);
+    res.status(500).json({ error: 'Failed to process Excel import: ' + err.message });
+  }
+});
+
 // QUICK VEHICLE ROUTE UPDATE (Inline Edit for Timing, Tolls, Stops)
 app.put('/api/vehicles/:id/quick-route', authenticateToken, requireAdmin, (req, res) => {
   const vehicleId = req.params.id;

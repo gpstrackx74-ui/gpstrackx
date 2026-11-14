@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { User } from '../types';
@@ -15,7 +16,10 @@ import {
   CheckCircle,
   AlertCircle,
   ShieldCheck,
-  Building2
+  Building2,
+  FileSpreadsheet,
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 
 export const UsersManagement: React.FC = () => {
@@ -180,6 +184,202 @@ export const UsersManagement: React.FC = () => {
   const activeUsers = users.filter(u => u.status === 'active').length;
   const inactiveUsers = totalUsers - activeUsers;
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
+  const [importErrorMsg, setImportErrorMsg] = useState<string | null>(null);
+
+  const parseExcelDate = (val: any): string => {
+    if (!val) return new Date().toISOString().split('T')[0];
+    if (typeof val === 'number') {
+      const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+      return d.toISOString().split('T')[0];
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{1,2}-\d{1,2}/.test(str)) {
+      const parts = str.split('T')[0].split(' ')[0].split('-');
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        const p1 = parseInt(parts[0], 10);
+        const p2 = parseInt(parts[1], 10);
+        const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+        if (p1 > 12) {
+          return `${y}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+        } else {
+          return `${y}-${String(p1).padStart(2, '0')}-${String(p2).padStart(2, '0')}`;
+        }
+      }
+    }
+    return str;
+  };
+
+  const parseExcelTime = (val: any): string => {
+    if (val === undefined || val === null || val === '') return '10:00:00';
+    if (typeof val === 'number') {
+      const totalSeconds = Math.round(val * 86400);
+      const hours = Math.floor(totalSeconds / 3600) % 24;
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    const str = String(val).trim();
+    const parts = str.split(':');
+    if (parts.length >= 2) {
+      const h = String(parseInt(parts[0], 10) || 0).padStart(2, '0');
+      const m = String(parseInt(parts[1], 10) || 0).padStart(2, '0');
+      const s = parts[2] ? String(parseInt(parts[2], 10) || 0).padStart(2, '0') : '00';
+      return `${h}:${m}:${s}`;
+    }
+    return '10:00:00';
+  };
+
+  const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImporting(true);
+      setImportErrorMsg(null);
+      setImportSuccessMsg(null);
+
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+
+      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+        throw new Error('The uploaded Excel file contains no readable sheets.');
+      }
+
+      // --- SHEET 0: User & Vehicle Details ---
+      const s0Name = workbook.SheetNames[0];
+      const ws0 = workbook.Sheets[s0Name];
+      const rows0: any[][] = XLSX.utils.sheet_to_json(ws0, { header: 1 });
+
+      let customerName = '';
+      let customerMobile = '';
+      let truckNumber = '';
+      let truckOwnerName = '';
+
+      // 1. Scan Key-Value Pairs (Row-by-Row in Column A & B)
+      for (const r of rows0) {
+        if (!Array.isArray(r) || r.length < 2) continue;
+        const k = String(r[0] || '').toLowerCase().trim();
+        const v = String(r[1] || '').trim();
+        if (k.includes('customer name') || (k.includes('name') && !k.includes('owner') && !k.includes('truck'))) {
+          if (v) customerName = v;
+        } else if (k.includes('mobile') || k.includes('phone') || k.includes('contact')) {
+          if (v) customerMobile = v;
+        } else if (k.includes('truck number') || k.includes('vehicle number') || k.includes('truck no') || k.includes('vehicle no')) {
+          if (v) truckNumber = v;
+        } else if (k.includes('owner') || k.includes('company')) {
+          if (v) truckOwnerName = v;
+        }
+      }
+
+      // 2. Fallback: Check if horizontal table with headers on Row 0
+      if (!customerName || !truckNumber || !customerMobile) {
+        const json0: any[] = XLSX.utils.sheet_to_json(ws0);
+        if (json0.length > 0) {
+          const firstRow = json0[0];
+          for (const [kRaw, vRaw] of Object.entries(firstRow)) {
+            const k = kRaw.toLowerCase();
+            const v = String(vRaw || '').trim();
+            if (k.includes('customer name') || (k.includes('name') && !k.includes('owner'))) customerName = customerName || v;
+            if (k.includes('mobile') || k.includes('phone')) customerMobile = customerMobile || v;
+            if (k.includes('truck') && (k.includes('number') || k.includes('no'))) truckNumber = truckNumber || v;
+            if (k.includes('owner')) truckOwnerName = truckOwnerName || v;
+          }
+        }
+      }
+
+      if (!customerName) {
+        throw new Error('Could not find "Customer Name" in Sheet 0 of Excel file.');
+      }
+      if (!customerMobile) {
+        throw new Error('Could not find "Customer Mobile" in Sheet 0 of Excel file.');
+      }
+      if (!truckNumber) {
+        throw new Error('Could not find "Truck Number" in Sheet 0 of Excel file.');
+      }
+
+      // --- SHEET 1: FASTag Transactions & Tolls ---
+      let parsedTransactions: any[] = [];
+      if (workbook.SheetNames.length > 1) {
+        const s1Name = workbook.SheetNames[1];
+        const ws1 = workbook.Sheets[s1Name];
+        const rows1: any[][] = XLSX.utils.sheet_to_json(ws1, { header: 1 });
+
+        if (rows1.length > 1) {
+          const headers = (rows1[0] || []).map((h: any) => String(h || '').toLowerCase().trim());
+          const dateIdx = headers.findIndex((h: string) => h.includes('date'));
+          const timeIdx = headers.findIndex((h: string) => h.includes('time'));
+          const natureIdx = headers.findIndex((h: string) => h.includes('nature') || h.includes('type'));
+          const amountIdx = headers.findIndex((h: string) => h.includes('amount') || h.includes('fare') || h.includes('tariff'));
+          const balanceIdx = headers.findIndex((h: string) => h.includes('balance') || h.includes('closing'));
+          const descIdx = headers.findIndex((h: string) => h.includes('desc') || h.includes('particular') || h.includes('plaza'));
+          const txnIdIdx = headers.findIndex((h: string) => h.includes('transaction id') || h.includes('txn id') || (h.includes('id') && !h.includes('date') && !h.includes('time')));
+
+          for (let i = 1; i < rows1.length; i++) {
+            const row = rows1[i];
+            if (!Array.isArray(row) || row.length === 0) continue;
+
+            const rawDate = dateIdx >= 0 ? row[dateIdx] : row[0];
+            const rawTime = timeIdx >= 0 ? row[timeIdx] : row[1];
+            const rawNature = natureIdx >= 0 ? row[natureIdx] : row[2];
+            const rawAmount = amountIdx >= 0 ? row[amountIdx] : row[3];
+            const rawBalance = balanceIdx >= 0 ? row[balanceIdx] : row[4];
+            const rawDesc = descIdx >= 0 ? row[descIdx] : row[5];
+            const rawTxnId = txnIdIdx >= 0 ? row[txnIdIdx] : row[6];
+
+            if (!rawDate && !rawAmount && !rawDesc) continue;
+
+            const tDate = parseExcelDate(rawDate);
+            const tTime = parseExcelTime(rawTime);
+            const amount = parseFloat(String(rawAmount || '0').replace(/,/g, '')) || 0;
+            const balance = parseFloat(String(rawBalance || '0').replace(/,/g, '')) || 0;
+            const desc = String(rawDesc || '').trim();
+            const txnId = String(rawTxnId || '').trim();
+
+            parsedTransactions.push({
+              transaction_date: tDate,
+              transaction_time: tTime,
+              crossing_time: `${tDate} ${tTime}`,
+              nature: String(rawNature || 'Debit').trim(),
+              amount,
+              closing_balance: balance,
+              description: desc,
+              transaction_id: txnId
+            });
+          }
+        }
+      }
+
+      // Send to Backend API
+      const res = await api.importFleetExcel({
+        customerName,
+        customerMobile,
+        truckNumber,
+        truckOwnerName,
+        transactions: parsedTransactions
+      });
+
+      // Refresh Users list immediately
+      await fetchUsers();
+
+      setImportSuccessMsg(
+        `✅ Successfully imported Excel! User "${res.user?.name}" created, Vehicle "${res.vehicle?.registration_no}" allotted, and ${res.transactionsCount || 0} FASTag toll transactions recorded across dates.`
+      );
+    } catch (err: any) {
+      console.error('Import error:', err);
+      setImportErrorMsg(err.message || 'Failed to import Excel file. Please verify sheet format.');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const cleanEnteredPhone = formData.phone ? formData.phone.replace(/[^0-9]/g, '').slice(-10) : '';
   const duplicatePhoneUser = cleanEnteredPhone.length === 10
     ? users.find(u => (!editingUser || u.id !== editingUser.id) && u.phone && u.phone.replace(/[^0-9]/g, '').slice(-10) === cleanEnteredPhone)
@@ -201,15 +401,68 @@ export const UsersManagement: React.FC = () => {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={openAddModal}
-            className="flex items-center gap-2 px-4 py-2 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer self-start sm:self-auto"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add New User</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+            {/* Import Excel File Option */}
+            <label className={`flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer ${isImporting ? 'opacity-70 pointer-events-none' : ''}`}>
+              {isImporting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+              )}
+              <span>{isImporting ? 'Importing Excel...' : 'Import Excel File'}</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={handleExcelImport}
+                className="hidden"
+                disabled={isImporting}
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="flex items-center gap-2 px-4 py-2 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add New User</span>
+            </button>
+          </div>
         </div>
+
+        {/* Import Feedback Notifications */}
+        {importSuccessMsg && (
+          <div className="mx-5 sm:mx-6 mb-2 p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{importSuccessMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setImportSuccessMsg(null)}
+              className="text-emerald-700 hover:text-emerald-900 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {importErrorMsg && (
+          <div className="mx-5 sm:mx-6 mb-2 p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs font-semibold text-red-800 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              <span>{importErrorMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setImportErrorMsg(null)}
+              className="text-red-700 hover:text-red-900 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Thin divider with light red 10% opacity */}
         <div className="border-t border-[#E60012]/10" />

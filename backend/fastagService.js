@@ -104,6 +104,39 @@ const KNOWN_TOLL_PLAZAS = [
     concessionaire: 'L&T Krishnagiri Thopur Toll Road Ltd',
     gstin: '33AABCL5588K1Z7',
     state: 'Tamil Nadu'
+  },
+  {
+    nameMatch: 'titarpani',
+    officialName: 'Titarpani Toll Plaza',
+    highway: 'NH-44 (Narsinghpur - Lakhnadon Corridor)',
+    truckRate: 690,
+    concessionaire: 'NHAI Project Implementation Unit Narsinghpur',
+    gstin: '23AAACN0123M1Z2',
+    state: 'Madhya Pradesh',
+    lat: 23.0125,
+    lng: 79.0841
+  },
+  {
+    nameMatch: 'chitora',
+    officialName: 'Chitora Toll Plaza',
+    highway: 'NH-44 (Jhansi - Sagar - Lalitpur Corridor)',
+    truckRate: 440,
+    concessionaire: 'NHAI Project Implementation Unit Sagar',
+    gstin: '23AAACN0123M1Z2',
+    state: 'Madhya Pradesh',
+    lat: 23.8631,
+    lng: 78.8559
+  },
+  {
+    nameMatch: 'karrapur',
+    officialName: 'Karrapur Fee Plaza',
+    highway: 'NH-44 (Sagar - Karrapur Bypass)',
+    truckRate: 375,
+    concessionaire: 'NHAI Project Implementation Unit Sagar',
+    gstin: '23AAACN0123M1Z2',
+    state: 'Madhya Pradesh',
+    lat: 23.9512,
+    lng: 78.8824
   }
 ];
 

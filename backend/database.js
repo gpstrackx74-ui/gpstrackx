@@ -237,6 +237,13 @@ function initializeDatabase() {
     );
   `);
 
+  try {
+    const fastagCols = db.prepare('PRAGMA table_info(fastag_transactions)').all().map(c => c.name);
+    if (!fastagCols.includes('description')) {
+      db.exec('ALTER TABLE fastag_transactions ADD COLUMN description TEXT');
+    }
+  } catch (e) {}
+
   // 8. User Logins Activity table
   db.exec(`
     CREATE TABLE IF NOT EXISTS user_logins (

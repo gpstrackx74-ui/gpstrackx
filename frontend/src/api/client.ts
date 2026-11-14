@@ -133,6 +133,22 @@ export const api = {
   createUser: (data: any) => apiRequest('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id: number | string, data: any) => apiRequest(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteUser: (id: number | string) => apiRequest(`/users/${id}`, { method: 'DELETE' }),
+  importFleetExcel: (data: {
+    customerName: string;
+    customerMobile: string;
+    truckNumber: string;
+    truckOwnerName?: string;
+    transactions: any[];
+  }) => apiRequest<{
+    success: boolean;
+    user: any;
+    vehicle: any;
+    transactionsCount: number;
+    message: string;
+  }>('/fleet/import-excel', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
 
   // Routes
   calculateRoutes: (data: { origin: any; destination: any; waypoints?: any[]; manualTolls?: any[] }) =>
