@@ -173,9 +173,18 @@ async function initSupabase() {
     );
   `);
 
-  // Ensure company_name and axle_type exist in Supabase
+  // Ensure company_name, axle_type, owner_name, total_toll_fee exist in Supabase
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name VARCHAR(255);`);
-  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS axle_type VARCHAR(50) DEFAULT '4-axle';`);
+  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS axle_type VARCHAR(50) DEFAULT '3-Axle Rigid';`);
+  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255);`);
+  await pool.query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS total_toll_fee NUMERIC DEFAULT 0;`);
+  await pool.query(`ALTER TABLE fastag_transactions ADD COLUMN IF NOT EXISTS description TEXT;`);
+  await pool.query('ALTER TABLE vehicles DROP CONSTRAINT IF EXISTS vehicles_status_check;');
+  await pool.query(`
+    ALTER TABLE vehicles 
+    ADD CONSTRAINT vehicles_status_check 
+    CHECK (status IN ('active', 'inactive', 'moving', 'stopped', 'stop', 'parking'))
+  `);
 
   // [2/7] Sync Users
   console.log('[2/7] Syncing Users...');

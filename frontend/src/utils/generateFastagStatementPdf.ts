@@ -118,21 +118,26 @@ function drawLogoBox(doc: jsPDF, x: number, y: number, w: number, h: number) {
   doc.text('AXIS BANK', x + 13.5, y + h / 2 + 1.2);
 
   // Center vertical divider
-  const divX = x + 34;
+  const divX = x + 30;
   doc.setDrawColor(220, 226, 235);
   doc.setLineWidth(0.3);
   doc.line(divX, y + 2, divX, y + h - 2);
 
-  // BlackBuck Horns (Orange/Red)
-  doc.setFillColor(232, 65, 37); // #E84125
-  doc.triangle(divX + 3.5, y + h - 3.5, divX + 5.5, y + 3.5, divX + 7.5, y + h - 3.5, 'F');
-  doc.triangle(divX + 6.5, y + h - 3.5, divX + 8.5, y + 3.5, divX + 10.5, y + h - 3.5, 'F');
-
-  // BLACKBUCK text
+  // GpsTrackX Emblem (Red Circle with 'G')
+  doc.setFillColor(230, 0, 18); // #E60012
+  doc.circle(divX + 4.5, y + h / 2, 2.5, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(6.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('G', divX + 3.4, y + h / 2 + 1);
+
+  // GPSTRACKX text
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
   doc.setTextColor(17, 24, 39);
-  doc.text('BLACKBUCK', divX + 12.5, y + h / 2 + 1.2);
+  doc.text('GPSTRACK', divX + 8.5, y + h / 2 + 1.2);
+  doc.setTextColor(230, 0, 18);
+  doc.text('X', divX + 23.5, y + h / 2 + 1.2);
 }
 
 const colW = [28, 18, 18, 22, 58, 36]; // Total width = 180mm
@@ -220,8 +225,8 @@ export const generateFastagStatementPdf = (input: FastagTransaction | FastagStat
   doc.setTextColor(0, 0, 0);
   doc.text('FASTAG ACCOUNT SUMMARY', marginX, 22);
 
-  // Top Right Logo Box: AXIS BANK | BLACKBUCK
-  const logoX = 135, logoY = 14, logoW = 60, logoH = 12;
+  // Top Right Logo Box: AXIS BANK | GPSTRACKX
+  const logoX = 133, logoY = 14, logoW = 62, logoH = 12;
   drawLogoBox(doc, logoX, logoY, logoW, logoH);
 
   // Customer Details Section

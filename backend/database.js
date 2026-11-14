@@ -136,7 +136,58 @@ function initializeDatabase() {
     if (!vehCols.includes('owner_name')) {
       db.exec("ALTER TABLE vehicles ADD COLUMN owner_name TEXT");
     }
-  } catch (e) {}
+
+    // Migrate vehicles table if CHECK constraint does not include 'stop' and 'parking'
+    const vehSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='vehicles'").get();
+    if (vehSchema && vehSchema.sql && !vehSchema.sql.includes("'stop'")) {
+      console.log('[Database] Migrating vehicles table to support stop and parking status...');
+      db.pragma('foreign_keys = OFF');
+      db.exec(`
+        CREATE TABLE vehicles_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          registration_no TEXT UNIQUE NOT NULL,
+          name_model TEXT NOT NULL,
+          vehicle_type TEXT NOT NULL,
+          device_id TEXT,
+          imei_number TEXT,
+          chassis_number TEXT,
+          fuel_type TEXT DEFAULT 'Diesel',
+          assigned_user_id INTEGER,
+          status TEXT DEFAULT 'stop' CHECK(status IN ('active', 'inactive', 'moving', 'stopped', 'stop', 'parking')),
+          current_speed REAL DEFAULT 0,
+          max_speed_limit REAL DEFAULT 80,
+          current_lat REAL,
+          current_lng REAL,
+          odometer_km REAL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          axle_type TEXT DEFAULT '3-Axle Rigid',
+          start_trip_time TEXT DEFAULT '08:00',
+          end_trip_time TEXT DEFAULT '18:00',
+          total_toll_fee REAL DEFAULT 0,
+          stoppages_count INTEGER DEFAULT 0,
+          owner_name TEXT,
+          FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL
+        );
+        INSERT INTO vehicles_new (
+          id, registration_no, name_model, vehicle_type, device_id, imei_number, chassis_number,
+          fuel_type, assigned_user_id, status, current_speed, max_speed_limit, current_lat, current_lng,
+          odometer_km, created_at, updated_at, axle_type, start_trip_time, end_trip_time, total_toll_fee, stoppages_count, owner_name
+        )
+        SELECT 
+          id, registration_no, name_model, vehicle_type, device_id, imei_number, chassis_number,
+          fuel_type, assigned_user_id, status, current_speed, max_speed_limit, current_lat, current_lng,
+          odometer_km, created_at, updated_at, axle_type, start_trip_time, end_trip_time, total_toll_fee, stoppages_count, owner_name
+        FROM vehicles;
+        DROP TABLE vehicles;
+        ALTER TABLE vehicles_new RENAME TO vehicles;
+      `);
+      db.pragma('foreign_keys = ON');
+      console.log('[Database] Vehicles table migration completed successfully!');
+    }
+  } catch (e) {
+    console.error('[Database Vehicles Migration Warning]:', e.message);
+  }
 
   // Ensure migration columns exist in routes table
   try {

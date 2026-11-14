@@ -1341,7 +1341,7 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // Helper: Process single fleet Excel record (User + Vehicle + FASTag Transactions)
-function processSingleFleetImport(item, adminUserId) {
+async function processSingleFleetImport(item, adminUserId) {
   const { customerName, customerMobile, truckNumber, truckOwnerName, transactions } = item;
 
   if (!customerName || !customerName.trim()) {
@@ -1382,14 +1382,16 @@ function processSingleFleetImport(item, adminUserId) {
 
     targetUser = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(userInsert.lastInsertRowid);
     try {
-      supabaseService.syncUser({ ...targetUser, password: hash });
-    } catch (e) {}
+      await supabaseService.syncUser({ ...targetUser, password: hash });
+    } catch (e) {
+      console.error('[Excel Import] User sync warning:', e.message);
+    }
   } else {
     // Update company name if provided and not previously set
     if (ownerName && (!targetUser.company_name || targetUser.company_name.trim() === '')) {
       db.prepare('UPDATE users SET company_name = ? WHERE id = ?').run(ownerName, targetUser.id);
       targetUser.company_name = ownerName;
-      try { supabaseService.syncUser(targetUser); } catch (e) {}
+      try { await supabaseService.syncUser(targetUser); } catch (e) {}
     }
   }
 
@@ -1418,21 +1420,39 @@ function processSingleFleetImport(item, adminUserId) {
       ownerName
     );
     targetVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehInsert.lastInsertRowid);
-    try { supabaseService.syncVehicle(targetVehicle); } catch (e) {}
   } else {
     db.prepare('UPDATE vehicles SET assigned_user_id = ?, owner_name = COALESCE(?, owner_name) WHERE id = ?').run(targetUser.id, ownerName, targetVehicle.id);
     targetVehicle.assigned_user_id = targetUser.id;
     if (ownerName) targetVehicle.owner_name = ownerName;
-    try { supabaseService.syncVehicle(targetVehicle); } catch (e) {}
   }
 
-  // Record allocation in vehicle_allocations
+  // Immediately sync vehicle to Supabase
+  try {
+    await supabaseService.syncVehicle(targetVehicle, db);
+  } catch (e) {
+    console.error('[Excel Import] Vehicle sync warning:', e.message);
+  }
+
+  // Record allocation in vehicle_allocations in both SQLite & Supabase
   try {
     db.prepare(`
       INSERT INTO vehicle_allocations (vehicle_id, user_id, allocated_by, allocation_status, notes)
       VALUES (?, ?, ?, 'active', 'Allocated via Excel Import')
     `).run(targetVehicle.id, targetUser.id, adminUserId || 1);
-  } catch (e) {}
+
+    await supabaseService.syncVehicleAllocation({
+      vehicle_id: targetVehicle.id,
+      user_id: targetUser.id,
+      registration_no: cleanReg,
+      user_phone: targetUser.phone,
+      user_email: targetUser.email,
+      allocated_by: adminUserId || 1,
+      allocation_status: 'ACTIVE',
+      notes: 'Allocated via Excel Import'
+    });
+  } catch (e) {
+    console.error('[Excel Import] Allocation sync warning:', e.message);
+  }
 
   // 3. Process Sheet 1: FASTag Transactions
   let createdTxnsCount = 0;
@@ -1459,6 +1479,8 @@ function processSingleFleetImport(item, adminUserId) {
         wallet_balance_after = excluded.wallet_balance_after,
         wallet_balance_before = excluded.wallet_balance_before
     `);
+
+    const txsToSync = [];
 
     for (const tx of transactions) {
       const txnId = String(tx.transaction_id || tx.transactionId || '').trim() || fastagService.generateTransactionId(tx.crossing_time);
@@ -1520,15 +1542,55 @@ function processSingleFleetImport(item, adminUserId) {
         balAfter
       );
       createdTxnsCount++;
+
+      txsToSync.push({
+        transaction_id: txnId,
+        netc_reference_no: netcRef,
+        tag_id: tagId,
+        vehicle_id: targetVehicle.id,
+        vehicle_registration_no: cleanReg,
+        vehicle_class: 'Commercial Truck (HCV / 3-Axle Truck)',
+        toll_plaza_name: desc || tariff.officialName,
+        description: desc,
+        highway_name: highway,
+        lat: plazaLat,
+        lng: plazaLng,
+        amount,
+        base_toll_fee: amount,
+        gst_amount: 0,
+        concessionaire_name: concessionaire,
+        gstin,
+        lane_direction: 'Lane 04 - Dedicated FASTag ETC',
+        payment_status: 'SUCCESS',
+        crossing_time: finalTime,
+        wallet_balance_before: balBefore,
+        wallet_balance_after: balAfter
+      });
     }
 
     try {
       const totalToll = db.prepare('SELECT SUM(amount) as total FROM fastag_transactions WHERE vehicle_id = ?').get(targetVehicle.id);
       if (totalToll && totalToll.total) {
         db.prepare('UPDATE vehicles SET total_toll_fee = ? WHERE id = ?').run(totalToll.total, targetVehicle.id);
+        targetVehicle.total_toll_fee = totalToll.total;
+        await supabaseService.syncVehicle(targetVehicle, db);
       }
     } catch (e) {}
+
+    // Immediately push all FASTag transactions to Supabase Cloud
+    if (txsToSync.length > 0) {
+      try {
+        await supabaseService.syncFastagTransactionsBatch(txsToSync);
+      } catch (err) {
+        console.error('[Excel Import] Supabase batch fastag sync warning:', err.message);
+      }
+    }
   }
+
+  // Force full SQLite WAL checkpoint so data is immediately saved to disk
+  try {
+    db.pragma('wal_checkpoint(FULL)');
+  } catch (e) {}
 
   return {
     user: targetUser,
@@ -1555,7 +1617,7 @@ app.post('/api/fleet/import-excel', authenticateToken, requireAdmin, async (req,
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       try {
-        const result = processSingleFleetImport(item, req.user?.id);
+        const result = await processSingleFleetImport(item, req.user?.id);
         results.push(result);
         totalTxns += result.transactionsCount || 0;
         if (result.vehicle?.registration_no && !vehicleRegs.includes(result.vehicle.registration_no)) {
@@ -1565,6 +1627,11 @@ app.post('/api/fleet/import-excel', authenticateToken, requireAdmin, async (req,
         errors.push(`Item ${i + 1} (${item.truckNumber || item.customerName || 'Unknown'}): ${err.message}`);
       }
     }
+
+    // Full WAL checkpoint after entire batch
+    try {
+      db.pragma('wal_checkpoint(FULL)');
+    } catch (e) {}
 
     if (results.length === 0) {
       return res.status(400).json({ error: 'Failed to import files: ' + errors.join('; ') });

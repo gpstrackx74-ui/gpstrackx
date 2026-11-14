@@ -312,7 +312,7 @@ export const FastagBilling: React.FC = () => {
                 <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                   FASTag Tolls & Account Statements
                   <span className="text-[10px] font-bold text-red-700 bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200">
-                    AXIS BANK • BLACKBUCK LIVE
+                    AXIS BANK • GPSTRACKX LIVE
                   </span>
                 </h2>
                 <p className="text-xs text-slate-500 font-medium">
@@ -349,26 +349,17 @@ export const FastagBilling: React.FC = () => {
         <div className="border-t border-slate-100" />
 
         {/* ============================================================== */}
-        {/* STEP 1: VEHICLE SELECTION SECTION                              */}
-        {/* Prompt the user to select a vehicle first                      */}
+        {/* VEHICLE SELECTION SECTION                                      */}
         {/* ============================================================== */}
-        <div className="p-5 sm:p-6 bg-slate-50/50 border-b border-slate-100">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Truck className="w-4 h-4 text-[#E60012]" />
-                <span className="text-xs font-black uppercase tracking-wider text-slate-800">
-                  Step 1: Select Fleet Vehicle / Truck (गाड़ी चुनें)
-                </span>
-                {selectedVehicle && (
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                    Selected: {selectedVehicle.registration_no}
-                  </span>
-                )}
+        <div className="p-4 sm:p-5 bg-slate-50/50 border-b border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-red-50 text-[#E60012] flex items-center justify-center shrink-0">
+                <Truck className="w-4 h-4" />
               </div>
-              <p className="text-xs text-slate-500 font-medium">
-                Choose a commercial vehicle to view its individual FASTag toll deductions and generate date-wise receipts
-              </p>
+              <span className="text-xs font-bold text-slate-700">
+                Fleet Vehicle:
+              </span>
             </div>
 
             {/* Vehicle Selector Dropdown */}
@@ -807,13 +798,13 @@ export const FastagBilling: React.FC = () => {
                   id="fastag-statement-document"
                   className="w-full max-w-[780px] bg-white p-8 sm:p-10 shadow-lg border border-slate-300 text-slate-900 font-sans text-xs space-y-5"
                 >
-                  {/* Top Header: Title & AXIS BANK | BLACKBUCK Logo Box */}
+                  {/* Top Header: Title & AXIS BANK | GPSTRACKX Logo Box */}
                   <div className="flex items-center justify-between gap-4 pb-2">
                     <h1 className="text-base sm:text-lg font-black text-slate-950 tracking-tight">
                       FASTAG ACCOUNT SUMMARY
                     </h1>
 
-                    {/* AXIS BANK | BLACKBUCK Logo Container */}
+                    {/* AXIS BANK | GPSTRACKX Logo Container */}
                     <div className="flex items-center gap-3 border border-slate-300 rounded-xl px-3 py-1.5 bg-white shadow-2xs">
                       {/* Axis Bank Logo */}
                       <div className="flex items-center gap-1.5">
@@ -828,14 +819,13 @@ export const FastagBilling: React.FC = () => {
 
                       <div className="h-4 w-px bg-slate-300" />
 
-                      {/* BlackBuck Logo */}
+                      {/* GpsTrackX Logo */}
                       <div className="flex items-center gap-1.5">
-                        <svg className="w-4 h-4" viewBox="0 0 40 40">
-                          <path d="M12,32 C14,14 18,6 24,4 C22,12 20,20 22,32 Z" fill="#E63946" />
-                          <path d="M26,4 C30,12 30,22 28,32 Z" fill="#E63946" />
-                        </svg>
+                        <div className="w-4 h-4 rounded-full bg-[#E60012] flex items-center justify-center text-white text-[9px] font-black">
+                          G
+                        </div>
                         <span className="text-[11px] font-black text-slate-900 tracking-wide">
-                          BLACKBUCK
+                          GPSTRACK<span className="text-[#E60012]">X</span>
                         </span>
                       </div>
                     </div>
