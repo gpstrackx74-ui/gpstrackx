@@ -1398,15 +1398,16 @@ function processSingleFleetImport(item, adminUserId) {
     const vehInsert = db.prepare(`
       INSERT INTO vehicles (
         registration_no, name_model, vehicle_type, fuel_type, assigned_user_id,
-        status, max_speed_limit, current_lat, current_lng, axle_type
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, current_speed, max_speed_limit, current_lat, current_lng, axle_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       cleanReg,
       `Commercial Truck (${cleanReg})`,
       'Commercial Truck (HCV / 3-Axle Truck)',
       'Diesel',
       targetUser.id,
-      'active',
+      'stop',
+      0,
       80,
       23.0125,
       79.0841,

@@ -1184,7 +1184,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                         No Route Allotted on {effectiveDate ? formatToDMY(effectiveDate) : 'this Date'}
                       </h4>
                       <p className="text-xs text-slate-500 mt-1">
-                        इस तारीख पर इस व्हीकल को कोई रूट अलॉट नहीं किया गया है। कृपया किसी अन्य तारीख का चयन करें।
+                        No route has been allotted to this vehicle on this date. Please select another date.
                       </p>
                     </div>
                     {allTrips.length > 0 && (
