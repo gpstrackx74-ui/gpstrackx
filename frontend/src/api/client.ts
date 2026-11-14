@@ -184,11 +184,13 @@ export const api = {
   updateSettings: (data: any) => apiRequest('/settings', { method: 'POST', body: JSON.stringify(data) }),
 
   // FASTag Tolls & Billing Invoices
-  getFastagTransactions: (params: { vehicle_id?: string; search?: string; date?: string } = {}) => {
+  getFastagTransactions: (params: { vehicle_id?: string; search?: string; date?: string; start_date?: string; end_date?: string } = {}) => {
     const query = new URLSearchParams();
     if (params.vehicle_id) query.set('vehicle_id', params.vehicle_id);
     if (params.search) query.set('search', params.search);
     if (params.date) query.set('date', params.date);
+    if (params.start_date) query.set('start_date', params.start_date);
+    if (params.end_date) query.set('end_date', params.end_date);
     return apiRequest<{ transactions: any[]; stats: any }>(`/fastag/transactions?${query.toString()}`);
   },
   getFastagTransaction: (id: number | string) => apiRequest<any>(`/fastag/transactions/${id}`),

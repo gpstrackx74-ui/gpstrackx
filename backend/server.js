@@ -709,9 +709,12 @@ app.get('/api/vehicles', authenticateToken, (req, res) => {
   const sql = `
     SELECT 
       v.*,
-      u.name as owner_name,
+      COALESCE(v.owner_name, u.name) as owner_name,
+      v.owner_name as truck_owner_name,
+      u.name as customer_name,
       u.email as owner_email,
       u.phone as owner_phone,
+      u.phone as customer_mobile,
       r.id as route_id,
       r.route_name,
       r.start_location_name,
@@ -1398,8 +1401,8 @@ function processSingleFleetImport(item, adminUserId) {
     const vehInsert = db.prepare(`
       INSERT INTO vehicles (
         registration_no, name_model, vehicle_type, fuel_type, assigned_user_id,
-        status, current_speed, max_speed_limit, current_lat, current_lng, axle_type
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, current_speed, max_speed_limit, current_lat, current_lng, axle_type, owner_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       cleanReg,
       `Commercial Truck (${cleanReg})`,
@@ -1411,13 +1414,15 @@ function processSingleFleetImport(item, adminUserId) {
       80,
       23.0125,
       79.0841,
-      '3-Axle Rigid'
+      '3-Axle Rigid',
+      ownerName
     );
     targetVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehInsert.lastInsertRowid);
     try { supabaseService.syncVehicle(targetVehicle); } catch (e) {}
   } else {
-    db.prepare('UPDATE vehicles SET assigned_user_id = ? WHERE id = ?').run(targetUser.id, targetVehicle.id);
+    db.prepare('UPDATE vehicles SET assigned_user_id = ?, owner_name = COALESCE(?, owner_name) WHERE id = ?').run(targetUser.id, ownerName, targetVehicle.id);
     targetVehicle.assigned_user_id = targetUser.id;
+    if (ownerName) targetVehicle.owner_name = ownerName;
     try { supabaseService.syncVehicle(targetVehicle); } catch (e) {}
   }
 
@@ -2584,7 +2589,7 @@ app.get('/api/allocations/my', authenticateToken, (req, res) => {
 
 // 1. Get All FASTag Transactions & Invoices (with Filters & Summary Stats)
 app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
-  const { vehicle_id, search, date } = req.query;
+  const { vehicle_id, search, date, start_date, end_date } = req.query;
   const isAdmin = req.user.role === 'admin';
 
   let conditions = [];
@@ -2624,6 +2629,16 @@ app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
     params.push(date.trim());
   }
 
+  if (start_date && start_date.trim() !== '') {
+    conditions.push("date(ft.crossing_time) >= date(?)");
+    params.push(start_date.trim());
+  }
+
+  if (end_date && end_date.trim() !== '') {
+    conditions.push("date(ft.crossing_time) <= date(?)");
+    params.push(end_date.trim());
+  }
+
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   try {
@@ -2636,8 +2651,11 @@ app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
         r.trip_date as route_trip_date,
         v.name_model as vehicle_model,
         v.vehicle_type,
+        v.owner_name as truck_owner_name,
         u.name as driver_name,
-        u.phone as driver_phone
+        u.name as customer_name,
+        u.phone as driver_phone,
+        u.phone as customer_mobile
       FROM fastag_transactions ft
       LEFT JOIN vehicles v ON (ft.vehicle_id = v.id OR ft.vehicle_registration_no = v.registration_no)
       LEFT JOIN routes r ON ft.route_id = r.id

@@ -38,6 +38,9 @@ export interface Vehicle {
   created_at: string;
   updated_at: string;
   owner_name?: string;
+  truck_owner_name?: string;
+  customer_name?: string;
+  customer_mobile?: string;
   owner_email?: string;
   owner_phone?: string;
   route_id?: number | null;
@@ -155,6 +158,9 @@ export interface FastagTransaction {
   vehicle_type?: string;
   driver_name?: string;
   driver_phone?: string;
+  truck_owner_name?: string;
+  customer_name?: string;
+  customer_mobile?: string;
 }
 
 export interface FastagStats {

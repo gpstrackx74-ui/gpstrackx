@@ -133,6 +133,9 @@ function initializeDatabase() {
     if (!vehCols.includes('stoppages_count')) {
       db.exec("ALTER TABLE vehicles ADD COLUMN stoppages_count INTEGER DEFAULT 2");
     }
+    if (!vehCols.includes('owner_name')) {
+      db.exec("ALTER TABLE vehicles ADD COLUMN owner_name TEXT");
+    }
   } catch (e) {}
 
   // Ensure migration columns exist in routes table

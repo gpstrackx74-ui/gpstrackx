@@ -1,426 +1,335 @@
 import { jsPDF } from 'jspdf';
-import { AUTHORIZED_SIGNATURE_BASE64 } from '../assets/signatureBase64';
-import { ICICI_LOGO_BASE64 } from '../assets/iciciLogoBase64';
 import { FastagTransaction } from '../types';
 
-export const generateFastagStatementPdf = (tx: FastagTransaction): jsPDF => {
+export interface FastagStatementReportData {
+  customerName?: string;
+  customerMobile?: string;
+  truckNumber: string;
+  truckOwnerName?: string;
+  startDateStr?: string;
+  endDateStr?: string;
+  transactions: FastagTransaction[];
+}
+
+interface ParsedDateTime {
+  sortKey: string;      // 'YYYY-MM-DD'
+  displayDate: string;  // 'DD/MM/YYYY'
+  timeStr: string;      // 'HH:MM:SS' or 'HH:MM'
+}
+
+function parseDateParts(str?: string): ParsedDateTime {
+  if (!str) return { sortKey: '0000-00-00', displayDate: 'Unknown Date', timeStr: '--:--' };
+  str = String(str).trim();
+  let timeStr = '--:--';
+  let datePart = str;
+  if (str.includes('T')) {
+    const parts = str.split('T');
+    datePart = parts[0];
+    timeStr = parts[1].replace('Z', '').split('.')[0].slice(0, 8);
+  } else if (str.includes(' ')) {
+    const parts = str.split(/\s+/);
+    datePart = parts[0];
+    timeStr = parts.slice(1).join(' ').slice(0, 8);
+  }
+  if (datePart.includes('-')) {
+    const p = datePart.split('-');
+    if (p[0].length === 4) {
+      const y = p[0], m = p[1].padStart(2, '0'), d = p[2].padStart(2, '0');
+      return { sortKey: `${y}-${m}-${d}`, displayDate: `${d}/${m}/${y}`, timeStr };
+    } else if (p[2]?.length === 4) {
+      const d = p[0].padStart(2, '0'), m = p[1].padStart(2, '0'), y = p[2];
+      return { sortKey: `${y}-${m}-${d}`, displayDate: `${d}/${m}/${y}`, timeStr };
+    }
+  } else if (datePart.includes('/')) {
+    const p = datePart.split('/');
+    if (p[2]?.length === 4) {
+      let m = parseInt(p[0], 10);
+      let d = parseInt(p[1], 10);
+      const y = p[2];
+      if (m > 12 && d <= 12) {
+        const temp = m; m = d; d = temp;
+      }
+      const mm = String(m).padStart(2, '0');
+      const dd = String(d).padStart(2, '0');
+      return { sortKey: `${y}-${mm}-${dd}`, displayDate: `${dd}/${mm}/${y}`, timeStr };
+    }
+  }
+  return { sortKey: datePart, displayDate: datePart, timeStr };
+}
+
+export function formatDurationDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  const dt = parseDateParts(dateStr);
+  if (!dt.sortKey || dt.sortKey === '0000-00-00') return dateStr;
+  const parts = dt.sortKey.split('-');
+  const y = parts[0].slice(-2);
+  const mIdx = parseInt(parts[1], 10) - 1;
+  const d = parts[2].padStart(2, '0');
+  const fullMonths = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  return `${d} ${fullMonths[mIdx] || ''} ${y}`;
+}
+
+export function formatTableDateTime(crossingTime?: string, createdAt?: string): { dateLine: string; timeLine: string } {
+  const dt = parseDateParts(crossingTime || createdAt);
+  if (!dt.sortKey || dt.sortKey === '0000-00-00') {
+    return { dateLine: dt.displayDate || 'Unknown', timeLine: dt.timeStr || '--:--' };
+  }
+  const parts = dt.sortKey.split('-');
+  const y = parts[0].slice(-2);
+  const mIdx = parseInt(parts[1], 10) - 1;
+  const d = parseInt(parts[2], 10);
+  const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dateLine = `${d} ${shortMonths[mIdx] || ''} ${y}`;
+
+  let timeLine = dt.timeStr;
+  if (timeLine && timeLine.includes(':')) {
+    const tParts = timeLine.split(':');
+    let h = parseInt(tParts[0], 10);
+    const m = tParts[1].padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    timeLine = `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+  }
+  return { dateLine, timeLine };
+}
+
+function drawLogoBox(doc: jsPDF, x: number, y: number, w: number, h: number) {
+  // Rounded outer box
+  doc.setDrawColor(220, 226, 235);
+  doc.setLineWidth(0.3);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(x, y, w, h, 2, 2, 'FD');
+
+  // Axis Bank Burgundy Triangle Emblem
+  doc.setFillColor(151, 20, 77); // #97144D
+  doc.triangle(x + 4, y + h - 3, x + 8, y + 3, x + 11.5, y + h - 3, 'F');
+  // Inner white chevron cutout
+  doc.setFillColor(255, 255, 255);
+  doc.triangle(x + 5.5, y + h - 3.5, x + 8, y + 5.5, x + 10, y + h - 3.5, 'F');
+
+  // AXIS BANK text
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(151, 20, 77);
+  doc.text('AXIS BANK', x + 13.5, y + h / 2 + 1.2);
+
+  // Center vertical divider
+  const divX = x + 34;
+  doc.setDrawColor(220, 226, 235);
+  doc.setLineWidth(0.3);
+  doc.line(divX, y + 2, divX, y + h - 2);
+
+  // BlackBuck Horns (Orange/Red)
+  doc.setFillColor(232, 65, 37); // #E84125
+  doc.triangle(divX + 3.5, y + h - 3.5, divX + 5.5, y + 3.5, divX + 7.5, y + h - 3.5, 'F');
+  doc.triangle(divX + 6.5, y + h - 3.5, divX + 8.5, y + 3.5, divX + 10.5, y + h - 3.5, 'F');
+
+  // BLACKBUCK text
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(17, 24, 39);
+  doc.text('BLACKBUCK', divX + 12.5, y + h / 2 + 1.2);
+}
+
+const colW = [28, 18, 18, 22, 58, 36]; // Total width = 180mm
+
+function drawTableHeaders(doc: jsPDF, marginX: number, y: number): number {
+  const hH = 8;
+  doc.setFillColor(232, 239, 247); // Light soft blue #E8EFF7
+  doc.rect(marginX, y, 180, hH, 'F');
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.2);
+  doc.rect(marginX, y, 180, hH, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(20, 25, 35);
+
+  let curX = marginX;
+  const headers = ['Transaction Time', 'Nature (C/D)', 'Amount', 'Closing Balance', 'Description', 'Transaction ID'];
+  headers.forEach((h, idx) => {
+    if (idx > 0) doc.line(curX, y, curX, y + hH);
+    if (idx === 1 || idx === 2 || idx === 3 || idx === 5) {
+      doc.text(h, curX + colW[idx] / 2, y + 5.5, { align: 'center' });
+    } else {
+      doc.text(h, curX + 2, y + 5.5);
+    }
+    curX += colW[idx];
+  });
+  return y + hH;
+}
+
+/**
+ * Generates the Official 100% Replica FASTAG ACCOUNT SUMMARY (AXIS BANK | BLACKBUCK) Multi-Page PDF
+ * Exactly matching the attached statement PDF.
+ */
+export const generateFastagStatementPdf = (input: FastagTransaction | FastagStatementReportData): jsPDF => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
     format: 'a4'
   });
 
-  const plate = tx.vehicle_registration_no || 'KL10AL5697';
-  const tagAcc = tx.tag_id?.slice(-8) || '27358917';
-  const refNo = `100222/${tx.id ? String(184100 + tx.id) : '184102'}/84`;
-  const customerId = tx.id ? String(16469000 + tx.id) : '16469495';
-  const amount = Number(tx.amount) || 80.0;
-  const openingBal = tx.wallet_balance_before || (amount + 305.0);
-  const closingBal = openingBal - amount;
-
-  let datePart = '24-01-2022';
-  let timePart = '07:00:09';
-  if (tx.crossing_time) {
-    const raw = tx.crossing_time.trim();
-    if (raw.includes('T')) {
-      const parts = raw.split('T');
-      const dp = parts[0].split('-');
-      if (dp.length === 3) datePart = `${dp[2]}-${dp[1]}-${dp[0]}`;
-      if (parts[1]) timePart = parts[1].replace('Z', '').split('.')[0];
-    } else {
-      const parts = raw.split(/\s+/);
-      if (parts[0]) {
-        if (parts[0].includes('-')) {
-          const dp = parts[0].split('-');
-          if (dp.length === 3) {
-            datePart = dp[0].length === 4 ? `${dp[2]}-${dp[1]}-${dp[0]}` : `${dp[0]}-${dp[1]}-${dp[2]}`;
-          }
-        } else if (parts[0].includes('/')) {
-          const dp = parts[0].split('/');
-          if (dp.length === 3) {
-            let m = parseInt(dp[0], 10), d = parseInt(dp[1], 10), y = dp[2];
-            if (m > 12 && d <= 12) { const t = m; m = d; d = t; }
-            datePart = `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
-          }
-        }
-      }
-      if (parts[1]) timePart = parts[1];
-    }
+  // Normalize input
+  let data: FastagStatementReportData;
+  if ('transactions' in input && Array.isArray(input.transactions)) {
+    data = input;
+  } else {
+    const singleTx = input as FastagTransaction;
+    data = {
+      customerName: singleTx.customer_name || singleTx.driver_name || 'Ramniwas',
+      customerMobile: singleTx.customer_mobile || singleTx.driver_phone || '8094249011',
+      truckNumber: singleTx.vehicle_registration_no || 'RJ22GB7999',
+      truckOwnerName: singleTx.truck_owner_name || 'Rajendra Kumar',
+      transactions: [singleTx]
+    };
   }
 
-  const laneNum = tx.lane_direction?.replace(/[^0-9]/g, '').slice(0, 2) || '03';
-  const plazaStr = tx.description || tx.toll_plaza_name || 'Paliyekkara Toll plaza';
-  const txnIdStr = tx.transaction_id && tx.transaction_id.length > 8
-    ? tx.transaction_id
-    : '0010012201240701279180 / 1390415023';
+  const txs = [...data.transactions];
+  // Sort chronologically ascending
+  txs.sort((a, b) => {
+    const sA = parseDateParts(a.crossing_time || a.created_at);
+    const sB = parseDateParts(b.crossing_time || b.created_at);
+    if (sA.sortKey !== sB.sortKey) return sA.sortKey.localeCompare(sB.sortKey);
+    return sA.timeStr.localeCompare(sB.timeStr);
+  });
 
-  // --- HELPER FUNCTIONS ---
-  const renderHeader = () => {
-    // Orange slanted polygon
-    doc.setFillColor(245, 130, 32); // #F58220
-    doc.triangle(14, 18, 18, 12, 14, 12, 'F');
-    doc.triangle(14, 18, 18, 18, 18, 12, 'F');
+  const totalDebit = txs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    // Title: FASTag E-Statement
-    doc.setTextColor(128, 27, 28); // #801B1C
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text('FASTag E-Statement', 21, 16.5);
+  // Compute duration strings
+  let startDur = data.startDateStr ? formatDurationDate(data.startDateStr) : '';
+  let endDur = data.endDateStr ? formatDurationDate(data.endDateStr) : '';
+  if (!startDur && txs.length > 0) {
+    startDur = formatDurationDate(txs[0].crossing_time || txs[0].created_at);
+  }
+  if (!endDur && txs.length > 0) {
+    endDur = formatDurationDate(txs[txs.length - 1].crossing_time || txs[txs.length - 1].created_at);
+  }
+  const durationText = startDur && endDur ? `${startDur} – ${endDur}` : (startDur || endDur || '03 August 26 – 31 August 26');
 
-    // ICICI Bank Logo at top right
-    try {
-      if (ICICI_LOGO_BASE64) {
-        doc.addImage(ICICI_LOGO_BASE64, 'JPEG', 142, 10, 54, 11);
-      }
-    } catch (_) {}
+  const marginX = 15;
 
-    // Top divider
-    doc.setDrawColor(220, 220, 220);
-    doc.setLineWidth(0.3);
-    doc.line(14, 23, 196, 23);
-  };
-
-  // ==========================================
-  // PAGE 1
-  // ==========================================
-  renderHeader();
-
-  // Table 1: Bank Details & Customer Details
-  // Header bar #A6A6A6
-  doc.setFillColor(166, 166, 166);
-  doc.rect(14, 25, 182, 5.5, 'F');
-  doc.setTextColor(255, 255, 255);
+  // --- PAGE 1 HEADER ---
+  // Top Title: FASTAG ACCOUNT SUMMARY
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.text('Bank Details', 16, 28.8);
-  doc.text('Customer Details', 92, 28.8);
+  doc.setFontSize(14);
+  doc.setTextColor(0, 0, 0);
+  doc.text('FASTAG ACCOUNT SUMMARY', marginX, 22);
 
-  // Border box
-  doc.setDrawColor(200, 200, 200);
-  doc.rect(14, 30.5, 182, 42);
-  doc.line(88, 30.5, 88, 72.5); // Vertical separator
+  // Top Right Logo Box: AXIS BANK | BLACKBUCK
+  const logoX = 135, logoY = 14, logoW = 60, logoH = 12;
+  drawLogoBox(doc, logoX, logoY, logoW, logoH);
 
-  // Bank details content
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.5);
-  doc.setTextColor(50, 50, 50);
-
-  doc.text('Statement Reference Number:', 16, 34.5);
+  // Customer Details Section
   doc.setFont('helvetica', 'normal');
-  doc.text(refNo, 16, 37.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Name of ICICI Bank Branch making the supply:', 16, 42);
-  doc.setFont('helvetica', 'normal');
-  doc.text('ICICI Bank Limited BKC', 16, 45);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Bill From Address of ICICI:', 16, 49.5);
-  doc.setFont('helvetica', 'normal');
-  doc.text('ICICI Bank Towers, Bandra Kurla Complex, Mumbai 400051', 16, 52.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('GSTIN of ICICI:', 16, 57);
-  doc.setFont('helvetica', 'normal');
-  doc.text('27AAACI1195H5ZR', 16, 60);
-
-  doc.setDrawColor(230, 230, 230);
-  doc.line(16, 63, 86, 63);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Place of Supply:', 16, 67);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Kerala', 16, 70);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('State Code:', 55, 67);
-  doc.setFont('helvetica', 'normal');
-  doc.text('32', 55, 70);
-
-  // Customer details content
-  doc.line(146, 30.5, 146, 72.5); // Inner vertical line for address
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Customer ID:', 90, 35);
-  doc.setFont('helvetica', 'normal');
-  doc.text(customerId, 114, 35);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Name:', 90, 40);
-  doc.setFont('helvetica', 'bold');
-  doc.text('MUHAMMED KUTTY P', 114, 40);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Statement Period:', 90, 45);
-  doc.setFont('helvetica', 'normal');
-  doc.text('10-01-2022 to 07-02-2022', 114, 45);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Statement Date:', 90, 50);
-  doc.setFont('helvetica', 'normal');
-  doc.text('10-02-2022', 114, 50);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Type of address:', 90, 55);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Permanent', 114, 55);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('GSTIN Number:', 90, 60);
-  doc.setFont('helvetica', 'normal');
-  doc.text('N/A', 114, 60);
-
-  // Customer Address
-  doc.setFont('helvetica', 'bold');
-  doc.text('Address:', 148, 35);
-  doc.setFont('helvetica', 'normal');
-  doc.text('MUHAMMED KUTTY P', 148, 39);
-  doc.text('KAIPPARAMBA', 148, 43);
-  doc.text('EKKAPARAMBA,KUZHIMANNA PO,', 148, 47);
-  doc.text('KUZHIMANNA,', 148, 51);
-  doc.text('MALAPPURAM - 673641,', 148, 55);
-  doc.text('Kerala, INDIA', 148, 59);
-
-  // Table 2: Vehicle Summary (Solid Orange Header #F58220)
-  const t2Y = 76;
-  doc.setFillColor(245, 130, 32);
-  doc.rect(14, t2Y, 182, 5.5, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text('Vehicle Summary', 16, t2Y + 4);
-
-  // Table 2 Columns header
-  const t2HeadY = t2Y + 5.5;
-  doc.setFillColor(230, 230, 230);
-  doc.rect(14, t2HeadY, 182, 5.5, 'F');
-  doc.setTextColor(40, 40, 40);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6);
-
-  const t2Cols = [
-    { label: 'Tag Account No.', x: 16, w: 26 },
-    { label: 'Licence Plate No.', x: 42, w: 26 },
-    { label: 'Group', x: 68, w: 18 },
-    { label: 'Trip Count', x: 86, w: 16, align: 'center' },
-    { label: 'Opening Balance (Rs.)', x: 122, w: 24, align: 'right' },
-    { label: 'Credit (Rs.)', x: 144, w: 20, align: 'right' },
-    { label: 'Debit (Rs.)', x: 166, w: 22, align: 'right' },
-    { label: 'Closing Balance (Rs.)', x: 194, w: 26, align: 'right' }
-  ];
-
-  doc.text('Tag Account No.', 16, t2HeadY + 3.8);
-  doc.text('Licence Plate No.', 42, t2HeadY + 3.8);
-  doc.text('Group', 70, t2HeadY + 3.8);
-  doc.text('Trip Count', 87, t2HeadY + 3.8);
-  doc.text('Opening Balance (Rs.)', 105, t2HeadY + 3.8);
-  doc.text('Credit (Rs.)', 137, t2HeadY + 3.8);
-  doc.text('Debit (Rs.)', 158, t2HeadY + 3.8);
-  doc.text('Closing Balance (Rs.)', 172, t2HeadY + 3.8);
-
-  // Table 2 Data Row
-  const t2RowY = t2HeadY + 5.5;
-  doc.rect(14, t2RowY, 182, 6);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
-  doc.text(tagAcc, 16, t2RowY + 4);
-  doc.setFont('helvetica', 'bold');
-  doc.text(plate, 42, t2RowY + 4);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Default', 70, t2RowY + 4);
-  doc.text('1', 92, t2RowY + 4);
-  doc.text(openingBal.toFixed(2), 115, t2RowY + 4);
-  doc.text('0.00', 141, t2RowY + 4);
-  doc.text(`- ${amount.toFixed(2)}`, 159, t2RowY + 4);
-  doc.setFont('helvetica', 'bold');
-  doc.text(closingBal.toFixed(2), 180, t2RowY + 4);
-
-  // Table 2 Total Row
-  const t2TotY = t2RowY + 6;
-  doc.setFillColor(248, 250, 252);
-  doc.rect(14, t2TotY, 182, 5.5, 'F');
-  doc.rect(14, t2TotY, 182, 5.5);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Total', 70, t2TotY + 3.8);
-  doc.text('1', 92, t2TotY + 3.8);
-  doc.text(openingBal.toFixed(2), 115, t2TotY + 3.8);
-  doc.text('0.00', 141, t2TotY + 3.8);
-  doc.text(`- ${amount.toFixed(2)}`, 159, t2TotY + 3.8);
-  doc.text(closingBal.toFixed(2), 180, t2TotY + 3.8);
-
-  // Table 3: Transaction Details (Solid Maroon Header #9B1B1E)
-  const t3Y = t2TotY + 9;
-  doc.setFillColor(155, 27, 30);
-  doc.rect(14, t3Y, 182, 5.5, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text('Transaction Details', 16, t3Y + 4);
-
-  // Sub-bar #F58220
-  const t3SubY = t3Y + 5.5;
-  doc.setFillColor(245, 130, 32);
-  doc.rect(14, t3SubY, 182, 4.5, 'F');
-  doc.setTextColor(30, 30, 30);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.text(`${plate} - ${tagAcc}`, 16, t3SubY + 3.2);
-
-  // Transaction Table Header #E6E6E6
-  const t3HeadY = t3SubY + 4.5;
-  doc.setFillColor(230, 230, 230);
-  doc.rect(14, t3HeadY, 182, 5.5, 'F');
-  doc.setTextColor(40, 40, 40);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6);
-
-  doc.text('Date & Time', 16, t3HeadY + 3.8);
-  doc.text('Activity', 45, t3HeadY + 3.8);
-  doc.text('Unique Transaction ID', 82, t3HeadY + 3.8);
-  doc.text('Transaction Description', 120, t3HeadY + 3.8);
-  doc.text('Amount (Rs.) [CR]', 160, t3HeadY + 3.8);
-  doc.text('Amount (Rs.) [DR]', 178, t3HeadY + 3.8);
-
-  // Transaction Table Row
-  const t3RowY = t3HeadY + 5.5;
-  doc.rect(14, t3RowY, 182, 7.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6);
-  doc.text(`${datePart} ${timePart}`, 16, t3RowY + 4.5);
-  doc.text('Trip (RRN No: / Trip No)', 45, t3RowY + 4.5);
-  doc.text(txnIdStr.slice(0, 30), 82, t3RowY + 4.5);
-  doc.text(`Plaza ${plazaStr.slice(0, 22)} - Lane:${laneNum}`, 120, t3RowY + 4.5);
-  doc.text('0.00', 168, t3RowY + 4.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(180, 20, 20);
-  doc.text(amount.toFixed(2), 184, t3RowY + 4.5);
-
-  // Table 4: CUG Payment Details
-  const t4Y = t3RowY + 11;
-  doc.setFillColor(245, 130, 32);
-  doc.rect(14, t4Y, 182, 4.5, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.text('CUG Payment Details', 16, t4Y + 3.2);
-  doc.rect(14, t4Y + 4.5, 182, 6);
-  doc.setTextColor(200, 120, 20);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.text('No transaction details to display', 85, t4Y + 8.8);
-
-  // Table 5: GSTIN Details
-  const t5Y = t4Y + 13.5;
-  doc.setFillColor(155, 27, 30);
-  doc.rect(14, t5Y, 182, 4.5, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.text('GSTIN Details', 16, t5Y + 3.2);
-  doc.rect(14, t5Y + 4.5, 182, 6);
-  doc.setTextColor(200, 40, 40);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.text('No transaction details to display', 85, t5Y + 8.8);
-
-  // Table 6: Load by UPI
-  const t6Y = t5Y + 13.5;
-  doc.setFillColor(245, 130, 32);
-  doc.rect(14, t6Y, 182, 4.5, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.text('Load by UPI', 16, t6Y + 3.2);
-  doc.rect(14, t6Y + 4.5, 182, 6);
-  doc.setTextColor(200, 120, 20);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.text('No transaction details to display', 85, t6Y + 8.8);
-
-  // Page 1 Footer
-  doc.setTextColor(120, 120, 120);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('1 of 2', 188, 285);
-
-  // ==========================================
-  // PAGE 2
-  // ==========================================
-  doc.addPage();
-  renderHeader();
-
-  // Important Messages Heading
-  const p2Y = 28;
-  doc.setTextColor(155, 27, 30);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('Important Messages', 14, p2Y);
-
-  // Red underline #DC2626
-  doc.setDrawColor(220, 38, 38);
-  doc.setLineWidth(0.6);
-  doc.line(14, p2Y + 2.5, 196, p2Y + 2.5);
-
-  // Disclaimer text
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(40, 40, 40);
-  doc.text(
-    'The Agency does not guarantee the accuracy of this information. For up-to-date account information, please contact our Customer Care at 18002670104.',
-    14,
-    p2Y + 9
-  );
-
-  doc.setTextColor(220, 38, 38);
-  doc.setFont('helvetica', 'bold');
-  doc.text(
-    '* Date and Time for Activity type: Trip is the Trip Date & Time, not the Transaction Posting Date & Time',
-    14,
-    p2Y + 16
-  );
-
-  doc.setTextColor(50, 50, 50);
-  doc.setFont('helvetica', 'normal');
-  doc.text(
-    '• With effect from 01/07/2017, Goods and Services Tax will be applicable on the services which include IGST @ 18%, CGST @ 9% and SGST @ 9%.',
-    14,
-    p2Y + 23
-  );
-  doc.text(
-    '• Our registered office address : ICICI Bank Limited, "Landmark", Race Course Circle, Vadodara - 390 007, Gujarat, India.',
-    14,
-    p2Y + 30
-  );
-
-  // Declaration & Signatory Box
-  const declY = p2Y + 50;
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.3);
-  doc.line(14, declY, 196, declY);
-
-  doc.setTextColor(40, 40, 40);
-  doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text('Declaration', 14, declY + 8);
+  doc.setTextColor(0, 0, 0);
 
-  const signBoxX = 135;
-  doc.text('For ICICI Bank Limited', signBoxX, declY + 8);
+  const customerName = data.customerName || txs[0]?.customer_name || txs[0]?.driver_name || 'Ramniwas';
+  const customerMobile = data.customerMobile || txs[0]?.customer_mobile || txs[0]?.driver_phone || '8094249011';
+  const truckNumber = data.truckNumber || txs[0]?.vehicle_registration_no || 'RJ22GB7999';
+  const truckOwnerName = data.truckOwnerName || txs[0]?.truck_owner_name || 'Rajendra Kumar';
 
-  // Authorized signature image
-  try {
-    if (AUTHORIZED_SIGNATURE_BASE64) {
-      doc.addImage(AUTHORIZED_SIGNATURE_BASE64, 'PNG', signBoxX - 2, declY + 11, 46, 17);
-    }
-  } catch (_) {}
+  doc.text(`Customer Name     : ${customerName}`, marginX, 33);
+  doc.text(`Customer Mobile   : ${customerMobile}`, marginX, 39);
+  doc.text(`Truck Number      : ${truckNumber}`, marginX, 45);
+  doc.text(`Truck Owner Name  : ${truckOwnerName}`, marginX, 51);
 
-  doc.setFontSize(8);
-  doc.text('Authorized Signatory', signBoxX + 4, declY + 32);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Statement Duration : ${durationText}`, marginX, 60);
 
-  // Page 2 Footer
-  doc.setTextColor(120, 120, 120);
+  // Summary Box: Credit 0 | Debit {totalDebit}
+  const boxW = 180;
+  const colHalf = 90;
+  const sBoxY = 66;
+  const sHeaderH = 7;
+  const sTotalH = 14;
+
+  doc.setFillColor(232, 239, 247); // Light blue
+  doc.rect(marginX, sBoxY, boxW, sHeaderH, 'F');
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.25);
+  doc.rect(marginX, sBoxY, boxW, sTotalH, 'S');
+  doc.line(marginX + colHalf, sBoxY, marginX + colHalf, sBoxY + sTotalH);
+  doc.line(marginX, sBoxY + sHeaderH, marginX + boxW, sBoxY + sHeaderH);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(20, 25, 35);
+  doc.text('Credit (Recharge) in ₹', marginX + colHalf / 2, sBoxY + 5, { align: 'center' });
+  doc.text('Debit (Swipe) in ₹', marginX + colHalf + colHalf / 2, sBoxY + 5, { align: 'center' });
+
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('2 of 2', 188, 285);
+  doc.setFontSize(9);
+  doc.text('0', marginX + colHalf / 2, sBoxY + sHeaderH + 5, { align: 'center' });
+  doc.text(totalDebit.toLocaleString('en-IN'), marginX + colHalf + colHalf / 2, sBoxY + sHeaderH + 5, { align: 'center' });
+
+  // Table Starts on Page 1
+  let curY = drawTableHeaders(doc, marginX, 85);
+
+  // Render Rows
+  txs.forEach((tx) => {
+    const rowH = 12.5;
+    // Check if new page is needed
+    if (curY + rowH > 280) {
+      doc.addPage();
+      curY = drawTableHeaders(doc, marginX, 15);
+    }
+
+    // Row Outer Border & Vertical Dividers
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.2);
+    doc.rect(marginX, curY, 180, rowH, 'S');
+
+    let colX = marginX;
+    colW.forEach((w, cIdx) => {
+      if (cIdx > 0) doc.line(colX, curY, colX, curY + rowH);
+      colX += w;
+    });
+
+    const dt = formatTableDateTime(tx.crossing_time, tx.created_at);
+
+    // Col 0: Transaction Time (Date on top, Time below)
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(20, 25, 35);
+    doc.text(dt.dateLine, marginX + 3, curY + 5);
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(dt.timeLine, marginX + 3, curY + 9.5);
+
+    // Col 1: Nature (C/D)
+    doc.setFontSize(7.5);
+    doc.setTextColor(20, 25, 35);
+    doc.text('Debit', marginX + colW[0] + colW[1] / 2, curY + 7.5, { align: 'center' });
+
+    // Col 2: Amount
+    const amtStr = Number(tx.amount || 0).toLocaleString('en-IN');
+    doc.text(amtStr, marginX + colW[0] + colW[1] + colW[2] / 2, curY + 7.5, { align: 'center' });
+
+    // Col 3: Closing Balance
+    let balStr = '-';
+    if (tx.wallet_balance_after != null) {
+      const balNum = Number(tx.wallet_balance_after);
+      balStr = balNum.toLocaleString('en-IN');
+    }
+    doc.text(balStr, marginX + colW[0] + colW[1] + colW[2] + colW[3] / 2, curY + 7.5, { align: 'center' });
+
+    // Col 4: Description
+    const descText = tx.description || tx.toll_plaza_name || 'FASTag Toll Deduction';
+    const descLines = doc.splitTextToSize(descText, 54);
+    doc.text(descLines, marginX + colW[0] + colW[1] + colW[2] + colW[3] + 2, curY + 5);
+
+    // Col 5: Transaction ID
+    const txnIdText = String(tx.transaction_id || '');
+    doc.text(txnIdText, marginX + colW[0] + colW[1] + colW[2] + colW[3] + colW[4] + colW[5] / 2, curY + 7.5, { align: 'center' });
+
+    curY += rowH;
+  });
 
   return doc;
 };
