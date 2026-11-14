@@ -136,6 +136,7 @@ export interface FastagTransaction {
   route_name?: string;
   route_trip_date?: string;
   toll_plaza_name: string;
+  description?: string;
   highway_name?: string;
   lat: number;
   lng: number;

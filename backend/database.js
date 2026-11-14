@@ -242,6 +242,11 @@ function initializeDatabase() {
     if (!fastagCols.includes('description')) {
       db.exec('ALTER TABLE fastag_transactions ADD COLUMN description TEXT');
     }
+    db.exec(`
+      UPDATE fastag_transactions 
+      SET vehicle_id = (SELECT id FROM vehicles WHERE vehicles.registration_no = fastag_transactions.vehicle_registration_no) 
+      WHERE vehicle_id IS NULL AND vehicle_registration_no IS NOT NULL;
+    `);
   } catch (e) {}
 
   // 8. User Logins Activity table

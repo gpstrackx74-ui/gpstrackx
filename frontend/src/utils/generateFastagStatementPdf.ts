@@ -21,16 +21,35 @@ export const generateFastagStatementPdf = (tx: FastagTransaction): jsPDF => {
   let datePart = '24-01-2022';
   let timePart = '07:00:09';
   if (tx.crossing_time) {
-    const parts = tx.crossing_time.split(' ');
-    if (parts[0]) {
+    const raw = tx.crossing_time.trim();
+    if (raw.includes('T')) {
+      const parts = raw.split('T');
       const dp = parts[0].split('-');
       if (dp.length === 3) datePart = `${dp[2]}-${dp[1]}-${dp[0]}`;
+      if (parts[1]) timePart = parts[1].replace('Z', '').split('.')[0];
+    } else {
+      const parts = raw.split(/\s+/);
+      if (parts[0]) {
+        if (parts[0].includes('-')) {
+          const dp = parts[0].split('-');
+          if (dp.length === 3) {
+            datePart = dp[0].length === 4 ? `${dp[2]}-${dp[1]}-${dp[0]}` : `${dp[0]}-${dp[1]}-${dp[2]}`;
+          }
+        } else if (parts[0].includes('/')) {
+          const dp = parts[0].split('/');
+          if (dp.length === 3) {
+            let m = parseInt(dp[0], 10), d = parseInt(dp[1], 10), y = dp[2];
+            if (m > 12 && d <= 12) { const t = m; m = d; d = t; }
+            datePart = `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
+          }
+        }
+      }
+      if (parts[1]) timePart = parts[1];
     }
-    if (parts[1]) timePart = parts[1];
   }
 
   const laneNum = tx.lane_direction?.replace(/[^0-9]/g, '').slice(0, 2) || '03';
-  const plazaStr = tx.toll_plaza_name || 'Paliyekkara Toll plaza';
+  const plazaStr = tx.description || tx.toll_plaza_name || 'Paliyekkara Toll plaza';
   const txnIdStr = tx.transaction_id && tx.transaction_id.length > 8
     ? tx.transaction_id
     : '0010012201240701279180 / 1390415023';

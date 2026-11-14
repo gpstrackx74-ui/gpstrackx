@@ -2630,6 +2630,8 @@ app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
     const sql = `
       SELECT 
         ft.*,
+        COALESCE(v.registration_no, ft.vehicle_registration_no) as vehicle_registration_no,
+        COALESCE(ft.vehicle_id, v.id) as vehicle_id,
         r.route_name,
         r.trip_date as route_trip_date,
         v.name_model as vehicle_model,
@@ -2637,7 +2639,7 @@ app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
         u.name as driver_name,
         u.phone as driver_phone
       FROM fastag_transactions ft
-      LEFT JOIN vehicles v ON ft.vehicle_id = v.id
+      LEFT JOIN vehicles v ON (ft.vehicle_id = v.id OR ft.vehicle_registration_no = v.registration_no)
       LEFT JOIN routes r ON ft.route_id = r.id
       LEFT JOIN users u ON v.assigned_user_id = u.id
       ${whereClause}

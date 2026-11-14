@@ -32,25 +32,71 @@ import {
   Route
 } from 'lucide-react';
 
-interface GroupedTrip {
-  tripKey: string;
-  routeId: number | null;
-  routeName: string;
-  tripDate: string;
+interface ParsedDateTime {
+  sortKey: string;      // 'YYYY-MM-DD'
+  displayDate: string;  // 'DD/MM/YYYY'
+  timeStr: string;      // 'HH:MM:SS' or 'HH:MM'
+}
+
+function parseDateParts(str?: string): ParsedDateTime {
+  if (!str) return { sortKey: '0000-00-00', displayDate: 'Unknown Date', timeStr: '--:--' };
+  str = String(str).trim();
+  let timeStr = '--:--';
+  let datePart = str;
+  if (str.includes('T')) {
+    const parts = str.split('T');
+    datePart = parts[0];
+    timeStr = parts[1].replace('Z', '').split('.')[0].slice(0, 8);
+  } else if (str.includes(' ')) {
+    const parts = str.split(/\s+/);
+    datePart = parts[0];
+    timeStr = parts.slice(1).join(' ').slice(0, 8);
+  }
+  if (datePart.includes('-')) {
+    const p = datePart.split('-');
+    if (p[0].length === 4) {
+      const y = p[0], m = p[1].padStart(2, '0'), d = p[2].padStart(2, '0');
+      return { sortKey: `${y}-${m}-${d}`, displayDate: `${d}/${m}/${y}`, timeStr };
+    } else if (p[2]?.length === 4) {
+      const d = p[0].padStart(2, '0'), m = p[1].padStart(2, '0'), y = p[2];
+      return { sortKey: `${y}-${m}-${d}`, displayDate: `${d}/${m}/${y}`, timeStr };
+    }
+  } else if (datePart.includes('/')) {
+    const p = datePart.split('/');
+    if (p[2]?.length === 4) {
+      let m = parseInt(p[0], 10);
+      let d = parseInt(p[1], 10);
+      const y = p[2];
+      if (m > 12 && d <= 12) {
+        const temp = m; m = d; d = temp;
+      }
+      const mm = String(m).padStart(2, '0');
+      const dd = String(d).padStart(2, '0');
+      return { sortKey: `${y}-${mm}-${dd}`, displayDate: `${dd}/${mm}/${y}`, timeStr };
+    }
+  }
+  return { sortKey: datePart, displayDate: datePart, timeStr };
+}
+
+interface DateTollGroup {
+  dateKey: string;
+  formattedDate: string;
   totalAmount: number;
   tollCount: number;
   transactions: FastagTransaction[];
 }
 
-interface GroupedVehicle {
+interface VehicleTollSection {
   vehicleId: number;
   registrationNo: string;
   vehicleModel: string;
   vehicleType: string;
+  ownerName?: string;
+  driverName?: string;
+  driverPhone?: string;
   totalAmount: number;
   totalTolls: number;
-  tripCount: number;
-  trips: GroupedTrip[];
+  dateGroups: DateTollGroup[];
 }
 
 export const FastagBilling: React.FC = () => {
@@ -69,10 +115,9 @@ export const FastagBilling: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
-  // Grouped Hierarchy & View Mode states
-  const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
+  // Grouped Vehicle Hierarchy states
   const [expandedVehicles, setExpandedVehicles] = useState<Record<string, boolean>>({});
-  const [expandedTrips, setExpandedTrips] = useState<Record<string, boolean>>({});
+  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
   // Filters
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('all');
@@ -133,77 +178,130 @@ export const FastagBilling: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Group transactions by Vehicle -> Trip/Date -> Toll Deductions
-  const groupedVehicles = React.useMemo<GroupedVehicle[]>(() => {
+  // Group transactions by Vehicle -> Date -> Toll Deductions
+  const groupedVehicleSections = React.useMemo<VehicleTollSection[]>(() => {
     const vehMap = new Map<string, {
       vehicleId: number;
       registrationNo: string;
       vehicleModel: string;
       vehicleType: string;
-      tripMap: Map<string, GroupedTrip>;
+      ownerName?: string;
+      driverName?: string;
+      driverPhone?: string;
+      dateMap: Map<string, {
+        dateKey: string;
+        formattedDate: string;
+        totalAmount: number;
+        tollCount: number;
+        transactions: FastagTransaction[];
+      }>;
     }>();
 
-    transactions.forEach(tx => {
-      const regNo = tx.vehicle_registration_no || `Vehicle #${tx.vehicle_id}`;
-      if (!vehMap.has(regNo)) {
-        vehMap.set(regNo, {
-          vehicleId: tx.vehicle_id,
-          registrationNo: regNo,
-          vehicleModel: tx.vehicle_model || tx.vehicle_class || 'Commercial Truck',
-          vehicleType: tx.vehicle_type || 'Heavy Vehicle',
-          tripMap: new Map()
+    // 1. Initialize with all vehicles from fleet
+    vehicles.forEach(v => {
+      const reg = v.registration_no?.toUpperCase().trim();
+      if (reg) {
+        vehMap.set(reg, {
+          vehicleId: v.id,
+          registrationNo: reg,
+          vehicleModel: v.name_model || 'Commercial Truck',
+          vehicleType: v.vehicle_type || 'Heavy Vehicle',
+          ownerName: v.owner_name,
+          dateMap: new Map()
         });
       }
-      const vEntry = vehMap.get(regNo)!;
+    });
 
-      // Group trips by route_id or date
-      const datePart = (tx.crossing_time || tx.created_at || '').split('T')[0] || (tx.crossing_time || '').split(' ')[0] || 'Unknown Date';
-      const tripKey = tx.route_id ? `route-${tx.route_id}` : `date-${datePart}`;
-      const tripName = tx.route_name || (tx.route_id ? `Highway Corridor #${tx.route_id}` : `Trip on ${datePart}`);
+    // 2. Map all transactions into their respective vehicles
+    transactions.forEach(tx => {
+      const reg = (tx.vehicle_registration_no || (tx.vehicle_id ? `VEH-${tx.vehicle_id}` : 'UNASSIGNED')).toUpperCase().trim();
+      if (!vehMap.has(reg)) {
+        vehMap.set(reg, {
+          vehicleId: tx.vehicle_id || 0,
+          registrationNo: reg,
+          vehicleModel: tx.vehicle_model || tx.vehicle_class || 'Commercial Truck',
+          vehicleType: tx.vehicle_type || 'Heavy Vehicle',
+          driverName: tx.driver_name,
+          driverPhone: tx.driver_phone,
+          dateMap: new Map()
+        });
+      }
 
-      if (!vEntry.tripMap.has(tripKey)) {
-        vEntry.tripMap.set(tripKey, {
-          tripKey,
-          routeId: tx.route_id || null,
-          routeName: tripName,
-          tripDate: tx.route_trip_date || datePart,
+      const vEntry = vehMap.get(reg)!;
+      if (!vEntry.vehicleId && tx.vehicle_id) vEntry.vehicleId = tx.vehicle_id;
+      if (tx.driver_name && !vEntry.driverName) vEntry.driverName = tx.driver_name;
+      if (tx.vehicle_model && vEntry.vehicleModel === 'Commercial Truck') vEntry.vehicleModel = tx.vehicle_model;
+
+      const { sortKey, displayDate } = parseDateParts(tx.crossing_time || tx.created_at);
+      if (!vEntry.dateMap.has(sortKey)) {
+        vEntry.dateMap.set(sortKey, {
+          dateKey: sortKey,
+          formattedDate: displayDate,
           totalAmount: 0,
           tollCount: 0,
           transactions: []
         });
       }
-      const tripEntry = vEntry.tripMap.get(tripKey)!;
-      tripEntry.transactions.push(tx);
-      tripEntry.totalAmount += Number(tx.amount || 0);
-      tripEntry.tollCount += 1;
+
+      const dEntry = vEntry.dateMap.get(sortKey)!;
+      dEntry.transactions.push(tx);
+      dEntry.totalAmount += Number(tx.amount || 0);
+      dEntry.tollCount += 1;
     });
 
-    const result: GroupedVehicle[] = [];
+    // 3. Convert map to array and compute totals
+    const result: VehicleTollSection[] = [];
     vehMap.forEach((vData) => {
-      const trips = Array.from(vData.tripMap.values()).map(trip => {
-        trip.transactions.sort((a, b) => new Date(a.crossing_time).getTime() - new Date(b.crossing_time).getTime());
-        return trip;
+      const dateGroups: DateTollGroup[] = Array.from(vData.dateMap.values()).map(dg => {
+        // Sort transactions inside date chronologically by crossing_time
+        dg.transactions.sort((a, b) => {
+          const tA = parseDateParts(a.crossing_time || a.created_at).timeStr;
+          const tB = parseDateParts(b.crossing_time || b.created_at).timeStr;
+          return tA.localeCompare(tB);
+        });
+        return dg;
       });
 
-      trips.sort((a, b) => (b.tripDate || '').localeCompare(a.tripDate || ''));
+      // Sort dates descending (newest date first)
+      dateGroups.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
 
-      const totalAmount = trips.reduce((sum, t) => sum + t.totalAmount, 0);
-      const totalTolls = trips.reduce((sum, t) => sum + t.tollCount, 0);
+      const totalAmount = dateGroups.reduce((sum, d) => sum + d.totalAmount, 0);
+      const totalTolls = dateGroups.reduce((sum, d) => sum + d.tollCount, 0);
 
       result.push({
         vehicleId: vData.vehicleId,
         registrationNo: vData.registrationNo,
         vehicleModel: vData.vehicleModel,
         vehicleType: vData.vehicleType,
+        ownerName: vData.ownerName,
+        driverName: vData.driverName,
+        driverPhone: vData.driverPhone,
         totalAmount,
         totalTolls,
-        tripCount: trips.length,
-        trips
+        dateGroups
       });
     });
 
-    return result.sort((a, b) => b.totalAmount - a.totalAmount);
-  }, [transactions]);
+    // 4. Filter by vehicle dropdown
+    let filtered = result;
+    if (selectedVehicleId !== 'all') {
+      const selNum = Number(selectedVehicleId);
+      filtered = filtered.filter(v => v.vehicleId === selNum || v.registrationNo === selectedVehicleId);
+    }
+
+    // 5. Filter by search or date: keep only vehicles that have matching transactions
+    if (searchQuery.trim() || selectedDate) {
+      filtered = filtered.filter(v => v.totalTolls > 0);
+    }
+
+    // 6. Sort: vehicles with tolls first (by totalAmount desc), then alphabetical
+    return filtered.sort((a, b) => {
+      if (a.totalTolls > 0 && b.totalTolls === 0) return -1;
+      if (a.totalTolls === 0 && b.totalTolls > 0) return 1;
+      if (a.totalAmount !== b.totalAmount) return b.totalAmount - a.totalAmount;
+      return a.registrationNo.localeCompare(b.registrationNo);
+    });
+  }, [vehicles, transactions, selectedVehicleId, searchQuery, selectedDate]);
 
   const toggleVehicleExpand = (regNo: string) => {
     setExpandedVehicles(prev => ({
@@ -216,41 +314,41 @@ export const FastagBilling: React.FC = () => {
     return expandedVehicles[regNo] !== false; // expanded by default
   };
 
-  const toggleTripExpand = (tripKey: string) => {
-    setExpandedTrips(prev => ({
+  const toggleDateExpand = (key: string) => {
+    setExpandedDates(prev => ({
       ...prev,
-      [tripKey]: prev[tripKey] === undefined ? false : !prev[tripKey]
+      [key]: prev[key] === undefined ? false : !prev[key]
     }));
   };
 
-  const isTripExpanded = (tripKey: string) => {
-    return expandedTrips[tripKey] !== false; // expanded by default
+  const isDateExpanded = (key: string) => {
+    return expandedDates[key] !== false; // expanded by default
   };
 
   const expandAll = () => {
     const allVeh: Record<string, boolean> = {};
-    const allTrips: Record<string, boolean> = {};
-    groupedVehicles.forEach(v => {
+    const allDates: Record<string, boolean> = {};
+    groupedVehicleSections.forEach(v => {
       allVeh[v.registrationNo] = true;
-      v.trips.forEach(t => {
-        allTrips[t.tripKey] = true;
+      v.dateGroups.forEach(d => {
+        allDates[`${v.registrationNo}_${d.dateKey}`] = true;
       });
     });
     setExpandedVehicles(allVeh);
-    setExpandedTrips(allTrips);
+    setExpandedDates(allDates);
   };
 
   const collapseAll = () => {
     const allVeh: Record<string, boolean> = {};
-    const allTrips: Record<string, boolean> = {};
-    groupedVehicles.forEach(v => {
+    const allDates: Record<string, boolean> = {};
+    groupedVehicleSections.forEach(v => {
       allVeh[v.registrationNo] = false;
-      v.trips.forEach(t => {
-        allTrips[t.tripKey] = false;
+      v.dateGroups.forEach(d => {
+        allDates[`${v.registrationNo}_${d.dateKey}`] = false;
       });
     });
     setExpandedVehicles(allVeh);
-    setExpandedTrips(allTrips);
+    setExpandedDates(allDates);
   };
 
   // Auto-estimate tariff when plaza or coordinates change in modal
@@ -499,7 +597,7 @@ export const FastagBilling: React.FC = () => {
                 onChange={(e) => setSelectedVehicleId(e.target.value)}
                 className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
-                <option value="all">All Fleet Trucks ({vehicles.length})</option>
+                <option value="all">All Fleet Vehicles (Individual Cards)</option>
                 {vehicles.map(v => (
                   <option key={v.id} value={v.id}>
                     {v.registration_no} • {v.name_model}
@@ -537,90 +635,60 @@ export const FastagBilling: React.FC = () => {
         {/* Thin divider with light red 10% opacity */}
         <div className="border-t border-[#E60012]/10" />
 
-        {/* Section 4: Transactions Table & Toll Bills List */}
+        {/* Section 4: Individual Vehicle FASTag Toll Cards & Tax Invoices */}
         <div>
           <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                Electronic Toll Clearance & Tax Invoice Records
-              </h3>
-            </div>
-
-            {/* View Mode Switcher: Grouped by Vehicle vs All List */}
-            <div className="flex items-center gap-2">
-              {viewMode === 'grouped' && groupedVehicles.length > 0 && (
-                <div className="flex items-center gap-1.5 mr-2">
-                  <button
-                    type="button"
-                    onClick={expandAll}
-                    className="px-2 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
-                  >
-                    Expand All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={collapseAll}
-                    className="px-2 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
-                  >
-                    Collapse All
-                  </button>
-                </div>
-              )}
-
-              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('grouped')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                    viewMode === 'grouped'
-                      ? 'bg-[#E60012] text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Grouped by Vehicle</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('flat')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                    viewMode === 'flat'
-                      ? 'bg-[#E60012] text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Flat All List</span>
-                </button>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                  Individual Vehicle FASTag Toll Cards
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  Separate toll bills for each vehicle • Date-wise deductions with tax invoice downloads
+                </p>
               </div>
             </div>
+
+            {/* Actions: Expand/Collapse All */}
+            {groupedVehicleSections.length > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={expandAll}
+                  className="px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                >
+                  Expand All
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAll}
+                  className="px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                >
+                  Collapse All
+                </button>
+              </div>
+            )}
           </div>
 
-          {transactions.length === 0 ? (
+          {groupedVehicleSections.length === 0 ? (
             <div className="p-12 text-center text-slate-400 space-y-2">
               <Receipt className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">No FASTag toll transactions found.</p>
               <p className="text-[11px] text-slate-400">
-                {isAdmin ? 'Plan a route with tolls in Route Planner or click "+ Add FASTag Toll Bill" above.' : 'No toll transactions recorded for your vehicle yet.'}
+                {isAdmin ? 'Import an Excel file with tolls or click "+ Add FASTag Toll Bill" above.' : 'No toll transactions recorded for your vehicle yet.'}
               </p>
             </div>
-          ) : viewMode === 'grouped' ? (
-            /* ============================================================== */
-            /* 3-LEVEL NESTED COLLAPSIBLE VEHICLE / TRIP HIERARCHY            */
-            /* Level 1: Vehicle Node                                          */
-            /* Level 2: Trip / Date Node                                      */
-            /* Level 3: Individual Toll Plaza Deductions with View Bill Button*/
-            /* ============================================================== */
+          ) : (
             <div className="p-4 sm:p-5 space-y-4">
-              {groupedVehicles.map((v) => {
+              {groupedVehicleSections.map((v) => {
                 const isVExpanded = isVehicleExpanded(v.registrationNo);
                 return (
                   <div
                     key={v.registrationNo}
-                    className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs transition"
+                    className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs transition hover:border-slate-300"
                   >
-                    {/* Level 1: Vehicle Node Header */}
+                    {/* Vehicle Header Card */}
                     <div
                       onClick={() => toggleVehicleExpand(v.registrationNo)}
                       className="p-3.5 sm:p-4 bg-slate-50/80 hover:bg-slate-100/80 cursor-pointer flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 transition select-none"
@@ -637,333 +705,253 @@ export const FastagBilling: React.FC = () => {
                           )}
                         </button>
 
-                        <div className="w-9 h-9 rounded-xl bg-[#E60012] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                          <Truck className="w-4 h-4 text-white" />
+                        <div className="w-10 h-10 rounded-xl bg-[#E60012] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                          <Truck className="w-5 h-5 text-white" />
                         </div>
 
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-black text-sm text-slate-900 tracking-tight">
+                            <span className="font-mono font-black text-base text-slate-900 tracking-tight">
                               {v.registrationNo}
                             </span>
-                            <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded-full border border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-700 bg-white px-2.5 py-0.5 rounded-full border border-slate-200 shadow-2xs">
                               {v.vehicleModel}
                             </span>
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                              {v.vehicleType}
+                            </span>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
-                            <span>{v.vehicleType}</span>
+                          <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                            {v.ownerName && (
+                              <span>
+                                Owner: <strong className="text-slate-700">{v.ownerName}</strong>
+                              </span>
+                            )}
+                            {v.driverName && (
+                              <span>
+                                {v.ownerName ? '• ' : ''}User/Driver: <strong className="text-slate-700">{v.driverName}</strong>
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
 
-                      {/* Vehicle Node Aggregates */}
+                      {/* Vehicle Aggregates */}
                       <div className="flex items-center gap-2 sm:gap-4 flex-wrap ml-auto">
                         <div className="text-right">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Trips</span>
-                          <span className="font-bold text-xs text-slate-700 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
-                            {v.tripCount} Trips
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dates</span>
+                          <span className="font-bold text-xs text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+                            {v.dateGroups.length} {v.dateGroups.length === 1 ? 'Date' : 'Dates'}
                           </span>
                         </div>
                         <div className="text-right">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tolls</span>
-                          <span className="font-bold text-xs text-slate-700 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Tolls</span>
+                          <span className="font-bold text-xs text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
                             {v.totalTolls} Tolls
                           </span>
                         </div>
-                        <div className="text-right pl-2 border-l border-slate-200">
+                        <div className="text-right pl-3 border-l border-slate-200">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Deducted</span>
-                          <span className="font-black text-sm font-mono text-emerald-600">
-                            ₹{v.totalAmount.toFixed(2)}
+                          <span className="font-black text-sm sm:text-base font-mono text-emerald-600">
+                            ₹{v.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Level 2: Trips / Dates inside Vehicle */}
+                    {/* Inside Vehicle Card: Date Groups */}
                     {isVExpanded && (
                       <div className="p-3 sm:p-4 bg-slate-50/40 space-y-3">
-                        {v.trips.map((trip) => {
-                          const isTExpanded = isTripExpanded(trip.tripKey);
-                          return (
-                            <div
-                              key={trip.tripKey}
-                              className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs"
-                            >
-                              {/* Level 2 Header: Trip / Route Corridor */}
+                        {v.dateGroups.length === 0 ? (
+                          <div className="p-8 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
+                            <Receipt className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                            <p className="text-xs font-bold text-slate-600">No FASTag toll deductions recorded for this vehicle.</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              Toll deductions for this vehicle will appear here when recorded or imported.
+                            </p>
+                          </div>
+                        ) : (
+                          v.dateGroups.map((dg) => {
+                            const dateKeyUnique = `${v.registrationNo}_${dg.dateKey}`;
+                            const isDExpanded = isDateExpanded(dateKeyUnique);
+                            return (
                               <div
-                                onClick={() => toggleTripExpand(trip.tripKey)}
-                                className="p-3 bg-gradient-to-r from-slate-50 to-white hover:bg-slate-100/60 cursor-pointer flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 transition select-none"
+                                key={dateKeyUnique}
+                                className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs"
                               >
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <button
-                                    type="button"
-                                    className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center text-slate-500 shrink-0"
-                                  >
-                                    {isTExpanded ? (
-                                      <ChevronDown className="w-3.5 h-3.5 text-blue-600" />
-                                    ) : (
-                                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                    )}
-                                  </button>
+                                {/* Date Node Header */}
+                                <div
+                                  onClick={() => toggleDateExpand(dateKeyUnique)}
+                                  className="p-3 bg-gradient-to-r from-slate-50 to-white hover:bg-slate-100/60 cursor-pointer flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 transition select-none"
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <button
+                                      type="button"
+                                      className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center text-slate-500 shrink-0"
+                                    >
+                                      {isDExpanded ? (
+                                        <ChevronDown className="w-3.5 h-3.5 text-blue-600" />
+                                      ) : (
+                                        <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                                      )}
+                                    </button>
 
-                                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                                    <Route className="w-3.5 h-3.5 text-blue-600" />
+                                    <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                      <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                                    </div>
+
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-black text-slate-900 font-mono">
+                                        📅 Date: {dg.formattedDate}
+                                      </span>
+                                      <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                        {dg.tollCount} {dg.tollCount === 1 ? 'Toll' : 'Tolls'} Crossed
+                                      </span>
+                                    </div>
                                   </div>
 
-                                  <div className="min-w-0">
-                                    <div className="text-xs font-bold text-slate-900 truncate max-w-[340px] sm:max-w-md" title={trip.routeName}>
-                                      {trip.routeName}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                                      <span className="flex items-center gap-1 font-mono">
-                                        <Calendar className="w-3 h-3 text-slate-400" />
-                                        {trip.tripDate}
-                                      </span>
-                                      <span>•</span>
-                                      <span className="font-semibold text-slate-600">
-                                        {trip.tollCount} Toll Deductions
-                                      </span>
-                                    </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-xs font-black font-mono text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                                      ₹{dg.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-3">
-                                  <span className="text-xs font-black font-mono text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                                    ₹{trip.totalAmount.toFixed(2)}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Level 3: Individual Toll Plaza Deductions Table */}
-                              {isTExpanded && (
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left text-xs">
-                                    <thead className="bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                                      <tr>
-                                        <th className="py-2.5 px-3">Toll Plaza & Highway</th>
-                                        <th className="py-2.5 px-3">GPS Coordinates</th>
-                                        <th className="py-2.5 px-3">Txn ID & NETC</th>
-                                        <th className="py-2.5 px-3">Crossing Time</th>
-                                        <th className="py-2.5 px-3 text-right">Tariff (₹)</th>
-                                        <th className="py-2.5 px-3 text-center">Status</th>
-                                        <th className="py-2.5 px-3 text-center">Tax Invoice</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                                      {trip.transactions.map((tx) => (
-                                        <tr key={tx.id} className="hover:bg-blue-50/30 transition">
-                                          <td className="py-3 px-3 min-w-[180px]">
-                                            <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                                              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                              <span>{tx.toll_plaza_name}</span>
-                                            </div>
-                                            <p className="text-[10px] text-slate-400 font-medium mt-0.5 truncate max-w-[200px]" title={tx.highway_name || ''}>
-                                              {tx.highway_name || 'National Highway Expressway'}
-                                            </p>
-                                          </td>
-
-                                          <td className="py-3 px-3 whitespace-nowrap">
-                                            <a
-                                              href={`https://www.google.com/maps?q=${tx.lat},${tx.lng}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-mono font-semibold transition"
-                                            >
-                                              <MapPin className="w-3 h-3 text-red-500 shrink-0" />
-                                              <span>{Number(tx.lat).toFixed(4)}, {Number(tx.lng).toFixed(4)}</span>
-                                              <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
-                                            </a>
-                                          </td>
-
-                                          <td className="py-3 px-3 whitespace-nowrap">
-                                            <div className="flex items-center gap-1 font-mono text-[11px] font-bold text-slate-800">
-                                              <span>{tx.transaction_id}</span>
-                                              <button
-                                                type="button"
-                                                onClick={() => copyToClipboard(tx.transaction_id, `txn-${tx.id}`)}
-                                                className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
-                                                title="Copy Transaction ID"
-                                              >
-                                                {copiedId === `txn-${tx.id}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                                              </button>
-                                            </div>
-                                            <p className="text-[9px] font-mono text-slate-400 mt-0.5">
-                                              Ref: {tx.netc_reference_no}
-                                            </p>
-                                          </td>
-
-                                          <td className="py-3 px-3 whitespace-nowrap">
-                                            <div className="flex items-center gap-1 text-[11px] text-slate-800 font-medium">
-                                              <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                                              <span>{tx.crossing_time}</span>
-                                            </div>
-                                            <span className="text-[9px] text-slate-400 uppercase font-mono block mt-0.5">
-                                              {tx.lane_direction || 'Lane 04'}
-                                            </span>
-                                          </td>
-
-                                          <td className="py-3 px-3 text-right whitespace-nowrap">
-                                            <div className="text-xs font-black text-slate-900 font-mono">
-                                              ₹{Number(tx.amount).toFixed(2)}
-                                            </div>
-                                            <span className="text-[8px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded-full border border-emerald-200">
-                                              Exempt GST
-                                            </span>
-                                          </td>
-
-                                          <td className="py-3 px-3 text-center whitespace-nowrap">
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                              <CheckCircle2 className="w-2.5 h-2.5" />
-                                              <span>PAID</span>
-                                            </span>
-                                          </td>
-
-                                          <td className="py-3 px-3 text-center whitespace-nowrap">
-                                            <button
-                                              type="button"
-                                              onClick={() => setSelectedTxForInvoice(tx)}
-                                              className="px-2.5 py-1 rounded-lg bg-[#E60012] hover:bg-[#CC0010] text-white text-[10px] font-bold flex items-center justify-center gap-1 transition shadow-2xs mx-auto cursor-pointer"
-                                              title="View & Download FASTag Tax Invoice"
-                                            >
-                                              <FileText className="w-3 h-3 text-white" />
-                                              <span>View Bill</span>
-                                            </button>
-                                          </td>
+                                {/* Table of Toll Deductions on this Date */}
+                                {isDExpanded && (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs">
+                                      <thead className="bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                                        <tr>
+                                          <th className="py-2.5 px-3">Toll Description & Plaza</th>
+                                          <th className="py-2.5 px-3">Transaction ID & NETC</th>
+                                          <th className="py-2.5 px-3">Crossing Time</th>
+                                          <th className="py-2.5 px-3 text-right">Tariff (₹)</th>
+                                          <th className="py-2.5 px-3 text-right">Closing Balance (₹)</th>
+                                          <th className="py-2.5 px-3 text-center">Status</th>
+                                          <th className="py-2.5 px-3 text-center">Tax Invoice</th>
                                         </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                                        {dg.transactions.map((tx) => {
+                                          const dt = parseDateParts(tx.crossing_time || tx.created_at);
+                                          const hasCoords = Number(tx.lat) !== 0 && Number(tx.lng) !== 0;
+                                          return (
+                                            <tr key={tx.id} className="hover:bg-blue-50/30 transition">
+                                              {/* Toll Description & Plaza */}
+                                              <td className="py-3 px-3 min-w-[220px]">
+                                                <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                                  <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                  <span className="truncate max-w-[280px]" title={tx.description || tx.toll_plaza_name}>
+                                                    {tx.description || tx.toll_plaza_name}
+                                                  </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                                                  <span className="truncate max-w-[200px]" title={tx.highway_name || ''}>
+                                                    {tx.highway_name || 'National Highway Corridor'}
+                                                  </span>
+                                                  {hasCoords && (
+                                                    <a
+                                                      href={`https://www.google.com/maps?q=${tx.lat},${tx.lng}`}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="inline-flex items-center gap-0.5 text-[9px] text-slate-500 hover:text-blue-600"
+                                                    >
+                                                      <MapPin className="w-2.5 h-2.5 text-red-500" />
+                                                      <span>Map</span>
+                                                    </a>
+                                                  )}
+                                                </div>
+                                              </td>
+
+                                              {/* Transaction ID & NETC */}
+                                              <td className="py-3 px-3 whitespace-nowrap">
+                                                <div className="flex items-center gap-1 font-mono text-[11px] font-bold text-slate-800">
+                                                  <span>{tx.transaction_id}</span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => copyToClipboard(tx.transaction_id, `txn-${tx.id}`)}
+                                                    className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                                                    title="Copy Transaction ID"
+                                                  >
+                                                    {copiedId === `txn-${tx.id}` ? (
+                                                      <Check className="w-3 h-3 text-emerald-500" />
+                                                    ) : (
+                                                      <Copy className="w-3 h-3" />
+                                                    )}
+                                                  </button>
+                                                </div>
+                                                <p className="text-[9px] font-mono text-slate-400 mt-0.5">
+                                                  Ref: {tx.netc_reference_no}
+                                                </p>
+                                              </td>
+
+                                              {/* Crossing Time */}
+                                              <td className="py-3 px-3 whitespace-nowrap">
+                                                <div className="flex items-center gap-1 text-[11px] text-slate-800 font-medium">
+                                                  <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                                  <span>{dt.timeStr}</span>
+                                                </div>
+                                                <span className="text-[9px] text-slate-400 uppercase font-mono block mt-0.5">
+                                                  {tx.lane_direction || 'Lane 04'}
+                                                </span>
+                                              </td>
+
+                                              {/* Tariff Amount */}
+                                              <td className="py-3 px-3 text-right whitespace-nowrap">
+                                                <div className="text-xs font-black text-slate-900 font-mono">
+                                                  ₹{Number(tx.amount).toFixed(2)}
+                                                </div>
+                                                <span className="text-[8px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded-full border border-emerald-200">
+                                                  Exempt GST
+                                                </span>
+                                              </td>
+
+                                              {/* Closing Balance */}
+                                              <td className="py-3 px-3 text-right whitespace-nowrap">
+                                                <div className="text-xs font-bold text-slate-800 font-mono">
+                                                  {tx.wallet_balance_after != null
+                                                    ? `₹${Number(tx.wallet_balance_after).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                    : '—'}
+                                                </div>
+                                              </td>
+
+                                              {/* Status */}
+                                              <td className="py-3 px-3 text-center whitespace-nowrap">
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                  <CheckCircle2 className="w-2.5 h-2.5" />
+                                                  <span>PAID</span>
+                                                </span>
+                                              </td>
+
+                                              {/* View Bill Button */}
+                                              <td className="py-3 px-3 text-center whitespace-nowrap">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setSelectedTxForInvoice(tx)}
+                                                  className="px-2.5 py-1 rounded-lg bg-[#E60012] hover:bg-[#CC0010] text-white text-[10px] font-bold flex items-center justify-center gap-1 transition shadow-2xs mx-auto cursor-pointer"
+                                                  title="View & Download FASTag Tax Invoice"
+                                                >
+                                                  <FileText className="w-3 h-3 text-white" />
+                                                  <span>View Bill</span>
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     )}
                   </div>
                 );
               })}
-            </div>
-          ) : (
-            /* Flat All Transactions Table */
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                  <tr>
-                    <th className="py-3 px-4">Toll Plaza & Highway</th>
-                    <th className="py-3 px-4">GPS Coordinates</th>
-                    <th className="py-3 px-4">Vehicle / User</th>
-                    <th className="py-3 px-4">Transaction ID & NETC Ref</th>
-                    <th className="py-3 px-4">Crossing Time</th>
-                    <th className="py-3 px-4 text-right">Truck Tariff (₹)</th>
-                    <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4 text-center">Tax Invoice</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                  {transactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50/70 transition">
-                      {/* Toll Plaza Name & Highway */}
-                      <td className="py-3.5 px-4 min-w-[200px]">
-                        <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                          <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>{tx.toll_plaza_name}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5 truncate max-w-[230px]" title={tx.highway_name || ''}>
-                          {tx.highway_name || 'National Highway Expressway'}
-                        </p>
-                      </td>
-
-                      {/* Coordinates */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <a
-                          href={`https://www.google.com/maps?q=${tx.lat},${tx.lng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-mono font-semibold transition"
-                          title="View location on Google Maps"
-                        >
-                          <MapPin className="w-3 h-3 text-red-500 shrink-0" />
-                          <span>{Number(tx.lat).toFixed(4)}, {Number(tx.lng).toFixed(4)}</span>
-                          <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
-                        </a>
-                      </td>
-
-                      {/* Vehicle */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <Truck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                          <span className="font-mono font-black text-slate-900 text-xs">
-                            {tx.vehicle_registration_no}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">
-                          {tx.vehicle_model || tx.vehicle_class || 'Commercial Truck'}
-                        </p>
-                      </td>
-
-                      {/* Transaction ID & NETC */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1 font-mono text-[11px] font-bold text-slate-800">
-                          <span>{tx.transaction_id}</span>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(tx.transaction_id, `txn-${tx.id}`)}
-                            className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
-                            title="Copy Transaction ID"
-                          >
-                            {copiedId === `txn-${tx.id}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                          </button>
-                        </div>
-                        <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                          Ref: {tx.netc_reference_no}
-                        </p>
-                      </td>
-
-                      {/* Crossing Time */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1 text-[11px] text-slate-800 font-medium">
-                          <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span>{tx.crossing_time}</span>
-                        </div>
-                        <span className="text-[9px] text-slate-400 uppercase font-mono block mt-0.5">
-                          {tx.lane_direction || 'Lane 04'}
-                        </span>
-                      </td>
-
-                      {/* Truck Tariff */}
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="text-sm font-black text-slate-900 font-mono">
-                          ₹{Number(tx.amount).toFixed(2)}
-                        </div>
-                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded-full border border-emerald-200">
-                          Exempt GST (NHAI)
-                        </span>
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>PAID</span>
-                        </span>
-                      </td>
-
-                      {/* Tax Invoice View */}
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedTxForInvoice(tx)}
-                          className="px-3 py-1.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition shadow-2xs mx-auto cursor-pointer"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-emerald-200" />
-                          <span>View Bill</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           )}
         </div>
@@ -982,19 +970,12 @@ export const FastagBilling: React.FC = () => {
         const openingBal = selectedTxForInvoice.wallet_balance_before || (amount + 305.0);
         const closingBal = openingBal - amount;
 
-        let datePart = '24-01-2022';
-        let timePart = '07:00:09';
-        if (selectedTxForInvoice.crossing_time) {
-          const parts = selectedTxForInvoice.crossing_time.split(' ');
-          if (parts[0]) {
-            const dp = parts[0].split('-');
-            if (dp.length === 3) datePart = `${dp[2]}-${dp[1]}-${dp[0]}`;
-          }
-          if (parts[1]) timePart = parts[1];
-        }
+        const dt = parseDateParts(selectedTxForInvoice.crossing_time || selectedTxForInvoice.created_at);
+        const datePart = dt.displayDate || '24-01-2022';
+        const timePart = dt.timeStr || '07:00:09';
 
         const laneNum = selectedTxForInvoice.lane_direction?.replace(/[^0-9]/g, '').slice(0, 2) || '03';
-        const plazaStr = selectedTxForInvoice.toll_plaza_name || 'Paliyekkara Toll plaza';
+        const plazaStr = selectedTxForInvoice.description || selectedTxForInvoice.toll_plaza_name || 'Paliyekkara Toll plaza';
         const txnIdStr = selectedTxForInvoice.transaction_id && selectedTxForInvoice.transaction_id.length > 8
           ? selectedTxForInvoice.transaction_id
           : '0010012201240701279180 / 1390415023';
