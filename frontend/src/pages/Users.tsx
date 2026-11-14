@@ -188,6 +188,7 @@ export const UsersManagement: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgressText, setImportProgressText] = useState<string | null>(null);
   const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
   const [importErrorMsg, setImportErrorMsg] = useState<string | null>(null);
 
@@ -238,146 +239,194 @@ export const UsersManagement: React.FC = () => {
     return '10:00:00';
   };
 
+  const parseSingleFleetExcel = async (file: File): Promise<{
+    fileName: string;
+    customerName: string;
+    customerMobile: string;
+    truckNumber: string;
+    truckOwnerName: string;
+    transactions: any[];
+  }> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      throw new Error(`File "${file.name}" contains no readable sheets.`);
+    }
+
+    // --- SHEET 0: User & Vehicle Details ---
+    const s0Name = workbook.SheetNames[0];
+    const ws0 = workbook.Sheets[s0Name];
+    const rows0: any[][] = XLSX.utils.sheet_to_json(ws0, { header: 1 });
+
+    let customerName = '';
+    let customerMobile = '';
+    let truckNumber = '';
+    let truckOwnerName = '';
+
+    // 1. Scan Key-Value Pairs (Row-by-Row in Column A & B)
+    for (const r of rows0) {
+      if (!Array.isArray(r) || r.length < 2) continue;
+      const k = String(r[0] || '').toLowerCase().trim();
+      const v = String(r[1] || '').trim();
+      if (k.includes('customer name') || (k.includes('name') && !k.includes('owner') && !k.includes('truck'))) {
+        if (v) customerName = v;
+      } else if (k.includes('mobile') || k.includes('phone') || k.includes('contact')) {
+        if (v) customerMobile = v;
+      } else if (k.includes('truck number') || k.includes('vehicle number') || k.includes('truck no') || k.includes('vehicle no')) {
+        if (v) truckNumber = v;
+      } else if (k.includes('owner') || k.includes('company')) {
+        if (v) truckOwnerName = v;
+      }
+    }
+
+    // 2. Fallback: Check if horizontal table with headers on Row 0
+    if (!customerName || !truckNumber || !customerMobile) {
+      const json0: any[] = XLSX.utils.sheet_to_json(ws0);
+      if (json0.length > 0) {
+        const firstRow = json0[0];
+        for (const [kRaw, vRaw] of Object.entries(firstRow)) {
+          const k = kRaw.toLowerCase();
+          const v = String(vRaw || '').trim();
+          if (k.includes('customer name') || (k.includes('name') && !k.includes('owner'))) customerName = customerName || v;
+          if (k.includes('mobile') || k.includes('phone')) customerMobile = customerMobile || v;
+          if (k.includes('truck') && (k.includes('number') || k.includes('no'))) truckNumber = truckNumber || v;
+          if (k.includes('owner')) truckOwnerName = truckOwnerName || v;
+        }
+      }
+    }
+
+    if (!customerName) {
+      throw new Error(`File "${file.name}": Could not find "Customer Name" in Sheet 0.`);
+    }
+    if (!customerMobile) {
+      throw new Error(`File "${file.name}": Could not find "Customer Mobile" in Sheet 0.`);
+    }
+    if (!truckNumber) {
+      throw new Error(`File "${file.name}": Could not find "Truck Number" in Sheet 0.`);
+    }
+
+    // --- SHEET 1: FASTag Transactions & Tolls ---
+    let parsedTransactions: any[] = [];
+    if (workbook.SheetNames.length > 1) {
+      const s1Name = workbook.SheetNames[1];
+      const ws1 = workbook.Sheets[s1Name];
+      const rows1: any[][] = XLSX.utils.sheet_to_json(ws1, { header: 1 });
+
+      if (rows1.length > 1) {
+        const headers = (rows1[0] || []).map((h: any) => String(h || '').toLowerCase().trim());
+        const dateIdx = headers.findIndex((h: string) => h.includes('date'));
+        const timeIdx = headers.findIndex((h: string) => h.includes('time'));
+        const natureIdx = headers.findIndex((h: string) => h.includes('nature') || h.includes('type'));
+        const amountIdx = headers.findIndex((h: string) => h.includes('amount') || h.includes('fare') || h.includes('tariff'));
+        const balanceIdx = headers.findIndex((h: string) => h.includes('balance') || h.includes('closing'));
+        const descIdx = headers.findIndex((h: string) => h.includes('desc') || h.includes('particular') || h.includes('plaza'));
+        const txnIdIdx = headers.findIndex((h: string) => h.includes('transaction id') || h.includes('txn id') || (h.includes('id') && !h.includes('date') && !h.includes('time')));
+
+        for (let i = 1; i < rows1.length; i++) {
+          const row = rows1[i];
+          if (!Array.isArray(row) || row.length === 0) continue;
+
+          const rawDate = dateIdx >= 0 ? row[dateIdx] : row[0];
+          const rawTime = timeIdx >= 0 ? row[timeIdx] : row[1];
+          const rawNature = natureIdx >= 0 ? row[natureIdx] : row[2];
+          const rawAmount = amountIdx >= 0 ? row[amountIdx] : row[3];
+          const rawBalance = balanceIdx >= 0 ? row[balanceIdx] : row[4];
+          const rawDesc = descIdx >= 0 ? row[descIdx] : row[5];
+          const rawTxnId = txnIdIdx >= 0 ? row[txnIdIdx] : row[6];
+
+          if (!rawDate && !rawAmount && !rawDesc) continue;
+
+          const tDate = parseExcelDate(rawDate);
+          const tTime = parseExcelTime(rawTime);
+          const amount = parseFloat(String(rawAmount || '0').replace(/,/g, '')) || 0;
+          const balance = parseFloat(String(rawBalance || '0').replace(/,/g, '')) || 0;
+          const desc = String(rawDesc || '').trim();
+          const txnId = String(rawTxnId || '').trim();
+
+          parsedTransactions.push({
+            transaction_date: tDate,
+            transaction_time: tTime,
+            crossing_time: `${tDate} ${tTime}`,
+            nature: String(rawNature || 'Debit').trim(),
+            amount,
+            closing_balance: balance,
+            description: desc,
+            transaction_id: txnId
+          });
+        }
+      }
+    }
+
+    return {
+      fileName: file.name,
+      customerName,
+      customerMobile,
+      truckNumber,
+      truckOwnerName,
+      transactions: parsedTransactions
+    };
+  };
+
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const rawFiles = e.target.files;
+    if (!rawFiles || rawFiles.length === 0) return;
+
+    const files = Array.from(rawFiles);
 
     try {
       setIsImporting(true);
       setImportErrorMsg(null);
       setImportSuccessMsg(null);
 
-      const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const parsedItems: any[] = [];
+      const parseErrors: string[] = [];
 
-      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-        throw new Error('The uploaded Excel file contains no readable sheets.');
-      }
-
-      // --- SHEET 0: User & Vehicle Details ---
-      const s0Name = workbook.SheetNames[0];
-      const ws0 = workbook.Sheets[s0Name];
-      const rows0: any[][] = XLSX.utils.sheet_to_json(ws0, { header: 1 });
-
-      let customerName = '';
-      let customerMobile = '';
-      let truckNumber = '';
-      let truckOwnerName = '';
-
-      // 1. Scan Key-Value Pairs (Row-by-Row in Column A & B)
-      for (const r of rows0) {
-        if (!Array.isArray(r) || r.length < 2) continue;
-        const k = String(r[0] || '').toLowerCase().trim();
-        const v = String(r[1] || '').trim();
-        if (k.includes('customer name') || (k.includes('name') && !k.includes('owner') && !k.includes('truck'))) {
-          if (v) customerName = v;
-        } else if (k.includes('mobile') || k.includes('phone') || k.includes('contact')) {
-          if (v) customerMobile = v;
-        } else if (k.includes('truck number') || k.includes('vehicle number') || k.includes('truck no') || k.includes('vehicle no')) {
-          if (v) truckNumber = v;
-        } else if (k.includes('owner') || k.includes('company')) {
-          if (v) truckOwnerName = v;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setImportProgressText(`Reading file ${i + 1} of ${files.length} (${file.name})...`);
+        try {
+          const item = await parseSingleFleetExcel(file);
+          parsedItems.push(item);
+        } catch (err: any) {
+          parseErrors.push(err.message || `Error reading ${file.name}`);
         }
       }
 
-      // 2. Fallback: Check if horizontal table with headers on Row 0
-      if (!customerName || !truckNumber || !customerMobile) {
-        const json0: any[] = XLSX.utils.sheet_to_json(ws0);
-        if (json0.length > 0) {
-          const firstRow = json0[0];
-          for (const [kRaw, vRaw] of Object.entries(firstRow)) {
-            const k = kRaw.toLowerCase();
-            const v = String(vRaw || '').trim();
-            if (k.includes('customer name') || (k.includes('name') && !k.includes('owner'))) customerName = customerName || v;
-            if (k.includes('mobile') || k.includes('phone')) customerMobile = customerMobile || v;
-            if (k.includes('truck') && (k.includes('number') || k.includes('no'))) truckNumber = truckNumber || v;
-            if (k.includes('owner')) truckOwnerName = truckOwnerName || v;
-          }
-        }
+      if (parsedItems.length === 0) {
+        throw new Error(parseErrors.join(' | ') || 'No valid Excel files could be parsed.');
       }
 
-      if (!customerName) {
-        throw new Error('Could not find "Customer Name" in Sheet 0 of Excel file.');
-      }
-      if (!customerMobile) {
-        throw new Error('Could not find "Customer Mobile" in Sheet 0 of Excel file.');
-      }
-      if (!truckNumber) {
-        throw new Error('Could not find "Truck Number" in Sheet 0 of Excel file.');
-      }
-
-      // --- SHEET 1: FASTag Transactions & Tolls ---
-      let parsedTransactions: any[] = [];
-      if (workbook.SheetNames.length > 1) {
-        const s1Name = workbook.SheetNames[1];
-        const ws1 = workbook.Sheets[s1Name];
-        const rows1: any[][] = XLSX.utils.sheet_to_json(ws1, { header: 1 });
-
-        if (rows1.length > 1) {
-          const headers = (rows1[0] || []).map((h: any) => String(h || '').toLowerCase().trim());
-          const dateIdx = headers.findIndex((h: string) => h.includes('date'));
-          const timeIdx = headers.findIndex((h: string) => h.includes('time'));
-          const natureIdx = headers.findIndex((h: string) => h.includes('nature') || h.includes('type'));
-          const amountIdx = headers.findIndex((h: string) => h.includes('amount') || h.includes('fare') || h.includes('tariff'));
-          const balanceIdx = headers.findIndex((h: string) => h.includes('balance') || h.includes('closing'));
-          const descIdx = headers.findIndex((h: string) => h.includes('desc') || h.includes('particular') || h.includes('plaza'));
-          const txnIdIdx = headers.findIndex((h: string) => h.includes('transaction id') || h.includes('txn id') || (h.includes('id') && !h.includes('date') && !h.includes('time')));
-
-          for (let i = 1; i < rows1.length; i++) {
-            const row = rows1[i];
-            if (!Array.isArray(row) || row.length === 0) continue;
-
-            const rawDate = dateIdx >= 0 ? row[dateIdx] : row[0];
-            const rawTime = timeIdx >= 0 ? row[timeIdx] : row[1];
-            const rawNature = natureIdx >= 0 ? row[natureIdx] : row[2];
-            const rawAmount = amountIdx >= 0 ? row[amountIdx] : row[3];
-            const rawBalance = balanceIdx >= 0 ? row[balanceIdx] : row[4];
-            const rawDesc = descIdx >= 0 ? row[descIdx] : row[5];
-            const rawTxnId = txnIdIdx >= 0 ? row[txnIdIdx] : row[6];
-
-            if (!rawDate && !rawAmount && !rawDesc) continue;
-
-            const tDate = parseExcelDate(rawDate);
-            const tTime = parseExcelTime(rawTime);
-            const amount = parseFloat(String(rawAmount || '0').replace(/,/g, '')) || 0;
-            const balance = parseFloat(String(rawBalance || '0').replace(/,/g, '')) || 0;
-            const desc = String(rawDesc || '').trim();
-            const txnId = String(rawTxnId || '').trim();
-
-            parsedTransactions.push({
-              transaction_date: tDate,
-              transaction_time: tTime,
-              crossing_time: `${tDate} ${tTime}`,
-              nature: String(rawNature || 'Debit').trim(),
-              amount,
-              closing_balance: balance,
-              description: desc,
-              transaction_id: txnId
-            });
-          }
-        }
-      }
+      setImportProgressText(`Saving ${parsedItems.length} file(s) into database...`);
 
       // Send to Backend API
-      const res = await api.importFleetExcel({
-        customerName,
-        customerMobile,
-        truckNumber,
-        truckOwnerName,
-        transactions: parsedTransactions
-      });
+      const res = await api.importFleetExcel(
+        parsedItems.length === 1
+          ? parsedItems[0]
+          : { items: parsedItems }
+      );
 
       // Refresh Users list immediately
       await fetchUsers();
 
-      setImportSuccessMsg(
-        `✅ Successfully imported Excel! User "${res.user?.name}" created, Vehicle "${res.vehicle?.registration_no}" allotted, and ${res.transactionsCount || 0} FASTag toll transactions recorded across dates.`
-      );
+      let successDetail = '';
+      if (res.batch) {
+        successDetail = `✅ Successfully imported ${res.filesCount} Excel file(s)! Allocated ${res.vehiclesCreated || parsedItems.length} vehicle(s) (${res.vehicles ? res.vehicles.join(', ') : ''}), and ${res.totalTransactions || 0} FASTag transactions recorded.`;
+      } else {
+        successDetail = `✅ Successfully imported Excel! User "${res.user?.name}" created, Vehicle "${res.vehicle?.registration_no}" allocated, and ${res.transactionsCount || 0} FASTag toll transactions recorded across dates.`;
+      }
+
+      if (parseErrors.length > 0) {
+        successDetail += ` (Note: ${parseErrors.length} file(s) skipped due to errors: ${parseErrors.join('; ')})`;
+      }
+
+      setImportSuccessMsg(successDetail);
     } catch (err: any) {
       console.error('Import error:', err);
-      setImportErrorMsg(err.message || 'Failed to import Excel file. Please verify sheet format.');
+      setImportErrorMsg(err.message || 'Failed to import Excel files. Please verify sheet format.');
     } finally {
       setIsImporting(false);
+      setImportProgressText(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -404,17 +453,18 @@ export const UsersManagement: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
-            {/* Import Excel File Option */}
+            {/* Import Excel Files Option (Supports Single or Multi-File Batch Selection: 5, 10, 15+ files) */}
             <label className={`flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer ${isImporting ? 'opacity-70 pointer-events-none' : ''}`}>
               {isImporting ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
               )}
-              <span>{isImporting ? 'Importing Excel...' : 'Import Excel File'}</span>
+              <span>{isImporting ? (importProgressText || 'Importing Excel Files...') : 'Import Excel Files'}</span>
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept=".xlsx, .xls, .csv"
                 onChange={handleExcelImport}
                 className="hidden"

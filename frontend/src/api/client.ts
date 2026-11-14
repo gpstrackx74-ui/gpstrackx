@@ -134,17 +134,32 @@ export const api = {
   updateUser: (id: number | string, data: any) => apiRequest(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteUser: (id: number | string) => apiRequest(`/users/${id}`, { method: 'DELETE' }),
   importFleetExcel: (data: {
-    customerName: string;
-    customerMobile: string;
-    truckNumber: string;
+    customerName?: string;
+    customerMobile?: string;
+    truckNumber?: string;
     truckOwnerName?: string;
-    transactions: any[];
+    transactions?: any[];
+    items?: Array<{
+      customerName: string;
+      customerMobile: string;
+      truckNumber: string;
+      truckOwnerName?: string;
+      transactions: any[];
+    }>;
   }) => apiRequest<{
     success: boolean;
-    user: any;
-    vehicle: any;
-    transactionsCount: number;
+    batch?: boolean;
+    filesCount?: number;
+    successCount?: number;
+    errorCount?: number;
+    vehiclesCreated?: number;
+    vehicles?: string[];
+    totalTransactions?: number;
+    user?: any;
+    vehicle?: any;
+    transactionsCount?: number;
     message: string;
+    errors?: string[];
   }>('/fleet/import-excel', {
     method: 'POST',
     body: JSON.stringify(data)
