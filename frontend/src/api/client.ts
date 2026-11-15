@@ -158,6 +158,11 @@ export const api = {
   createUser: (data: any) => apiRequest('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id: number | string, data: any) => apiRequest(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteUser: (id: number | string) => apiRequest(`/users/${id}`, { method: 'DELETE' }),
+  bulkDeleteUsers: (ids: (number | string)[]) =>
+    apiRequest<{ message: string }>('/users/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids })
+    }),
   importFleetExcel: (data: {
     customerName?: string;
     customerMobile?: string;

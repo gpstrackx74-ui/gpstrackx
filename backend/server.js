@@ -1454,6 +1454,8 @@ async function processSingleFleetImport(item, adminUserId) {
 
   // 3. Process Sheet 1: FASTag Transactions
   let createdTxnsCount = 0;
+  const txsToSync = [];
+
   if (Array.isArray(transactions) && transactions.length > 0) {
     try {
       const cols = db.prepare('PRAGMA table_info(fastag_transactions)').all().map(c => c.name);
@@ -1477,8 +1479,6 @@ async function processSingleFleetImport(item, adminUserId) {
         wallet_balance_after = excluded.wallet_balance_after,
         wallet_balance_before = excluded.wallet_balance_before
     `);
-
-    const txsToSync = [];
 
     for (const tx of transactions) {
       const txnId = String(tx.transaction_id || tx.transactionId || '').trim() || fastagService.generateTransactionId(tx.crossing_time);
@@ -1860,21 +1860,48 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, (req, res) => {
   }
 });
 
+async function deleteUserById(userId, currentAdminId) {
+  if (parseInt(userId) === parseInt(currentAdminId)) {
+    return;
+  }
+  // Unassign vehicles assigned to this user (preserving all vehicles and saved routes)
+  db.prepare('UPDATE vehicles SET assigned_user_id = NULL WHERE assigned_user_id = ?').run(userId);
+  db.prepare('DELETE FROM user_logins WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM vehicle_allocations WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  await supabaseService.deleteUser(userId);
+}
+
 app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const userId = req.params.id;
   if (parseInt(userId) === req.user.id) {
     return res.status(400).json({ error: 'Cannot delete the currently signed-in admin account.' });
   }
   try {
-    // Unassign vehicles assigned to this user (preserving all vehicles and saved routes)
-    db.prepare('UPDATE vehicles SET assigned_user_id = NULL WHERE assigned_user_id = ?').run(userId);
-    db.prepare('DELETE FROM user_logins WHERE user_id = ?').run(userId);
-    db.prepare('DELETE FROM vehicle_allocations WHERE user_id = ?').run(userId);
-    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
-    await supabaseService.deleteUser(userId);
+    await deleteUserById(userId, req.user.id);
     res.json({ message: 'User deleted successfully. Vehicles and saved routes preserved.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete user: ' + err.message });
+  }
+});
+
+// Bulk Delete Users (Admin Only)
+app.post('/api/users/bulk-delete', authenticateToken, requireAdmin, async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids must be a non-empty array' });
+  }
+  try {
+    let count = 0;
+    for (const userId of ids) {
+      if (parseInt(userId) !== parseInt(req.user.id)) {
+        await deleteUserById(userId, req.user.id);
+        count++;
+      }
+    }
+    res.json({ message: `Successfully deleted ${count} users.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to bulk delete users: ' + err.message });
   }
 });
 

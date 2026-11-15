@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
@@ -20,7 +20,8 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  RefreshCw
 } from 'lucide-react';
 
 export const UsersManagement: React.FC = () => {
@@ -36,16 +37,20 @@ export const UsersManagement: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [openVehiclePopoverId, setOpenVehiclePopoverId] = useState<number | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isModalOpen) {
-        setIsModalOpen(false);
+      if (e.key === 'Escape') {
+        if (isModalOpen) setIsModalOpen(false);
+        if (isBulkDeleteModalOpen) setIsBulkDeleteModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, isBulkDeleteModalOpen]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -176,9 +181,50 @@ export const UsersManagement: React.FC = () => {
     if (!confirm('Are you sure you want to delete this fleet user?')) return;
     try {
       await api.deleteUser(id);
+      setSelectedUserIds(prev => prev.filter(uId => uId !== id));
       fetchUsers();
     } catch (err: any) {
       alert('Delete failed: ' + err.message);
+    }
+  };
+
+  const deletableUsers = useMemo(() => {
+    return users.filter(u => u.id !== currentUser?.id);
+  }, [users, currentUser]);
+
+  const handleToggleSelectUser = (id: number) => {
+    setSelectedUserIds(prev =>
+      prev.includes(id) ? prev.filter(uId => uId !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAllUsers = () => {
+    const deletableIds = deletableUsers.map(u => u.id);
+    const isAllSelected = deletableIds.length > 0 && deletableIds.every(id => selectedUserIds.includes(id));
+    if (isAllSelected) {
+      setSelectedUserIds(prev => prev.filter(id => !deletableIds.includes(id)));
+    } else {
+      setSelectedUserIds(prev => Array.from(new Set([...prev, ...deletableIds])));
+    }
+  };
+
+  const handleBulkDeleteUsers = async () => {
+    if (selectedUserIds.length === 0) return;
+    try {
+      setIsBulkDeleting(true);
+      try {
+        await api.bulkDeleteUsers(selectedUserIds);
+      } catch {
+        // Fallback: delete in parallel
+        await Promise.allSettled(selectedUserIds.map(id => api.deleteUser(id)));
+      }
+      setSelectedUserIds([]);
+      setIsBulkDeleteModalOpen(false);
+      fetchUsers();
+    } catch (err: any) {
+      alert('Delete failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -472,6 +518,17 @@ export const UsersManagement: React.FC = () => {
               />
             </label>
 
+            {selectedUserIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedUserIds.length})</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={openAddModal}
@@ -595,6 +652,33 @@ export const UsersManagement: React.FC = () => {
         {/* Thin divider with light red 10% opacity */}
         <div className="border-t border-[#E60012]/10" />
 
+        {/* Bulk Action Bar when users are selected */}
+        {selectedUserIds.length > 0 && (
+          <div className="bg-red-50/90 border-b border-red-200/80 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+              <span className="text-xs font-bold text-red-950">
+                {selectedUserIds.length} of {deletableUsers.length} user(s) selected
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedUserIds([])}
+                className="text-[11px] text-red-700 hover:text-red-900 underline font-semibold ml-2 cursor-pointer"
+              >
+                Clear Selection
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsBulkDeleteModalOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Selected ({selectedUserIds.length})</span>
+            </button>
+          </div>
+        )}
+
         {/* Section 4: Users Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -605,7 +689,27 @@ export const UsersManagement: React.FC = () => {
                 <th className="px-5 py-3.5">Contact</th>
                 <th className="px-5 py-3.5">Assigned Vehicles</th>
                 <th className="px-5 py-3.5">Status</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
+                <th className="px-5 py-3.5 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <span>Actions</span>
+                    {deletableUsers.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={
+                          deletableUsers.length > 0 &&
+                          deletableUsers.every(u => selectedUserIds.includes(u.id))
+                        }
+                        onChange={handleToggleSelectAllUsers}
+                        className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer accent-red-600 ml-1"
+                        title={
+                          deletableUsers.every(u => selectedUserIds.includes(u.id))
+                            ? 'Deselect All'
+                            : 'Select All Users'
+                        }
+                      />
+                    )}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -628,7 +732,7 @@ export const UsersManagement: React.FC = () => {
                   const hasAssigned = assignedList.length > 0;
 
                   return (
-                    <tr key={u.id} className="hover:bg-slate-50/70 transition">
+                    <tr key={u.id} className={`transition ${selectedUserIds.includes(u.id) ? 'bg-red-50/50 hover:bg-red-50/70' : 'hover:bg-slate-50/70'}`}>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
                           <div
@@ -776,14 +880,23 @@ export const UsersManagement: React.FC = () => {
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           {!isCurrentUser && (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteUser(u.id)}
-                              className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                              title="Delete User"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(u.id)}
+                                className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                title="Delete User"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                              <input
+                                type="checkbox"
+                                checked={selectedUserIds.includes(u.id)}
+                                onChange={() => handleToggleSelectUser(u.id)}
+                                className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer accent-red-600 ml-0.5"
+                                title="Select user to delete"
+                              />
+                            </>
                           )}
                         </div>
                       </td>
@@ -949,6 +1062,47 @@ export const UsersManagement: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Bulk Delete Users Confirmation Modal */}
+      {isBulkDeleteModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => !isBulkDeleting && setIsBulkDeleteModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 text-center cursor-default animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-4 border border-red-100">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900">
+              Delete {selectedUserIds.length} Selected Users?
+            </h3>
+            <p className="text-xs text-slate-500 mt-2">
+              Are you sure you want to delete all {selectedUserIds.length} selected users at once? All vehicle allocations and user logins will be removed. This action cannot be undone.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={() => setIsBulkDeleteModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 transition disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={handleBulkDeleteUsers}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isBulkDeleting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>{isBulkDeleting ? 'Deleting...' : `Confirm Delete (${selectedUserIds.length})`}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
