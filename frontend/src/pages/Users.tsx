@@ -388,7 +388,7 @@ export const UsersManagement: React.FC = () => {
           const amount = parseFloat(String(rawAmount || '0').replace(/,/g, '')) || 0;
           const balance = parseFloat(String(rawBalance || '0').replace(/,/g, '')) || 0;
           const desc = String(rawDesc || '').trim();
-          const txnId = String(rawTxnId || '').trim();
+          const txnId = String(rawTxnId || '').trim().split('.')[0];
 
           parsedTransactions.push({
             transaction_date: tDate,

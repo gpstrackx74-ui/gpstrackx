@@ -8,7 +8,9 @@ import {
   FastagStatementReportData,
   formatDurationDate,
   formatTableDateTime,
-  formatMobileNumber
+  formatMobileNumber,
+  formatTransactionId,
+  parseDescriptionLines
 } from '../utils/generateFastagStatementPdf';
 import {
   Receipt,
@@ -658,10 +660,10 @@ export const FastagBilling: React.FC = () => {
                             {/* Transaction ID */}
                             <td className="py-3 px-3 text-center whitespace-nowrap">
                               <div className="flex items-center justify-center gap-1 font-mono text-[11px] font-bold text-slate-800">
-                                <span>{tx.transaction_id}</span>
+                                <span>{formatTransactionId(tx.transaction_id)}</span>
                                 <button
                                   type="button"
-                                  onClick={() => copyToClipboard(tx.transaction_id, `txn-${tx.id}`)}
+                                  onClick={() => copyToClipboard(formatTransactionId(tx.transaction_id), `txn-${tx.id}`)}
                                   className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
                                   title="Copy Transaction ID"
                                 >
@@ -785,17 +787,14 @@ export const FastagBilling: React.FC = () => {
                         className="h-6 w-auto object-contain"
                       />
 
-                      <div className="h-4 w-px bg-slate-300" />
+                      <div className="h-5 w-px bg-slate-300" />
 
                       {/* GpsTrackX Logo */}
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-4 h-4 rounded-full bg-[#E60012] flex items-center justify-center text-white text-[9px] font-black">
-                          G
-                        </div>
-                        <span className="text-[11px] font-black text-slate-900 tracking-wide">
-                          GPSTRACK<span className="text-[#E60012]">X</span>
-                        </span>
-                      </div>
+                      <img
+                        src="/gpstrackx-logo.png"
+                        alt="GPSTRACKX"
+                        className="h-5 w-auto object-contain"
+                      />
                     </div>
                   </div>
 
@@ -842,12 +841,21 @@ export const FastagBilling: React.FC = () => {
                     <table className="w-full text-left">
                       <thead className="bg-[#E8EFF7] text-[10px] font-bold text-slate-800 border-b border-slate-300">
                         <tr>
-                          <th className="py-2.5 px-3 border-r border-slate-300">Transaction Time</th>
-                          <th className="py-2.5 px-2.5 text-center border-r border-slate-300">Nature (C/D)</th>
-                          <th className="py-2.5 px-2.5 text-center border-r border-slate-300">Amount</th>
-                          <th className="py-2.5 px-2.5 text-center border-r border-slate-300">Closing Balance</th>
-                          <th className="py-2.5 px-3 border-r border-slate-300">Description</th>
-                          <th className="py-2.5 px-3 text-center">Transaction ID</th>
+                          <th className="py-2 px-2 text-center border-r border-slate-300">
+                            <div>Transaction</div>
+                            <div>Time</div>
+                          </th>
+                          <th className="py-2 px-2 text-center border-r border-slate-300">
+                            <div>Nature</div>
+                            <div>(C/D)</div>
+                          </th>
+                          <th className="py-2 px-2 text-center border-r border-slate-300">Amount</th>
+                          <th className="py-2 px-2 text-center border-r border-slate-300">
+                            <div>Closing</div>
+                            <div>Balance</div>
+                          </th>
+                          <th className="py-2 px-3 text-center border-r border-slate-300">Description</th>
+                          <th className="py-2 px-3 text-center">Transaction ID</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 text-slate-800 font-medium text-[11px]">
@@ -857,10 +865,12 @@ export const FastagBilling: React.FC = () => {
                             tx.wallet_balance_after != null
                               ? Number(tx.wallet_balance_after).toLocaleString('en-IN')
                               : '—';
+                          const desc = parseDescriptionLines(tx.description || tx.toll_plaza_name);
+                          const cleanTxnId = formatTransactionId(tx.transaction_id);
                           return (
                             <tr key={tx.id} className="hover:bg-slate-50/60">
                               {/* Transaction Time */}
-                              <td className="py-2 px-3 border-r border-slate-200 whitespace-nowrap">
+                              <td className="py-2 px-2.5 text-center border-r border-slate-200 whitespace-nowrap">
                                 <div className="font-semibold text-slate-900">
                                   {dt.dateLine}
                                 </div>
@@ -870,28 +880,29 @@ export const FastagBilling: React.FC = () => {
                               </td>
 
                               {/* Nature */}
-                              <td className="py-2 px-2.5 text-center border-r border-slate-200 whitespace-nowrap">
+                              <td className="py-2 px-2 text-center border-r border-slate-200 whitespace-nowrap">
                                 Debit
                               </td>
 
                               {/* Amount */}
-                              <td className="py-2 px-2.5 text-center border-r border-slate-200 whitespace-nowrap font-semibold">
+                              <td className="py-2 px-2 text-center border-r border-slate-200 whitespace-nowrap font-semibold">
                                 {Number(tx.amount || 0).toLocaleString('en-IN')}
                               </td>
 
                               {/* Closing Balance */}
-                              <td className="py-2 px-2.5 text-center border-r border-slate-200 whitespace-nowrap font-mono">
+                              <td className="py-2 px-2 text-center border-r border-slate-200 whitespace-nowrap font-mono">
                                 {balStr}
                               </td>
 
-                              {/* Description */}
-                              <td className="py-2 px-3 border-r border-slate-200 min-w-[200px] leading-snug">
-                                {tx.description || tx.toll_plaza_name || 'Issuer Debit Transaction for toll fare'}
+                              {/* Description (Center aligned 2 lines) */}
+                              <td className="py-2 px-3 border-r border-slate-200 text-center leading-tight">
+                                <div className="text-slate-900 font-medium">{desc.line1}</div>
+                                <div className="text-slate-800 font-normal">{desc.line2}</div>
                               </td>
 
                               {/* Transaction ID */}
-                              <td className="py-2 px-3 text-center font-mono text-[10px] whitespace-nowrap">
-                                {tx.transaction_id}
+                              <td className="py-2 px-3 text-center font-mono text-[10px] whitespace-nowrap font-semibold">
+                                {cleanTxnId}
                               </td>
                             </tr>
                           );

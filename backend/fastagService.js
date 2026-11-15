@@ -217,16 +217,14 @@ function getTruckTollTariff(lat, lng, plazaName = '', axle = '3-axle') {
 }
 
 /**
- * Generates an authentic FASTag Transaction ID
- * Format: TXN-FTG-YYYYMMDD-XXXXXX
+ * Generates an authentic FASTag Transaction ID (15-digit integer matching official FASTag statements)
+ * Example: 178545427443280
  */
 function generateTransactionId(dateStr) {
   const d = dateStr ? new Date(dateStr) : new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const randomSuffix = Math.floor(100000 + Math.random() * 900000);
-  return `TXN-FTG-${year}${month}${day}-${randomSuffix}`;
+  const ts = d.getTime();
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `178${String(ts).slice(-8)}${randomSuffix}`;
 }
 
 /**

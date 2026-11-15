@@ -1480,7 +1480,8 @@ async function processSingleFleetImport(item, adminUserId) {
 
     const insertAllTxns = db.transaction((txList) => {
       for (const tx of txList) {
-        const txnId = String(tx.transaction_id || tx.transactionId || '').trim() || fastagService.generateTransactionId(tx.crossing_time);
+        const rawTxn = String(tx.transaction_id || tx.transactionId || '').trim();
+        const txnId = (rawTxn.includes('.') ? rawTxn.split('.')[0] : rawTxn) || fastagService.generateTransactionId(tx.crossing_time);
         const netcRef = `NETC${txnId}`;
         const tagId = `TAG-${cleanReg}`;
         const finalTime = tx.crossing_time || `${tx.transaction_date} ${tx.transaction_time || '10:00:00'}`;
