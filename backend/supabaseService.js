@@ -47,18 +47,20 @@ const supabaseService = {
   async syncUser(user) {
     if (!pool) return;
     try {
-      await pool.query(`
-        INSERT INTO users (id, name, email, password, phone, role, status, avatar_color, company_name)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      const res = await pool.query(`
+        INSERT INTO users (name, email, password, phone, role, status, avatar_color, company_name)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (email) DO UPDATE SET
           name = EXCLUDED.name,
-          password = EXCLUDED.password,
-          phone = EXCLUDED.phone,
+          password = COALESCE(EXCLUDED.password, users.password),
+          phone = COALESCE(EXCLUDED.phone, users.phone),
           role = EXCLUDED.role,
           status = EXCLUDED.status,
-          company_name = EXCLUDED.company_name
-      `, [user.id, user.name, user.email, user.password, user.phone || null, user.role || 'user', user.status || 'active', user.avatar_color || '#E60012', user.company_name || null]);
-      console.log(`[Supabase] Synced user: ${user.email}`);
+          company_name = COALESCE(EXCLUDED.company_name, users.company_name)
+        RETURNING id
+      `, [user.name, user.email, user.password, user.phone || null, user.role || 'user', user.status || 'active', user.avatar_color || '#E60012', user.company_name || null]);
+      console.log(`[Supabase] Synced user: ${user.email} (ID: ${res.rows[0]?.id})`);
+      return res.rows[0]?.id;
     } catch (err) {
       console.error('[Supabase syncUser Error]:', err.message);
     }
@@ -102,67 +104,52 @@ const supabaseService = {
         }
       }
 
-      const existing = await pool.query('SELECT id FROM vehicles WHERE registration_no = $1', [v.registration_no]);
-      if (existing.rows.length > 0) {
-        await pool.query(`
-          UPDATE vehicles SET
-            name_model = $1,
-            vehicle_type = $2,
-            assigned_user_id = $3,
-            status = $4,
-            current_speed = $5,
-            max_speed_limit = $6,
-            current_lat = $7,
-            current_lng = $8,
-            odometer_km = $9,
-            axle_type = $10,
-            owner_name = $11,
-            total_toll_fee = $12,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE registration_no = $13
-        `, [
-          v.name_model,
-          v.vehicle_type || 'Commercial Truck (HCV / 3-Axle Truck)',
-          supabaseUserId,
-          v.status || 'stop',
-          v.current_speed || 0,
-          v.max_speed_limit || 80,
-          v.current_lat || 23.0125,
-          v.current_lng || 79.0841,
-          v.odometer_km || 0,
-          v.axle_type || '3-Axle Rigid',
-          v.owner_name || null,
-          v.total_toll_fee || 0,
-          v.registration_no
-        ]);
-      } else {
-        await pool.query(`
-          INSERT INTO vehicles (
-            registration_no, name_model, vehicle_type, device_id, imei_number, chassis_number,
-            fuel_type, assigned_user_id, status, current_speed, max_speed_limit, current_lat, current_lng,
-            odometer_km, axle_type, owner_name, total_toll_fee
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-        `, [
-          v.registration_no,
-          v.name_model,
-          v.vehicle_type || 'Commercial Truck (HCV / 3-Axle Truck)',
-          v.device_id || null,
-          v.imei_number || null,
-          v.chassis_number || null,
-          v.fuel_type || 'Diesel',
-          supabaseUserId,
-          v.status || 'stop',
-          v.current_speed || 0,
-          v.max_speed_limit || 80,
-          v.current_lat || 23.0125,
-          v.current_lng || 79.0841,
-          v.odometer_km || 0,
-          v.axle_type || '3-Axle Rigid',
-          v.owner_name || null,
-          v.total_toll_fee || 0
-        ]);
-      }
-      console.log(`[Supabase] Synced vehicle: ${v.registration_no} (status: ${v.status || 'stop'}, owner: ${v.owner_name || 'N/A'})`);
+      const res = await pool.query(`
+        INSERT INTO vehicles (
+          registration_no, name_model, vehicle_type, device_id, imei_number, chassis_number,
+          fuel_type, assigned_user_id, status, current_speed, max_speed_limit, current_lat, current_lng,
+          odometer_km, axle_type, owner_name, total_toll_fee
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        ON CONFLICT (registration_no) DO UPDATE SET
+          name_model = EXCLUDED.name_model,
+          vehicle_type = EXCLUDED.vehicle_type,
+          device_id = COALESCE(EXCLUDED.device_id, vehicles.device_id),
+          imei_number = COALESCE(EXCLUDED.imei_number, vehicles.imei_number),
+          chassis_number = COALESCE(EXCLUDED.chassis_number, vehicles.chassis_number),
+          fuel_type = COALESCE(EXCLUDED.fuel_type, vehicles.fuel_type),
+          assigned_user_id = COALESCE(EXCLUDED.assigned_user_id, vehicles.assigned_user_id),
+          status = EXCLUDED.status,
+          current_speed = EXCLUDED.current_speed,
+          max_speed_limit = EXCLUDED.max_speed_limit,
+          current_lat = EXCLUDED.current_lat,
+          current_lng = EXCLUDED.current_lng,
+          odometer_km = EXCLUDED.odometer_km,
+          axle_type = EXCLUDED.axle_type,
+          owner_name = COALESCE(EXCLUDED.owner_name, vehicles.owner_name),
+          total_toll_fee = GREATEST(EXCLUDED.total_toll_fee, vehicles.total_toll_fee),
+          updated_at = CURRENT_TIMESTAMP
+        RETURNING id
+      `, [
+        v.registration_no,
+        v.name_model,
+        v.vehicle_type || 'Commercial Truck (HCV / 3-Axle Truck)',
+        v.device_id || null,
+        v.imei_number || null,
+        v.chassis_number || null,
+        v.fuel_type || 'Diesel',
+        supabaseUserId,
+        v.status || 'stop',
+        v.current_speed || 0,
+        v.max_speed_limit || 80,
+        v.current_lat || 23.0125,
+        v.current_lng || 79.0841,
+        v.odometer_km || 0,
+        v.axle_type || '3-Axle Rigid',
+        v.owner_name || null,
+        v.total_toll_fee || 0
+      ]);
+      console.log(`[Supabase] Synced vehicle: ${v.registration_no} (ID: ${res.rows[0]?.id})`);
+      return res.rows[0]?.id;
     } catch (err) {
       console.error('[Supabase syncVehicle Error]:', err.message);
     }
@@ -279,14 +266,86 @@ const supabaseService = {
     }
   },
 
-  // Batch sync FASTag Toll transactions to Supabase
+  // Batch sync FASTag Toll transactions to Supabase with multi-row SQL chunking
   async syncFastagTransactionsBatch(txList) {
     if (!pool || !Array.isArray(txList) || txList.length === 0) return;
     try {
+      // Resolve Supabase vehicle ID for distinct registration_nos
+      const regMap = new Map();
       for (const tx of txList) {
-        await this.syncFastagTransaction(tx);
+        if (tx.vehicle_registration_no && !regMap.has(tx.vehicle_registration_no)) {
+          regMap.set(tx.vehicle_registration_no, null);
+        }
       }
-      console.log(`[Supabase] Batch synced ${txList.length} FASTag transactions.`);
+
+      for (const reg of regMap.keys()) {
+        try {
+          const vRow = await pool.query('SELECT id FROM vehicles WHERE registration_no = $1', [reg]);
+          if (vRow && vRow.rows.length > 0) regMap.set(reg, vRow.rows[0].id);
+        } catch (e) {}
+      }
+
+      const CHUNK_SIZE = 40;
+      for (let i = 0; i < txList.length; i += CHUNK_SIZE) {
+        const chunk = txList.slice(i, i + CHUNK_SIZE);
+        const valuePlaceholders = [];
+        const queryParams = [];
+        let paramIdx = 1;
+
+        for (const tx of chunk) {
+          const supabaseVehId = (tx.vehicle_registration_no ? regMap.get(tx.vehicle_registration_no) : null) || tx.vehicle_id || null;
+          const placeholders = [];
+          const fields = [
+            tx.transaction_id,
+            tx.netc_reference_no,
+            tx.tag_id,
+            supabaseVehId,
+            tx.vehicle_registration_no,
+            tx.vehicle_class || 'Commercial Truck (HCV / 3-Axle Truck)',
+            tx.route_id || null,
+            tx.toll_plaza_name,
+            tx.description || tx.toll_plaza_name,
+            tx.highway_name || '',
+            Number(tx.lat || 0),
+            Number(tx.lng || 0),
+            Number(tx.amount || 0),
+            Number(tx.base_toll_fee || tx.amount || 0),
+            Number(tx.gst_amount || 0),
+            tx.concessionaire_name || 'National Highways Authority of India (NHAI)',
+            tx.gstin || '22AAACN0123M1Z5',
+            tx.lane_direction || 'Lane 04 - Dedicated FASTag ETC',
+            tx.payment_status || 'SUCCESS',
+            tx.crossing_time ? (typeof tx.crossing_time === 'string' ? tx.crossing_time : new Date(tx.crossing_time).toISOString()) : new Date().toISOString(),
+            Number(tx.wallet_balance_before || 15000),
+            Number(tx.wallet_balance_after || 14000)
+          ];
+
+          for (const val of fields) {
+            placeholders.push(`$${paramIdx++}`);
+            queryParams.push(val);
+          }
+          valuePlaceholders.push(`(${placeholders.join(', ')})`);
+        }
+
+        const sql = `
+          INSERT INTO fastag_transactions (
+            transaction_id, netc_reference_no, tag_id, vehicle_id, vehicle_registration_no,
+            vehicle_class, route_id, toll_plaza_name, description, highway_name, lat, lng, amount,
+            base_toll_fee, gst_amount, concessionaire_name, gstin, lane_direction,
+            payment_status, crossing_time, wallet_balance_before, wallet_balance_after
+          ) VALUES ${valuePlaceholders.join(', ')}
+          ON CONFLICT (transaction_id) DO UPDATE SET
+            toll_plaza_name = EXCLUDED.toll_plaza_name,
+            description = EXCLUDED.description,
+            amount = EXCLUDED.amount,
+            crossing_time = EXCLUDED.crossing_time,
+            wallet_balance_before = EXCLUDED.wallet_balance_before,
+            wallet_balance_after = EXCLUDED.wallet_balance_after
+        `;
+
+        await pool.query(sql, queryParams);
+      }
+      console.log(`[Supabase] Batch synced ${txList.length} FASTag transactions via multi-row query.`);
     } catch (err) {
       console.error('[Supabase syncFastagTransactionsBatch Error]:', err.message);
     }
@@ -352,95 +411,97 @@ const supabaseService = {
   // Hydrate local SQLite from live Supabase on server start (ensures persistent storage on Render)
   async syncFromSupabaseToSqlite(localDb) {
     if (!pool) return;
+    const t0 = Date.now();
     try {
       console.log('>>> [Supabase -> SQLite] Hydrating live cloud data into local database...');
       // Temporarily disable foreign keys during hydration so differing IDs across tables don't block restore
       try { localDb.pragma('foreign_keys = OFF'); } catch (e) {}
 
-      // 1. Sync Users
-      try {
-        const usersRes = await pool.query('SELECT * FROM users');
-        if (usersRes.rows.length > 0) {
-          const insertUser = localDb.prepare(`
-            INSERT OR REPLACE INTO users (id, name, email, password, phone, role, status, avatar_color, company_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const u of usersRes.rows) {
-            insertUser.run(u.id, u.name, u.email, u.password, u.phone || null, u.role || 'user', u.status || 'active', u.avatar_color || '#E60012', u.company_name || null);
+      // Parallel fetch from Supabase
+      const [usersRes, vehRes, routeRes, allocRes, fastagRes] = await Promise.all([
+        pool.query('SELECT * FROM users').catch(e => { console.error('[Hydration Users Query Error]:', e.message); return { rows: [] }; }),
+        pool.query('SELECT * FROM vehicles').catch(e => { console.error('[Hydration Vehicles Query Error]:', e.message); return { rows: [] }; }),
+        pool.query('SELECT * FROM routes').catch(e => { console.error('[Hydration Routes Query Error]:', e.message); return { rows: [] }; }),
+        pool.query('SELECT * FROM vehicle_allocations').catch(e => { console.error('[Hydration Alloc Query Error]:', e.message); return { rows: [] }; }),
+        pool.query('SELECT * FROM fastag_transactions').catch(e => { console.error('[Hydration Fastag Query Error]:', e.message); return { rows: [] }; })
+      ]);
+
+      console.log(`>>> [Supabase -> SQLite] Fetched cloud data in ${Date.now() - t0}ms: Users=${usersRes.rows.length}, Vehicles=${vehRes.rows.length}, FASTag=${fastagRes.rows.length}`);
+
+      // 1. Sync Users into SQLite
+      const supabaseToLocalUserMap = new Map();
+      if (usersRes.rows.length > 0) {
+        const insertUser = localDb.prepare(`
+          INSERT OR REPLACE INTO users (id, name, email, password, phone, role, status, avatar_color, company_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const syncUsersTx = localDb.transaction((users) => {
+          for (const u of users) {
+            insertUser.run(
+              u.id, u.name, u.email, u.password, u.phone || null,
+              u.role || 'user', u.status || 'active',
+              u.avatar_color || '#E60012', u.company_name || null
+            );
+            supabaseToLocalUserMap.set(u.id, u.id);
           }
-        }
-      } catch (err) {
-        console.error('[Hydration Users Error]:', err.message);
+        });
+        syncUsersTx(usersRes.rows);
       }
 
-      // 2. Sync Vehicles
-      try {
-        const vehRes = await pool.query('SELECT * FROM vehicles');
-        if (vehRes.rows.length > 0) {
-          for (const v of vehRes.rows) {
-            let localAssignedUserId = null;
-            if (v.assigned_user_id) {
-              try {
-                const uRes = await pool.query('SELECT email, phone FROM users WHERE id = $1', [v.assigned_user_id]);
-                if (uRes.rows.length > 0) {
-                  const localUser = localDb.prepare('SELECT id FROM users WHERE email = ? OR (phone IS NOT NULL AND phone = ?)').get(uRes.rows[0].email, uRes.rows[0].phone);
-                  if (localUser) localAssignedUserId = localUser.id;
-                }
-              } catch (e) {}
-            }
+      // 2. Sync Vehicles into SQLite (Atomic transaction, 0 network roundtrips)
+      if (vehRes.rows.length > 0) {
+        const upsertVeh = localDb.prepare(`
+          INSERT INTO vehicles (
+            registration_no, name_model, vehicle_type, device_id, imei_number, chassis_number,
+            fuel_type, assigned_user_id, status, current_speed, max_speed_limit, current_lat, current_lng,
+            odometer_km, axle_type, owner_name, total_toll_fee
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (registration_no) DO UPDATE SET
+            name_model = excluded.name_model,
+            vehicle_type = excluded.vehicle_type,
+            device_id = COALESCE(excluded.device_id, vehicles.device_id),
+            imei_number = COALESCE(excluded.imei_number, vehicles.imei_number),
+            chassis_number = COALESCE(excluded.chassis_number, vehicles.chassis_number),
+            fuel_type = COALESCE(excluded.fuel_type, vehicles.fuel_type),
+            assigned_user_id = COALESCE(excluded.assigned_user_id, vehicles.assigned_user_id),
+            status = excluded.status,
+            current_speed = excluded.current_speed,
+            max_speed_limit = excluded.max_speed_limit,
+            current_lat = excluded.current_lat,
+            current_lng = excluded.current_lng,
+            odometer_km = excluded.odometer_km,
+            axle_type = excluded.axle_type,
+            owner_name = COALESCE(excluded.owner_name, vehicles.owner_name),
+            total_toll_fee = MAX(excluded.total_toll_fee, vehicles.total_toll_fee)
+        `);
 
-            const existingVeh = localDb.prepare('SELECT id FROM vehicles WHERE registration_no = ?').get(v.registration_no);
-            if (existingVeh) {
-              localDb.prepare(`
-                UPDATE vehicles SET
-                  name_model = ?, vehicle_type = ?, device_id = COALESCE(?, device_id),
-                  imei_number = COALESCE(?, imei_number), chassis_number = COALESCE(?, chassis_number),
-                  fuel_type = COALESCE(?, fuel_type), assigned_user_id = ?, status = ?,
-                  current_speed = ?, max_speed_limit = ?, current_lat = ?, current_lng = ?,
-                  odometer_km = ?, axle_type = ?, owner_name = ?, total_toll_fee = ?
-                WHERE id = ?
-              `).run(
-                v.name_model, v.vehicle_type, v.device_id || null, v.imei_number || null,
-                v.chassis_number || null, v.fuel_type || 'Diesel', localAssignedUserId,
-                v.status || 'stop', v.current_speed || 0, v.max_speed_limit || 80,
-                v.current_lat || 23.0125, v.current_lng || 79.0841, v.odometer_km || 0,
-                v.axle_type || '3-Axle Rigid', v.owner_name || null, v.total_toll_fee || 0,
-                existingVeh.id
-              );
-            } else {
-              localDb.prepare(`
-                INSERT INTO vehicles (
-                  registration_no, name_model, vehicle_type, device_id, imei_number, chassis_number,
-                  fuel_type, assigned_user_id, status, current_speed, max_speed_limit, current_lat, current_lng,
-                  odometer_km, axle_type, owner_name, total_toll_fee
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              `).run(
-                v.registration_no, v.name_model, v.vehicle_type, v.device_id || null, v.imei_number || null,
-                v.chassis_number || null, v.fuel_type || 'Diesel', localAssignedUserId,
-                v.status || 'stop', v.current_speed || 0, v.max_speed_limit || 80,
-                v.current_lat || 23.0125, v.current_lng || 79.0841, v.odometer_km || 0,
-                v.axle_type || '3-Axle Rigid', v.owner_name || null, v.total_toll_fee || 0
-              );
-            }
+        const syncVehiclesTx = localDb.transaction((vehs) => {
+          for (const v of vehs) {
+            const localUserId = v.assigned_user_id ? (supabaseToLocalUserMap.get(v.assigned_user_id) || null) : null;
+            upsertVeh.run(
+              v.registration_no, v.name_model, v.vehicle_type, v.device_id || null, v.imei_number || null,
+              v.chassis_number || null, v.fuel_type || 'Diesel', localUserId,
+              v.status || 'stop', v.current_speed || 0, v.max_speed_limit || 80,
+              v.current_lat || 23.0125, v.current_lng || 79.0841, v.odometer_km || 0,
+              v.axle_type || '3-Axle Rigid', v.owner_name || null, v.total_toll_fee || 0
+            );
           }
-        }
-      } catch (err) {
-        console.error('[Hydration Vehicles Error]:', err.message);
+        });
+        syncVehiclesTx(vehRes.rows);
       }
 
       // 3. Sync Routes
-      try {
-        const routeRes = await pool.query('SELECT * FROM routes');
-        if (routeRes.rows.length > 0) {
-          const insertRoute = localDb.prepare(`
-            INSERT OR REPLACE INTO routes (
-              id, vehicle_id, route_name, start_location_name, start_address, start_lat, start_lng,
-              end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
-              overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
-              trip_date, end_trip_date, start_trip_time, end_trip_time, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const r of routeRes.rows) {
+      if (routeRes && routeRes.rows.length > 0) {
+        const insertRoute = localDb.prepare(`
+          INSERT OR REPLACE INTO routes (
+            id, vehicle_id, route_name, start_location_name, start_address, start_lat, start_lng,
+            end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
+            overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
+            trip_date, end_trip_date, start_trip_time, end_trip_time, is_active
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const syncRoutesTx = localDb.transaction((routes) => {
+          for (const r of routes) {
             insertRoute.run(
               r.id, r.vehicle_id || null, r.route_name, r.start_location_name, r.start_address || '', r.start_lat, r.start_lng,
               r.end_location_name, r.end_address || '', r.end_lat, r.end_lng, r.total_distance_km, r.estimated_travel_time_min,
@@ -448,58 +509,55 @@ const supabaseService = {
               r.alternative_routes_json || '[]', r.trip_date || null, r.end_trip_date || r.trip_date || null, r.start_trip_time || null, r.end_trip_time || null, r.is_active !== undefined ? r.is_active : 1
             );
           }
-        }
-      } catch (err) {
-        console.error('[Hydration Routes Error]:', err.message);
+        });
+        syncRoutesTx(routeRes.rows);
       }
 
       // 4. Sync Vehicle Allocations
-      try {
-        const allocRes = await pool.query('SELECT * FROM vehicle_allocations');
-        if (allocRes && allocRes.rows.length > 0) {
-          const insertAlloc = localDb.prepare(`
-            INSERT OR REPLACE INTO vehicle_allocations (
-              id, vehicle_id, user_id, allocated_by, route_id, allocation_status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const a of allocRes.rows) {
+      if (allocRes && allocRes.rows.length > 0) {
+        const insertAlloc = localDb.prepare(`
+          INSERT OR REPLACE INTO vehicle_allocations (
+            id, vehicle_id, user_id, allocated_by, route_id, allocation_status, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        const syncAllocTx = localDb.transaction((allocs) => {
+          for (const a of allocs) {
             insertAlloc.run(
               a.id, a.vehicle_id, a.user_id, a.allocated_by,
               a.route_id, a.allocation_status || 'ACTIVE',
               a.notes || 'Admin vehicle & route corridor allotment'
             );
           }
-        }
-      } catch (e) {
-        console.warn('[Allocations Sync Warning]:', e.message);
+        });
+        syncAllocTx(allocRes.rows);
       }
 
-      // 5. Sync FASTag Transactions from Supabase into SQLite
-      try {
-        const fastagRes = await pool.query('SELECT * FROM fastag_transactions');
-        if (fastagRes && fastagRes.rows.length > 0) {
-          const insertTx = localDb.prepare(`
-            INSERT INTO fastag_transactions (
-              transaction_id, netc_reference_no, tag_id, vehicle_id, vehicle_registration_no,
-              vehicle_class, route_id, toll_plaza_name, description, highway_name, lat, lng, amount,
-              base_toll_fee, gst_amount, concessionaire_name, gstin, lane_direction,
-              payment_status, crossing_time, wallet_balance_before, wallet_balance_after
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(transaction_id) DO UPDATE SET
-              toll_plaza_name = excluded.toll_plaza_name,
-              description = excluded.description,
-              amount = excluded.amount,
-              crossing_time = excluded.crossing_time,
-              wallet_balance_before = excluded.wallet_balance_before,
-              wallet_balance_after = excluded.wallet_balance_after
-          `);
-          for (const tx of fastagRes.rows) {
-            let localVehId = null;
-            if (tx.vehicle_registration_no) {
-              const lv = localDb.prepare('SELECT id FROM vehicles WHERE registration_no = ?').get(tx.vehicle_registration_no);
-              if (lv) localVehId = lv.id;
-            }
+      // 5. Sync FASTag Transactions (Single SQLite transaction, instantaneous)
+      if (fastagRes && fastagRes.rows.length > 0) {
+        const regToVehId = new Map();
+        for (const v of localDb.prepare('SELECT id, registration_no FROM vehicles').all()) {
+          regToVehId.set(v.registration_no, v.id);
+        }
 
+        const insertTx = localDb.prepare(`
+          INSERT INTO fastag_transactions (
+            transaction_id, netc_reference_no, tag_id, vehicle_id, vehicle_registration_no,
+            vehicle_class, route_id, toll_plaza_name, description, highway_name, lat, lng, amount,
+            base_toll_fee, gst_amount, concessionaire_name, gstin, lane_direction,
+            payment_status, crossing_time, wallet_balance_before, wallet_balance_after
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(transaction_id) DO UPDATE SET
+            toll_plaza_name = excluded.toll_plaza_name,
+            description = excluded.description,
+            amount = excluded.amount,
+            crossing_time = excluded.crossing_time,
+            wallet_balance_before = excluded.wallet_balance_before,
+            wallet_balance_after = excluded.wallet_balance_after
+        `);
+
+        const syncTxsTx = localDb.transaction((txs) => {
+          for (const tx of txs) {
+            const localVehId = regToVehId.get(tx.vehicle_registration_no) || null;
             insertTx.run(
               tx.transaction_id, tx.netc_reference_no, tx.tag_id,
               localVehId, tx.vehicle_registration_no,
@@ -515,94 +573,25 @@ const supabaseService = {
               Number(tx.wallet_balance_before || 15000), Number(tx.wallet_balance_after || 14000)
             );
           }
-          console.log(`>>> [Supabase -> SQLite] Hydrated ${fastagRes.rows.length} FASTag transactions.`);
-        }
-      } catch (e) {
-        console.warn('[FASTag Sync Warning]:', e.message);
+        });
+        syncTxsTx(fastagRes.rows);
       }
 
-      // 6. Re-enable foreign keys and push any new local SQLite vehicles & transactions to Supabase to guarantee 100% two-way sync
-      try {
-        localDb.pragma('foreign_keys = ON');
-        const localVehs = localDb.prepare('SELECT * FROM vehicles').all();
-        for (const lv of localVehs) {
-          await this.syncVehicle(lv, localDb);
+      // 6. Re-enable foreign keys & flush WAL
+      localDb.pragma('foreign_keys = ON');
+      localDb.pragma('wal_checkpoint(FULL)');
+
+      // 7. Check if any local SQLite vehicles were created offline and push ONLY those missing
+      const supabaseRegs = new Set(vehRes.rows.map(v => v.registration_no));
+      const unsyncedVehs = localDb.prepare('SELECT * FROM vehicles').all().filter(v => !supabaseRegs.has(v.registration_no));
+      if (unsyncedVehs.length > 0) {
+        console.log(`>>> [Supabase Sync] Pushing ${unsyncedVehs.length} unsynced vehicles to Cloud Supabase...`);
+        for (const uv of unsyncedVehs) {
+          await this.syncVehicle(uv, localDb);
         }
-        const localTxs = localDb.prepare('SELECT * FROM fastag_transactions').all();
-        const existingTxIds = new Set(localDb.prepare('SELECT transaction_id FROM fastag_transactions').all().map(t => t.transaction_id));
-        localDb.pragma('wal_checkpoint(FULL)');
-      } catch (e) {
-        console.warn('[Two-way SQLite -> Supabase Sync Warning]:', e.message);
       }
 
-      // 6. Self-Healing FASTag Persistence:
-      // If routes have toll_gates_json but no corresponding fastag_transactions, auto-generate & sync them!
-      try {
-        const routesWithTolls = localDb.prepare("SELECT * FROM routes WHERE toll_gates_json IS NOT NULL AND toll_gates_json != '[]'").all();
-        for (const r of routesWithTolls) {
-          const txForRoute = localDb.prepare('SELECT COUNT(*) as count FROM fastag_transactions WHERE route_id = ?').get(r.id).count;
-          if (txForRoute === 0) {
-            try {
-              const tolls = JSON.parse(r.toll_gates_json || '[]');
-              if (Array.isArray(tolls) && tolls.length > 0) {
-                const veh = localDb.prepare('SELECT registration_no FROM vehicles WHERE id = ?').get(r.vehicle_id);
-                const regNo = veh?.registration_no || `TRUCK-${r.vehicle_id || 1}`;
-                const insertTx = localDb.prepare(`
-                  INSERT INTO fastag_transactions (
-                    transaction_id, netc_reference_no, tag_id, vehicle_id, vehicle_registration_no,
-                    vehicle_class, route_id, toll_plaza_name, highway_name, lat, lng,
-                    amount, base_toll_fee, gst_amount, concessionaire_name, gstin,
-                    lane_direction, payment_status, crossing_time, wallet_balance_before, wallet_balance_after
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                `);
-                tolls.forEach((tg, idx) => {
-                  const fee = Number(tg.charges) || 170;
-                  const txnId = `TXN-FTG-${Date.now()}-${idx + 1}-${r.id}`;
-                  const netcRef = `NETC${Date.now()}${idx + 1}`;
-                  const tagId = `607418-TAG-${regNo.replace(/[^A-Za-z0-9]/g, '')}`;
-                  const crossingTime = r.trip_date ? `${r.trip_date}T${r.start_trip_time || '08:00'}:00.000Z` : new Date().toISOString();
-                  
-                  insertTx.run(
-                    txnId, netcRef, tagId, r.vehicle_id, regNo,
-                    'Commercial Truck (HCV / 3-Axle Truck)', r.id, tg.name || `NH Toll Plaza #${idx + 1}`,
-                    'National Highway FASTag Corridor', Number(tg.lat || 0), Number(tg.lng || 0),
-                    fee, fee, 0, 'National Highways Authority of India (NHAI)', '22AAACN0123M1Z5',
-                    `Lane 0${(idx % 4) + 1} - Dedicated FASTag ETC`, 'SUCCESS',
-                    crossingTime, 25000 - (idx * fee), 25000 - ((idx + 1) * fee)
-                  );
-
-                  this.syncFastagTransaction({
-                    transaction_id: txnId,
-                    netc_reference_no: netcRef,
-                    tag_id: tagId,
-                    vehicle_id: r.vehicle_id,
-                    vehicle_registration_no: regNo,
-                    vehicle_class: 'Commercial Truck (HCV / 3-Axle Truck)',
-                    route_id: r.id,
-                    toll_plaza_name: tg.name || `NH Toll Plaza #${idx + 1}`,
-                    highway_name: 'National Highway FASTag Corridor',
-                    lat: Number(tg.lat || 0),
-                    lng: Number(tg.lng || 0),
-                    amount: fee,
-                    base_toll_fee: fee,
-                    gst_amount: 0,
-                    concessionaire_name: 'National Highways Authority of India (NHAI)',
-                    gstin: '22AAACN0123M1Z5',
-                    lane_direction: `Lane 0${(idx % 4) + 1} - Dedicated FASTag ETC`,
-                    payment_status: 'SUCCESS',
-                    wallet_balance_before: 25000 - (idx * fee),
-                    wallet_balance_after: 25000 - ((idx + 1) * fee)
-                  });
-                });
-              }
-            } catch (e) {}
-          }
-        }
-      } catch (e) {
-        console.warn('[Self-Healing FASTag Warning]:', e.message);
-      }
-
-      console.log('>>> [Supabase -> SQLite] Hydration complete.');
+      console.log(`>>> [Supabase -> SQLite] Hydration complete in ${Date.now() - t0}ms! Total local vehicles: ${localDb.prepare('SELECT count(*) as c FROM vehicles').get().c}`);
     } catch (err) {
       console.error('[Supabase -> SQLite Sync Error]:', err.message);
     }

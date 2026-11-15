@@ -1384,9 +1384,8 @@ async function processSingleFleetImport(item, adminUserId) {
   const ownerName = (truckOwnerName || '').trim() || null;
   const userName = customerName.trim();
 
-  // 1. Resolve or Create User
-  const allUsers = db.prepare('SELECT * FROM users').all();
-  let targetUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
+  // 1. Resolve or Create User (Using Indexed Search)
+  let targetUser = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name FROM users WHERE phone LIKE ? OR email = ?').get('%' + cleanPhone, `${cleanPhone}@gpstrackx.in`);
   let isNewUser = false;
   let userPasswordHash = null;
 
@@ -1413,9 +1412,8 @@ async function processSingleFleetImport(item, adminUserId) {
     }
   }
 
-  // 2. Resolve or Create Vehicle
-  const allVehicles = db.prepare('SELECT * FROM vehicles').all();
-  let targetVehicle = allVehicles.find(v => v.registration_no && v.registration_no.replace(/[\s-]/g, '').toUpperCase() === cleanReg);
+  // 2. Resolve or Create Vehicle (Using Indexed Search)
+  let targetVehicle = db.prepare('SELECT * FROM vehicles WHERE registration_no = ?').get(cleanReg);
 
   if (!targetVehicle) {
     const vehInsert = db.prepare(`
@@ -1480,91 +1478,95 @@ async function processSingleFleetImport(item, adminUserId) {
         wallet_balance_before = excluded.wallet_balance_before
     `);
 
-    for (const tx of transactions) {
-      const txnId = String(tx.transaction_id || tx.transactionId || '').trim() || fastagService.generateTransactionId(tx.crossing_time);
-      const netcRef = `NETC${txnId}`;
-      const tagId = `TAG-${cleanReg}`;
-      const finalTime = tx.crossing_time || `${tx.transaction_date} ${tx.transaction_time || '10:00:00'}`;
-      const amount = Math.abs(Number(tx.amount) || 0);
-      const balAfter = Number(tx.closing_balance ?? tx.closingBalance) || 0;
-      const balBefore = balAfter + amount;
-      const desc = String(tx.description || '').trim();
+    const insertAllTxns = db.transaction((txList) => {
+      for (const tx of txList) {
+        const txnId = String(tx.transaction_id || tx.transactionId || '').trim() || fastagService.generateTransactionId(tx.crossing_time);
+        const netcRef = `NETC${txnId}`;
+        const tagId = `TAG-${cleanReg}`;
+        const finalTime = tx.crossing_time || `${tx.transaction_date} ${tx.transaction_time || '10:00:00'}`;
+        const amount = Math.abs(Number(tx.amount) || 0);
+        const balAfter = Number(tx.closing_balance ?? tx.closingBalance) || 0;
+        const balBefore = balAfter + amount;
+        const desc = String(tx.description || '').trim();
 
-      const tariff = fastagService.getTruckTollTariff(23.0125, 79.0841, desc);
-      let plazaLat = tariff.lat || 23.0125;
-      let plazaLng = tariff.lng || 79.0841;
-      let highway = tariff.highway || 'National Highway Expressway Corridor';
-      let concessionaire = tariff.concessionaire || 'National Highways Authority of India (NHAI)';
-      let gstin = tariff.gstin || '23AAACN0123M1Z2';
+        const tariff = fastagService.getTruckTollTariff(23.0125, 79.0841, desc);
+        let plazaLat = tariff.lat || 23.0125;
+        let plazaLng = tariff.lng || 79.0841;
+        let highway = tariff.highway || 'National Highway Expressway Corridor';
+        let concessionaire = tariff.concessionaire || 'National Highways Authority of India (NHAI)';
+        let gstin = tariff.gstin || '23AAACN0123M1Z2';
 
-      const lowerDesc = desc.toLowerCase();
-      if (lowerDesc.includes('titarpani')) {
-        plazaLat = 23.0125;
-        plazaLng = 79.0841;
-        highway = 'NH-44 (Narsinghpur - Lakhnadon Corridor)';
-        concessionaire = 'NHAI Project Implementation Unit Narsinghpur';
-      } else if (lowerDesc.includes('chitora')) {
-        plazaLat = 23.8631;
-        plazaLng = 78.8559;
-        highway = 'NH-44 (Jhansi - Sagar - Lalitpur Corridor)';
-        concessionaire = 'NHAI Project Implementation Unit Sagar';
-      } else if (lowerDesc.includes('karrapur')) {
-        plazaLat = 23.9512;
-        plazaLng = 78.8824;
-        highway = 'NH-44 (Sagar - Karrapur Bypass)';
-        concessionaire = 'NHAI Project Implementation Unit Sagar';
+        const lowerDesc = desc.toLowerCase();
+        if (lowerDesc.includes('titarpani')) {
+          plazaLat = 23.0125;
+          plazaLng = 79.0841;
+          highway = 'NH-44 (Narsinghpur - Lakhnadon Corridor)';
+          concessionaire = 'NHAI Project Implementation Unit Narsinghpur';
+        } else if (lowerDesc.includes('chitora')) {
+          plazaLat = 23.8631;
+          plazaLng = 78.8559;
+          highway = 'NH-44 (Jhansi - Sagar - Lalitpur Corridor)';
+          concessionaire = 'NHAI Project Implementation Unit Sagar';
+        } else if (lowerDesc.includes('karrapur')) {
+          plazaLat = 23.9512;
+          plazaLng = 78.8824;
+          highway = 'NH-44 (Sagar - Karrapur Bypass)';
+          concessionaire = 'NHAI Project Implementation Unit Sagar';
+        }
+
+        insertTxStmt.run(
+          txnId,
+          netcRef,
+          tagId,
+          targetVehicle.id,
+          cleanReg,
+          'Commercial Truck (HCV / 3-Axle Truck)',
+          null,
+          desc || tariff.officialName,
+          desc,
+          highway,
+          plazaLat,
+          plazaLng,
+          amount,
+          amount,
+          0,
+          concessionaire,
+          gstin,
+          'Lane 04 - Dedicated FASTag ETC',
+          'SUCCESS',
+          finalTime,
+          balBefore,
+          balAfter
+        );
+        createdTxnsCount++;
+
+        txsToSync.push({
+          transaction_id: txnId,
+          netc_reference_no: netcRef,
+          tag_id: tagId,
+          vehicle_id: targetVehicle.id,
+          vehicle_registration_no: cleanReg,
+          vehicle_class: 'Commercial Truck (HCV / 3-Axle Truck)',
+          toll_plaza_name: desc || tariff.officialName,
+          description: desc,
+          highway_name: highway,
+          lat: plazaLat,
+          lng: plazaLng,
+          amount,
+          base_toll_fee: amount,
+          gst_amount: 0,
+          concessionaire_name: concessionaire,
+          gstin,
+          lane_direction: 'Lane 04 - Dedicated FASTag ETC',
+          payment_status: 'SUCCESS',
+          crossing_time: finalTime,
+          wallet_balance_before: balBefore,
+          wallet_balance_after: balAfter
+        });
       }
+    });
 
-      insertTxStmt.run(
-        txnId,
-        netcRef,
-        tagId,
-        targetVehicle.id,
-        cleanReg,
-        'Commercial Truck (HCV / 3-Axle Truck)',
-        null,
-        desc || tariff.officialName,
-        desc,
-        highway,
-        plazaLat,
-        plazaLng,
-        amount,
-        amount,
-        0,
-        concessionaire,
-        gstin,
-        'Lane 04 - Dedicated FASTag ETC',
-        'SUCCESS',
-        finalTime,
-        balBefore,
-        balAfter
-      );
-      createdTxnsCount++;
-
-      txsToSync.push({
-        transaction_id: txnId,
-        netc_reference_no: netcRef,
-        tag_id: tagId,
-        vehicle_id: targetVehicle.id,
-        vehicle_registration_no: cleanReg,
-        vehicle_class: 'Commercial Truck (HCV / 3-Axle Truck)',
-        toll_plaza_name: desc || tariff.officialName,
-        description: desc,
-        highway_name: highway,
-        lat: plazaLat,
-        lng: plazaLng,
-        amount,
-        base_toll_fee: amount,
-        gst_amount: 0,
-        concessionaire_name: concessionaire,
-        gstin,
-        lane_direction: 'Lane 04 - Dedicated FASTag ETC',
-        payment_status: 'SUCCESS',
-        crossing_time: finalTime,
-        wallet_balance_before: balBefore,
-        wallet_balance_after: balAfter
-      });
-    }
+    insertAllTxns(transactions);
 
     try {
       const totalToll = db.prepare('SELECT SUM(amount) as total FROM fastag_transactions WHERE vehicle_id = ?').get(targetVehicle.id);

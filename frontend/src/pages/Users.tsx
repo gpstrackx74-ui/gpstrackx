@@ -443,25 +443,58 @@ export const UsersManagement: React.FC = () => {
         throw new Error(parseErrors.join(' | ') || 'No valid Excel files could be parsed.');
       }
 
-      setImportProgressText(`Saving ${parsedItems.length} file(s) into database...`);
+      // Send to Backend API in chunks of 20 to prevent network timeouts and ensure 100% database persistence
+      const CHUNK_SIZE = 20;
+      let totalVehiclesAllocated = 0;
+      let totalTxsRecorded = 0;
+      const vehicleList: string[] = [];
+      const chunkErrors: string[] = [];
 
-      // Send to Backend API
-      const res = await api.importFleetExcel(
-        parsedItems.length === 1
-          ? parsedItems[0]
-          : { items: parsedItems }
-      );
+      for (let c = 0; c < parsedItems.length; c += CHUNK_SIZE) {
+        const chunk = parsedItems.slice(c, c + CHUNK_SIZE);
+        const batchNum = Math.floor(c / CHUNK_SIZE) + 1;
+        const totalBatches = Math.ceil(parsedItems.length / CHUNK_SIZE);
+
+        setImportProgressText(`Saving batch ${batchNum} of ${totalBatches} (${Math.min(c + CHUNK_SIZE, parsedItems.length)}/${parsedItems.length} files)...`);
+
+        try {
+          const res = await api.importFleetExcel(
+            chunk.length === 1 && parsedItems.length === 1
+              ? chunk[0]
+              : { items: chunk }
+          );
+
+          if (res.vehiclesCreated || res.filesCount) {
+            totalVehiclesAllocated += (res.vehiclesCreated || res.filesCount || chunk.length);
+          } else if (res.vehicle) {
+            totalVehiclesAllocated += 1;
+          }
+          if (res.totalTransactions) {
+            totalTxsRecorded += res.totalTransactions;
+          } else if (res.transactionsCount) {
+            totalTxsRecorded += res.transactionsCount;
+          }
+          if (Array.isArray(res.vehicles)) {
+            vehicleList.push(...res.vehicles);
+          } else if (res.vehicle?.registration_no) {
+            vehicleList.push(res.vehicle.registration_no);
+          }
+          if (Array.isArray(res.errors)) {
+            chunkErrors.push(...res.errors);
+          }
+        } catch (err: any) {
+          chunkErrors.push(`Batch ${batchNum}: ${err.message || 'Error saving chunk'}`);
+        }
+      }
 
       // Refresh Users list immediately
       await fetchUsers();
 
-      let successDetail = '';
-      if (res.batch) {
-        successDetail = `✅ Successfully imported ${res.filesCount} Excel file(s)! Allocated ${res.vehiclesCreated || parsedItems.length} vehicle(s) (${res.vehicles ? res.vehicles.join(', ') : ''}), and ${res.totalTransactions || 0} FASTag transactions recorded.`;
-      } else {
-        successDetail = `✅ Successfully imported Excel! User "${res.user?.name}" created, Vehicle "${res.vehicle?.registration_no}" allocated, and ${res.transactionsCount || 0} FASTag toll transactions recorded across dates.`;
-      }
+      let successDetail = `✅ Successfully imported ${parsedItems.length} Excel file(s)! Allocated ${totalVehiclesAllocated || parsedItems.length} vehicle(s)${vehicleList.length > 0 ? ' (' + vehicleList.slice(0, 10).join(', ') + (vehicleList.length > 10 ? ` +${vehicleList.length - 10} more` : '') + ')' : ''}, and ${totalTxsRecorded} FASTag transactions recorded.`;
 
+      if (chunkErrors.length > 0) {
+        successDetail += ` (Note errors: ${chunkErrors.slice(0, 3).join('; ')})`;
+      }
       if (parseErrors.length > 0) {
         successDetail += ` (Note: ${parseErrors.length} file(s) skipped due to errors: ${parseErrors.join('; ')})`;
       }

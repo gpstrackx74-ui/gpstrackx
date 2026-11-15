@@ -339,6 +339,33 @@ function initializeDatabase() {
     );
   `);
 
+  // Deduplicate users in SQLite if any duplicates exist
+  try {
+    const dupEmails = db.prepare('SELECT email FROM users GROUP BY email HAVING count(*) > 1').all();
+    for (const d of dupEmails) {
+      const userRows = db.prepare('SELECT id FROM users WHERE email = ? ORDER BY id ASC').all(d.email);
+      const primaryId = userRows[0].id;
+      for (let i = 1; i < userRows.length; i++) {
+        const dupId = userRows[i].id;
+        db.prepare('UPDATE vehicles SET assigned_user_id = ? WHERE assigned_user_id = ?').run(primaryId, dupId);
+        db.prepare('UPDATE vehicle_allocations SET user_id = ? WHERE user_id = ?').run(primaryId, dupId);
+        db.prepare('DELETE FROM users WHERE id = ?').run(dupId);
+      }
+    }
+  } catch (e) {}
+
+  // High performance database indexes
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+      CREATE INDEX IF NOT EXISTS idx_vehicles_reg ON vehicles(registration_no);
+      CREATE INDEX IF NOT EXISTS idx_vehicles_assigned_user ON vehicles(assigned_user_id);
+      CREATE INDEX IF NOT EXISTS idx_fastag_vehicle_id ON fastag_transactions(vehicle_id);
+      CREATE INDEX IF NOT EXISTS idx_fastag_reg ON fastag_transactions(vehicle_registration_no);
+    `);
+  } catch (e) {}
+
   seedData();
   seedVehicleAllocations();
   seedFastagTransactions();
