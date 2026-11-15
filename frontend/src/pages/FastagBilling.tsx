@@ -64,6 +64,11 @@ export const FastagBilling: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const TRANSACTIONS_PER_PAGE = 10;
 
+  // Pagination & Search State for Quick Select Fleet Trucks (12 cards per page)
+  const [truckPage, setTruckPage] = useState(1);
+  const [truckSearchQuery, setTruckSearchQuery] = useState('');
+  const TRUCKS_PER_PAGE = 12;
+
   // --- Step 3: Statement Receipt Modal State ---
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [statementData, setStatementData] = useState<FastagStatementReportData | null>(null);
@@ -183,6 +188,30 @@ export const FastagBilling: React.FC = () => {
       setCurrentPage(totalPages);
     }
   }, [totalPages, currentPage]);
+
+  // Filter and paginate quick select fleet trucks (12 trucks per page)
+  const filteredTrucks = useMemo(() => {
+    if (!truckSearchQuery.trim()) return vehicles;
+    const q = truckSearchQuery.toLowerCase().trim();
+    return vehicles.filter(v =>
+      v.registration_no?.toLowerCase().includes(q) ||
+      v.name_model?.toLowerCase().includes(q) ||
+      (v.owner_name && v.owner_name.toLowerCase().includes(q))
+    );
+  }, [vehicles, truckSearchQuery]);
+
+  const totalTruckPages = Math.ceil(filteredTrucks.length / TRUCKS_PER_PAGE) || 1;
+
+  const paginatedTrucks = useMemo(() => {
+    const start = (truckPage - 1) * TRUCKS_PER_PAGE;
+    return filteredTrucks.slice(start, start + TRUCKS_PER_PAGE);
+  }, [filteredTrucks, truckPage]);
+
+  useEffect(() => {
+    if (truckPage > totalTruckPages) {
+      setTruckPage(totalTruckPages);
+    }
+  }, [totalTruckPages, truckPage]);
 
   // Date range presets
   const handleSetPreset = (preset: 'all' | 'this_month' | 'last_30_days') => {
@@ -410,34 +439,83 @@ export const FastagBilling: React.FC = () => {
 
           {/* Quick Click Vehicle Cards when no vehicle is selected */}
           {!selectedVehicleId && (
-            <div className="mt-4 pt-4 border-t border-slate-200/60">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2.5">
-                Quick Select Available Fleet Trucks:
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {vehicles.map((v) => (
-                  <div
-                    key={v.id}
-                    onClick={() => setSelectedVehicleId(String(v.id))}
-                    className="p-3 bg-white hover:bg-red-50/40 border border-slate-200 hover:border-red-300 rounded-2xl cursor-pointer transition shadow-2xs group flex items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 group-hover:bg-[#E60012] group-hover:text-white text-slate-700 flex items-center justify-center shrink-0 transition">
-                        <Truck className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-mono font-black text-xs text-slate-900 group-hover:text-[#E60012] transition truncate">
-                          {v.registration_no}
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate">
-                          {v.name_model}
-                        </div>
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-[#E60012] group-hover:translate-x-0.5 transition shrink-0" />
-                  </div>
-                ))}
+            <div className="mt-4 pt-4 border-t border-slate-200/60 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Quick Select Available Fleet Trucks ({filteredTrucks.length}):
+                </span>
+                {/* Instant Filter Search Bar */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={truckSearchQuery}
+                    onChange={(e) => {
+                      setTruckSearchQuery(e.target.value);
+                      setTruckPage(1);
+                    }}
+                    placeholder="Search truck number..."
+                    className="pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E60012]/30 focus:border-[#E60012] placeholder-slate-400 w-48 sm:w-56 transition"
+                  />
+                  {truckSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTruckSearchQuery('');
+                        setTruckPage(1);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {paginatedTrucks.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs">
+                  No fleet trucks found matching "{truckSearchQuery}".
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {paginatedTrucks.map((v) => (
+                    <div
+                      key={v.id}
+                      onClick={() => setSelectedVehicleId(String(v.id))}
+                      className="p-3 bg-white hover:bg-red-50/40 border border-slate-200 hover:border-red-300 rounded-2xl cursor-pointer transition shadow-2xs group flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-slate-100 group-hover:bg-[#E60012] group-hover:text-white text-slate-700 flex items-center justify-center shrink-0 transition">
+                          <Truck className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-mono font-black text-xs text-slate-900 group-hover:text-[#E60012] transition truncate">
+                            {v.registration_no}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {v.name_model}
+                          </div>
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-[#E60012] group-hover:translate-x-0.5 transition shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Fleet Trucks Pagination */}
+              {filteredTrucks.length > 0 && (
+                <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-2xs mt-2">
+                  <Pagination
+                    currentPage={truckPage}
+                    totalPages={totalTruckPages}
+                    onPageChange={setTruckPage}
+                    totalItems={filteredTrucks.length}
+                    itemsPerPage={TRUCKS_PER_PAGE}
+                    itemLabel="fleet trucks"
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
