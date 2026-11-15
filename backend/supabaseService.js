@@ -88,19 +88,36 @@ const supabaseService = {
       if (v.assigned_user_id) {
         let userEmail = null;
         let userPhone = null;
+        let fullUser = null;
         if (localDb) {
           try {
-            const u = localDb.prepare('SELECT email, phone FROM users WHERE id = ?').get(v.assigned_user_id);
-            if (u) { userEmail = u.email; userPhone = u.phone; }
+            fullUser = localDb.prepare('SELECT * FROM users WHERE id = ?').get(v.assigned_user_id);
+            if (fullUser) { userEmail = fullUser.email; userPhone = fullUser.phone; }
           } catch (e) {}
         }
         if (userEmail || userPhone) {
           const uRes = await pool.query('SELECT id FROM users WHERE email = $1 OR (phone IS NOT NULL AND phone = $2)', [userEmail, userPhone]);
-          if (uRes.rows.length > 0) supabaseUserId = uRes.rows[0].id;
+          if (uRes.rows.length > 0) {
+            supabaseUserId = uRes.rows[0].id;
+          } else if (fullUser) {
+            supabaseUserId = await this.syncUser(fullUser);
+          }
         } else {
           // Check if id exists directly in Supabase
           const directU = await pool.query('SELECT id FROM users WHERE id = $1', [v.assigned_user_id]);
-          if (directU.rows.length > 0) supabaseUserId = directU.rows[0].id;
+          if (directU.rows.length > 0) {
+            supabaseUserId = directU.rows[0].id;
+          } else if (fullUser) {
+            supabaseUserId = await this.syncUser(fullUser);
+          }
+        }
+      }
+
+      // Fallback: If supabaseUserId is still not resolved, but vehicle has owner_name, match user by name or company_name
+      if (!supabaseUserId && v.owner_name) {
+        const ownerRes = await pool.query('SELECT id FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) OR LOWER(TRIM(company_name)) = LOWER(TRIM($1))', [v.owner_name]);
+        if (ownerRes.rows.length > 0) {
+          supabaseUserId = ownerRes.rows[0].id;
         }
       }
 
@@ -148,7 +165,7 @@ const supabaseService = {
         v.owner_name || null,
         v.total_toll_fee || 0
       ]);
-      console.log(`[Supabase] Synced vehicle: ${v.registration_no} (ID: ${res.rows[0]?.id})`);
+      console.log(`[Supabase Log] Synced vehicle: ${v.registration_no} (Supabase ID: ${res.rows[0]?.id}, Assigned User ID: ${supabaseUserId})`);
       return res.rows[0]?.id;
     } catch (err) {
       console.error('[Supabase syncVehicle Error]:', err.message);
@@ -390,6 +407,22 @@ const supabaseService = {
         if (uRow.rows.length > 0) usrId = uRow.rows[0].id;
       }
 
+      if (!vehId || !usrId) {
+        console.warn(`[Supabase Allocation Log] Skipped: vehId=${vehId}, usrId=${usrId}`);
+        return;
+      }
+
+      const existing = await pool.query('SELECT id FROM vehicle_allocations WHERE vehicle_id = $1 AND user_id = $2', [vehId, usrId]);
+      if (existing.rows.length > 0) {
+        await pool.query('UPDATE vehicle_allocations SET allocation_status = $1, notes = $2 WHERE id = $3', [
+          alloc.allocation_status || 'ACTIVE',
+          alloc.notes || 'Admin vehicle & route corridor allotment',
+          existing.rows[0].id
+        ]);
+        console.log(`[Supabase Log] Updated vehicle allocation: Vehicle ${vehId} -> User ${usrId}`);
+        return;
+      }
+
       await pool.query(`
         INSERT INTO vehicle_allocations (
           vehicle_id, user_id, allocated_by, route_id, allocation_status, notes
@@ -402,7 +435,7 @@ const supabaseService = {
         alloc.allocation_status || 'ACTIVE',
         alloc.notes || 'Admin vehicle & route corridor allotment'
       ]);
-      console.log(`[Supabase] Synced vehicle allocation: Vehicle ${vehId} -> User ${usrId}`);
+      console.log(`[Supabase Log] Created vehicle allocation: Vehicle ${vehId} -> User ${usrId}`);
     } catch (err) {
       console.error('[Supabase syncVehicleAllocation Error]:', err.message);
     }
@@ -477,7 +510,11 @@ const supabaseService = {
 
         const syncVehiclesTx = localDb.transaction((vehs) => {
           for (const v of vehs) {
-            const localUserId = v.assigned_user_id ? (supabaseToLocalUserMap.get(v.assigned_user_id) || null) : null;
+            let localUserId = v.assigned_user_id ? (supabaseToLocalUserMap.get(v.assigned_user_id) || null) : null;
+            if (!localUserId && v.owner_name) {
+              const matchedUser = localDb.prepare('SELECT id FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) OR LOWER(TRIM(company_name)) = LOWER(TRIM(?))').get(v.owner_name, v.owner_name);
+              if (matchedUser) localUserId = matchedUser.id;
+            }
             upsertVeh.run(
               v.registration_no, v.name_model, v.vehicle_type, v.device_id || null, v.imei_number || null,
               v.chassis_number || null, v.fuel_type || 'Diesel', localUserId,
@@ -531,6 +568,16 @@ const supabaseService = {
         });
         syncAllocTx(allocRes.rows);
       }
+
+      // Auto-heal missing vehicle allocations for any vehicle that has an assigned user
+      try {
+        localDb.exec(`
+          INSERT OR IGNORE INTO vehicle_allocations (vehicle_id, user_id, allocated_by, allocation_status, notes)
+          SELECT id, assigned_user_id, 1, 'active', 'Auto-restored allocation'
+          FROM vehicles
+          WHERE assigned_user_id IS NOT NULL;
+        `);
+      } catch (e) {}
 
       // 5. Sync FASTag Transactions (Single SQLite transaction, instantaneous)
       if (fastagRes && fastagRes.rows.length > 0) {

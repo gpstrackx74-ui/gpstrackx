@@ -1582,39 +1582,38 @@ async function processSingleFleetImport(item, adminUserId) {
     db.pragma('wal_checkpoint(FULL)');
   } catch (e) {}
 
-  // Asynchronously sync everything to Supabase Cloud in background so HTTP response is instant & never times out
-  const userToSync = { ...targetUser };
-  const vehicleToSync = { ...targetVehicle };
-  const allocToSync = {
-    vehicle_id: targetVehicle.id,
-    user_id: targetUser.id,
-    registration_no: cleanReg,
-    user_phone: targetUser.phone,
-    user_email: targetUser.email,
-    allocated_by: adminUserId || 1,
-    allocation_status: 'ACTIVE',
-    notes: 'Allocated via Excel Import'
-  };
-  const txsListToSync = [...txsToSync];
-  const isCreatedUser = isNewUser;
-  const hashVal = userPasswordHash;
-
-  setImmediate(async () => {
-    try {
-      if (isCreatedUser) {
-        await supabaseService.syncUser({ ...userToSync, password: hashVal });
-      } else if (ownerName) {
-        await supabaseService.syncUser(userToSync);
-      }
-      await supabaseService.syncVehicle(vehicleToSync, db);
-      await supabaseService.syncVehicleAllocation(allocToSync);
-      if (txsListToSync.length > 0) {
-        await supabaseService.syncFastagTransactionsBatch(txsListToSync);
-      }
-    } catch (err) {
-      console.error('[Excel Import] Background Supabase sync warning:', err.message);
+  // Synchronously persist user, vehicle, allocation, and FASTag transactions to Cloud Supabase
+  try {
+    let cloudUserId = null;
+    if (isNewUser) {
+      cloudUserId = await supabaseService.syncUser({ ...targetUser, password: userPasswordHash });
+    } else {
+      cloudUserId = await supabaseService.syncUser(targetUser);
     }
-  });
+    console.log(`[Excel Import Log] Cloud User Synced: "${targetUser.name}" (${targetUser.email}) -> Cloud User ID: ${cloudUserId || targetUser.id}`);
+
+    const cloudVehId = await supabaseService.syncVehicle(targetVehicle, db);
+    console.log(`[Excel Import Log] Cloud Vehicle Synced: "${cleanReg}" -> Cloud Vehicle ID: ${cloudVehId || targetVehicle.id}`);
+
+    await supabaseService.syncVehicleAllocation({
+      vehicle_id: targetVehicle.id,
+      user_id: targetUser.id,
+      registration_no: cleanReg,
+      user_phone: targetUser.phone,
+      user_email: targetUser.email,
+      allocated_by: adminUserId || 1,
+      allocation_status: 'ACTIVE',
+      notes: 'Allocated via Excel Import'
+    });
+    console.log(`[Excel Import Log] Cloud Allocation Synced: Vehicle "${cleanReg}" -> User "${targetUser.name}"`);
+
+    if (txsToSync.length > 0) {
+      await supabaseService.syncFastagTransactionsBatch(txsToSync);
+      console.log(`[Excel Import Log] Cloud FASTag Synced: ${txsToSync.length} transactions for Vehicle "${cleanReg}"`);
+    }
+  } catch (syncErr) {
+    console.error(`[Excel Import Warning] Supabase sync issue for ${cleanReg}:`, syncErr.message);
+  }
 
   return {
     user: targetUser,
@@ -1632,6 +1631,8 @@ app.post('/api/fleet/import-excel', authenticateToken, requireAdmin, async (req,
     return res.status(400).json({ error: 'No Excel file data received.' });
   }
 
+  console.log(`>>> [Excel Import Batch] Starting import for ${items.length} file(s)...`);
+
   try {
     const results = [];
     const errors = [];
@@ -1641,6 +1642,7 @@ app.post('/api/fleet/import-excel', authenticateToken, requireAdmin, async (req,
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       try {
+        console.log(`[Excel Import Batch] Processing item ${i + 1}/${items.length}: Truck "${item.truckNumber}", Customer "${item.customerName}"`);
         const result = await processSingleFleetImport(item, req.user?.id);
         results.push(result);
         totalTxns += result.transactionsCount || 0;
@@ -1648,6 +1650,7 @@ app.post('/api/fleet/import-excel', authenticateToken, requireAdmin, async (req,
           vehicleRegs.push(result.vehicle.registration_no);
         }
       } catch (err) {
+        console.error(`[Excel Import Batch Error] Item ${i + 1} (${item.truckNumber || item.customerName}):`, err.message);
         errors.push(`Item ${i + 1} (${item.truckNumber || item.customerName || 'Unknown'}): ${err.message}`);
       }
     }
@@ -1656,6 +1659,8 @@ app.post('/api/fleet/import-excel', authenticateToken, requireAdmin, async (req,
     try {
       db.pragma('wal_checkpoint(FULL)');
     } catch (e) {}
+
+    console.log(`>>> [Excel Import Batch Complete] Processed ${items.length} file(s): ${results.length} succeeded, ${errors.length} failed, ${totalTxns} FASTag transactions recorded.`);
 
     if (results.length === 0) {
       return res.status(400).json({ error: 'Failed to import files: ' + errors.join('; ') });
