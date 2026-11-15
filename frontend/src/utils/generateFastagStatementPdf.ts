@@ -410,7 +410,7 @@ export const generateFastagStatementPdf = (input: FastagTransaction | FastagStat
   const maxPage1Rows = 12;
   const maxOtherPageRows = 19;
 
-  txs.forEach((tx) => {
+  txs.forEach((tx, rowIdx) => {
     const isPage1 = doc.getNumberOfPages() === 1;
     const maxRows = isPage1 ? maxPage1Rows : maxOtherPageRows;
 
@@ -419,6 +419,12 @@ export const generateFastagStatementPdf = (input: FastagTransaction | FastagStat
       // On subsequent pages, NO table header - matching RJ22GB7999.pdf
       curY = 20;
       rowsOnCurrentPage = 0;
+    }
+
+    // Alternate row background: odd rows white, even rows #F2F2F2 (242, 242, 242)
+    if (rowIdx % 2 === 1) {
+      doc.setFillColor(242, 242, 242);
+      doc.rect(marginX, curY, 180, rowH, 'F');
     }
 
     // Row Outer Border & Vertical Dividers

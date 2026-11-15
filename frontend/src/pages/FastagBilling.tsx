@@ -606,14 +606,15 @@ export const FastagBilling: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-slate-800 font-medium">
-                      {vehicleTransactions.map((tx) => {
+                      {vehicleTransactions.map((tx, idx) => {
                         const dt = formatTableDateTime(tx.crossing_time, tx.created_at);
                         const balStr =
                           tx.wallet_balance_after != null
                             ? Number(tx.wallet_balance_after).toLocaleString('en-IN')
                             : '—';
+                        const isEven = idx % 2 === 1;
                         return (
-                          <tr key={tx.id} className="hover:bg-blue-50/30 transition">
+                          <tr key={tx.id} className={isEven ? "bg-slate-50/80 hover:bg-blue-50/30 transition" : "bg-white hover:bg-blue-50/30 transition"}>
                             {/* Transaction Time */}
                             <td className="py-3 px-3 whitespace-nowrap">
                               <div className="font-semibold text-slate-900 text-xs">
@@ -859,7 +860,7 @@ export const FastagBilling: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 text-slate-800 font-medium text-[11px]">
-                        {statementData.transactions.map((tx) => {
+                        {statementData.transactions.map((tx, idx) => {
                           const dt = formatTableDateTime(tx.crossing_time, tx.created_at);
                           const balStr =
                             tx.wallet_balance_after != null
@@ -867,8 +868,9 @@ export const FastagBilling: React.FC = () => {
                               : '—';
                           const desc = parseDescriptionLines(tx.description || tx.toll_plaza_name);
                           const cleanTxnId = formatTransactionId(tx.transaction_id);
+                          const isEven = idx % 2 === 1;
                           return (
-                            <tr key={tx.id} className="hover:bg-slate-50/60">
+                            <tr key={tx.id} className={isEven ? "bg-[#F2F2F2] hover:bg-slate-200/50" : "bg-white hover:bg-slate-50"}>
                               {/* Transaction Time */}
                               <td className="py-2 px-2.5 text-center border-r border-slate-200 whitespace-nowrap">
                                 <div className="font-semibold text-slate-900">
