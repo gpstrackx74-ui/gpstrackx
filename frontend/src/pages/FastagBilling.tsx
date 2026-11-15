@@ -801,23 +801,23 @@ export const FastagBilling: React.FC = () => {
                   {/* Customer Information Block */}
                   <div className="space-y-1.5 text-xs text-slate-900">
                     <div className="flex items-center">
-                      <span className="w-36 font-normal text-slate-700">Customer Name</span>
+                      <span className="w-[125px] font-normal text-slate-700 whitespace-nowrap">Customer Name</span>
                       <span>: <strong className="font-bold text-slate-950 ml-1">{statementData.customerName}</strong></span>
                     </div>
                     <div className="flex items-center">
-                      <span className="w-36 font-normal text-slate-700">Customer Mobile</span>
+                      <span className="w-[125px] font-normal text-slate-700 whitespace-nowrap">Customer Mobile</span>
                       <span>: <strong className="font-bold text-slate-950 ml-1">{formatMobileNumber(statementData.customerMobile)}</strong></span>
                     </div>
                     <div className="flex items-center">
-                      <span className="w-36 font-normal text-slate-700">Truck Number</span>
+                      <span className="w-[125px] font-normal text-slate-700 whitespace-nowrap">Truck Number</span>
                       <span>: <strong className="font-bold text-slate-950 font-mono ml-1">{statementData.truckNumber}</strong></span>
                     </div>
                     <div className="flex items-center">
-                      <span className="w-36 font-normal text-slate-700">Truck Owner Name</span>
+                      <span className="w-[125px] font-normal text-slate-700 whitespace-nowrap">Truck Owner Name</span>
                       <span>: <strong className="font-bold text-slate-950 ml-1">{statementData.truckOwnerName}</strong></span>
                     </div>
-                    <div className="flex items-center pt-2">
-                      <span className="w-36 font-normal text-slate-700">Statement Duration</span>
+                    <div className="flex items-center">
+                      <span className="w-[125px] font-normal text-slate-700 whitespace-nowrap">Statement Duration</span>
                       <span>: <strong className="font-bold text-slate-950 ml-1">{durationText}</strong></span>
                     </div>
                   </div>

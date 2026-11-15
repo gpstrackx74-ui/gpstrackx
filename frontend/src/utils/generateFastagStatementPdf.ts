@@ -310,43 +310,45 @@ export const generateFastagStatementPdf = (input: FastagTransaction | FastagStat
   const truckNumber = data.truckNumber || txs[0]?.vehicle_registration_no || 'RJ22GB7999';
   const truckOwnerName = data.truckOwnerName || txs[0]?.truck_owner_name || 'Rajendra Kumar';
 
-  const colonX = marginX + 34;
+  const colonX = marginX + 29.5;
   const valueX = colonX + 2.5;
+  const yStep = 5.8;
+  const startInfoY = 33;
 
   // Customer Name (Label regular, Value bold)
   doc.setFont('helvetica', 'normal');
-  doc.text('Customer Name', marginX, 33);
-  doc.text(':', colonX, 33);
+  doc.text('Customer Name', marginX, startInfoY);
+  doc.text(':', colonX, startInfoY);
   doc.setFont('helvetica', 'bold');
-  doc.text(customerName, valueX, 33);
+  doc.text(customerName, valueX, startInfoY);
 
   // Customer Mobile (Label regular, Value bold, clean number without +91 or spaces)
   doc.setFont('helvetica', 'normal');
-  doc.text('Customer Mobile', marginX, 39);
-  doc.text(':', colonX, 39);
+  doc.text('Customer Mobile', marginX, startInfoY + yStep);
+  doc.text(':', colonX, startInfoY + yStep);
   doc.setFont('helvetica', 'bold');
-  doc.text(customerMobile, valueX, 39);
+  doc.text(customerMobile, valueX, startInfoY + yStep);
 
   // Truck Number (Label regular, Value bold)
   doc.setFont('helvetica', 'normal');
-  doc.text('Truck Number', marginX, 45);
-  doc.text(':', colonX, 45);
+  doc.text('Truck Number', marginX, startInfoY + yStep * 2);
+  doc.text(':', colonX, startInfoY + yStep * 2);
   doc.setFont('helvetica', 'bold');
-  doc.text(truckNumber, valueX, 45);
+  doc.text(truckNumber, valueX, startInfoY + yStep * 2);
 
   // Truck Owner Name (Label regular, Value bold)
   doc.setFont('helvetica', 'normal');
-  doc.text('Truck Owner Name', marginX, 51);
-  doc.text(':', colonX, 51);
+  doc.text('Truck Owner Name', marginX, startInfoY + yStep * 3);
+  doc.text(':', colonX, startInfoY + yStep * 3);
   doc.setFont('helvetica', 'bold');
-  doc.text(truckOwnerName, valueX, 51);
+  doc.text(truckOwnerName, valueX, startInfoY + yStep * 3);
 
-  // Statement Duration (Label unbold, dates bold)
+  // Statement Duration (Label unbold, dates bold, aligned exactly with other 4 rows)
   doc.setFont('helvetica', 'normal');
-  doc.text('Statement Duration :', marginX, 59.5);
-  const durLabelW = doc.getTextWidth('Statement Duration : ');
+  doc.text('Statement Duration', marginX, startInfoY + yStep * 4);
+  doc.text(':', colonX, startInfoY + yStep * 4);
   doc.setFont('helvetica', 'bold');
-  doc.text(durationText, marginX + durLabelW, 59.5);
+  doc.text(durationText, valueX, startInfoY + yStep * 4);
 
   // Summary Box: Credit 0 | Debit {totalDebit}
   const boxW = 180;
