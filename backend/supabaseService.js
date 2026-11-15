@@ -66,14 +66,24 @@ const supabaseService = {
     }
   },
 
-  // Delete user from Supabase
+  // Delete user from Supabase and delete any vehicles assigned to them
   async deleteUser(userId) {
     if (!pool) return;
     try {
+      // Find all vehicles assigned to this user in Supabase and permanently delete them
+      try {
+        const vehRes = await pool.query('SELECT id FROM vehicles WHERE assigned_user_id = $1', [userId]);
+        for (const row of vehRes.rows) {
+          await this.deleteVehicle(row.id);
+        }
+      } catch (vehErr) {
+        console.error('[Supabase deleteUser Vehicles Warning]:', vehErr.message);
+      }
+
       await pool.query('DELETE FROM user_logins WHERE user_id = $1', [userId]);
       await pool.query('DELETE FROM vehicle_allocations WHERE user_id = $1', [userId]);
       await pool.query('DELETE FROM users WHERE id = $1', [userId]);
-      console.log(`[Supabase] Permanently deleted user ID: ${userId}`);
+      console.log(`[Supabase] Permanently deleted user ID: ${userId} and associated vehicles`);
     } catch (err) {
       console.error('[Supabase deleteUser Error]:', err.message);
     }

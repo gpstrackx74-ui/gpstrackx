@@ -1872,12 +1872,39 @@ async function deleteUserById(userId, currentAdminId) {
   if (parseInt(userId) === parseInt(currentAdminId)) {
     return;
   }
-  // Unassign vehicles assigned to this user (preserving all vehicles and saved routes)
-  db.prepare('UPDATE vehicles SET assigned_user_id = NULL WHERE assigned_user_id = ?').run(userId);
+
+  // 1. Find all vehicles assigned or allocated to this user
+  let userVehicles = [];
+  try {
+    userVehicles = db.prepare(`
+      SELECT DISTINCT id FROM vehicles WHERE assigned_user_id = ?
+      UNION
+      SELECT DISTINCT vehicle_id AS id FROM vehicle_allocations WHERE user_id = ?
+    `).all(userId, userId);
+  } catch (err) {
+    console.error(`[Delete User] Error querying vehicles for user ${userId}:`, err.message);
+  }
+
+  // 2. Permanently delete all vehicles belonging to this user
+  for (const veh of userVehicles) {
+    if (veh && veh.id) {
+      try {
+        console.log(`[Delete User] Deleting vehicle ID ${veh.id} belonging to user ID ${userId}...`);
+        await deleteVehicleById(veh.id);
+      } catch (vErr) {
+        console.error(`[Delete User] Error deleting vehicle ${veh.id} for user ${userId}:`, vErr.message);
+      }
+    }
+  }
+
+  // 3. Delete user logins, allocations, user record from SQLite
   db.prepare('DELETE FROM user_logins WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM vehicle_allocations WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+
+  // 4. Delete user and any associated vehicles in Supabase
   await supabaseService.deleteUser(userId);
+  console.log(`[Delete User] Successfully deleted user ID ${userId} and all associated vehicles.`);
 }
 
 app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
@@ -1887,7 +1914,7 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) =
   }
   try {
     await deleteUserById(userId, req.user.id);
-    res.json({ message: 'User deleted successfully. Vehicles and saved routes preserved.' });
+    res.json({ message: 'User and associated vehicle(s) deleted successfully.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete user: ' + err.message });
   }
@@ -1907,7 +1934,7 @@ app.post('/api/users/bulk-delete', authenticateToken, requireAdmin, async (req, 
         count++;
       }
     }
-    res.json({ message: `Successfully deleted ${count} users.` });
+    res.json({ message: `Successfully deleted ${count} users and their associated vehicles.` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to bulk delete users: ' + err.message });
   }

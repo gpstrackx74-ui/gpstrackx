@@ -201,7 +201,7 @@ export const UsersManagement: React.FC = () => {
   };
 
   const handleDeleteUser = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this fleet user?')) return;
+    if (!confirm('Are you sure you want to delete this fleet user? All vehicles assigned to this user will also be permanently deleted.')) return;
     try {
       await api.deleteUser(id);
       setSelectedUserIds(prev => prev.filter(uId => uId !== id));
@@ -1150,7 +1150,7 @@ export const UsersManagement: React.FC = () => {
               Delete {selectedUserIds.length} Selected Users?
             </h3>
             <p className="text-xs text-slate-500 mt-2">
-              Are you sure you want to delete all {selectedUserIds.length} selected users at once? All vehicle allocations and user logins will be removed. This action cannot be undone.
+              Are you sure you want to delete all {selectedUserIds.length} selected users at once? All vehicles assigned to these users will also be permanently deleted. This action cannot be undone.
             </p>
             <div className="mt-6 flex items-center justify-center gap-3">
               <button
