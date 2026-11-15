@@ -63,7 +63,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setLoading(true);
 
       if (isLiveUserView) {
-        // Admin inspecting User Dashboard:
+        // Admin inspecting Live User View:
         let currentUid = overrideUserId !== undefined ? overrideUserId : selectedUserId;
         let users = userList;
         if (users.length === 0) {
@@ -71,16 +71,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
           const regUsers = (uRes || []).filter((u: any) => u.role !== 'admin');
           setUserList(regUsers);
           users = regUsers;
-          if (!currentUid && regUsers.length > 0) {
-            const allVehs = await api.getVehicles().catch(() => []);
-            const userWithVeh = regUsers.find((u: any) => allVehs.some((v: any) => v.assigned_user_id === u.id));
-            currentUid = userWithVeh ? userWithVeh.id : regUsers[0].id;
-            setSelectedUserId(currentUid);
-          }
+        }
+
+        // By default in Live User View, do not show any vehicle until a user is explicitly chosen
+        if (!currentUid) {
+          setVehicles([]);
+          setStats({
+            totalVehicles: 0,
+            movingVehicles: 0,
+            activeVehicles: 0,
+            inactiveVehicles: 0,
+            avgSpeed: 0,
+            totalUsers: users.length,
+            totalRoutes: 0
+          });
+          setUserVehicleTrips([]);
+          return;
         }
 
         // Fetch vehicles assigned to this specific user
-        const vehList = await api.getVehicles(currentUid ? { userId: String(currentUid) } : {}).catch(() => []);
+        const vehList = await api.getVehicles({ userId: String(currentUid) }).catch(() => []);
         const uniqueVehList = Array.from(new Map((vehList || []).map((v: Vehicle) => [v.id, v])).values());
         setVehicles(uniqueVehList);
 
@@ -88,7 +98,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         const uTotal = uniqueVehList.length;
         const uMoving = uniqueVehList.filter(v => v.status === 'moving').length;
         const uActive = uniqueVehList.filter(v => v.status === 'active').length;
-        const uInactive = uniqueVehList.filter(v => v.status === 'inactive').length;
+        const uInactive = uniqueVehList.filter(v => v.status === 'inactive' || v.status === 'stop' || v.status === 'stopped').length;
         setStats({
           totalVehicles: uTotal,
           movingVehicles: uMoving,
@@ -129,9 +139,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const handleUserChange = (newUid: number) => {
+  const handleUserChange = (newUid: number | null) => {
     setSelectedUserId(newUid);
-    fetchData(newUid);
+    fetchData(newUid === null ? 0 : newUid);
   };
 
   useEffect(() => {
@@ -344,6 +354,49 @@ export const Dashboard: React.FC<DashboardProps> = ({
     <div className="p-4 sm:p-6 lg:p-7 max-w-7xl mx-auto space-y-5 sm:space-y-6">
       {/* ONE LARGE UNIFIED MAIN CONTAINER (ALL-IN-ONE ENTERPRISE LAYOUT) */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
+        {/* Live User View - User Switcher Banner */}
+        {isLiveUserView && (
+          <div className="p-4 sm:px-6 bg-slate-50/90 border-b border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                <Truck className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-xs sm:text-sm text-slate-900">
+                  Live User View
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {selectedUserId 
+                    ? `Showing live fleet for user: ${userList.find(u => u.id === selectedUserId)?.name || selectedUserId}`
+                    : 'By default, no vehicle is displayed. Please select a user to inspect their fleet.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <label htmlFor="live-user-select" className="text-xs font-bold text-slate-700 whitespace-nowrap">
+                Select Fleet User:
+              </label>
+              <select
+                id="live-user-select"
+                value={selectedUserId || ''}
+                onChange={(e) => {
+                  const val = e.target.value ? Number(e.target.value) : null;
+                  handleUserChange(val);
+                }}
+                className="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 shadow-2xs hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E60012] cursor-pointer"
+              >
+                <option value="">-- Choose User (None by Default) --</option>
+                {userList.map((u: any) => (
+                  <option key={u.id} value={u.id}>
+                    👤 {u.name} {u.phone ? `(${u.phone})` : u.company_name ? `(${u.company_name})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* Section 1: Fleet Operational Overview (4 Metrics inside unified container) */}
         <div className="p-5 sm:p-6 grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           {/* Total Fleet */}
@@ -382,12 +435,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
 
-          {/* Under Maintenance */}
+          {/* Stopped / Inactive */}
           <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/70 border border-slate-100">
             <div>
-              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Under Service</span>
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Stopped / Inactive</span>
               <div className="text-xl sm:text-2xl font-black text-slate-700 tracking-tight mt-0.5 font-mono">{inactive}</div>
-              <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 font-medium">Standby / Maintenance</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 font-medium">Standby / Stopped</p>
             </div>
             <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
               <XCircle className="w-4 h-4" />
@@ -520,8 +573,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <tbody className="divide-y divide-slate-100">
                   {filteredVehicles.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
-                        No vehicles found matching "{searchTerm}".
+                      <td colSpan={7} className="py-12 text-center text-slate-400 text-xs">
+                        {isLiveUserView && !selectedUserId ? (
+                          <div className="space-y-2 max-w-sm mx-auto">
+                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+                              <Truck className="w-5 h-5 text-slate-500" />
+                            </div>
+                            <p className="font-bold text-slate-700 text-xs">No Vehicle Selected</p>
+                            <p className="text-[11px] text-slate-400">
+                              Live User View defaults to no vehicle. Select a user from the dropdown above to view their fleet.
+                            </p>
+                          </div>
+                        ) : searchTerm ? (
+                          `No vehicles found matching "${searchTerm}".`
+                        ) : (
+                          'No vehicles assigned to this account.'
+                        )}
                       </td>
                     </tr>
                   ) : (
@@ -562,16 +629,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             )}
                           </td>
 
-                          {/* Status Pill (Ref: Image 2) */}
+                          {/* Status Pill */}
                           <td className="py-3.5 px-4">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isMoving
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isMoving
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : v.status === 'active'
                                   ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                  : (v.status === 'stop' || v.status === 'stopped')
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    : 'bg-slate-100 text-slate-600 border border-slate-200'
                               }`}>
                               {isMoving && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                              {isMoving ? 'On Tracking' : v.status === 'active' ? 'Ready' : 'Under Service'}
+                              {(v.status === 'stop' || v.status === 'stopped') && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                              {isMoving ? 'On Tracking' : v.status === 'active' ? 'Ready' : (v.status === 'stop' || v.status === 'stopped') ? 'Stopped' : 'Inactive'}
                             </span>
                           </td>
 

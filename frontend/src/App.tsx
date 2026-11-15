@@ -44,8 +44,8 @@ const AppContent: React.FC = () => {
             try {
               localStorage.setItem('gpstrackx_cached_vehicles', JSON.stringify(vehs));
             } catch (_) {}
-            if (vehs.length > 0) {
-              // Pick vehicle with active route or first vehicle
+            if (vehs.length > 0 && user.role !== 'admin') {
+              // Pick vehicle with active route or first vehicle for regular users
               const withRoute = vehs.find((v: any) => v.route_name);
               setSelectedVehicleId(prev => prev || (withRoute ? withRoute.id : vehs[0].id));
             }

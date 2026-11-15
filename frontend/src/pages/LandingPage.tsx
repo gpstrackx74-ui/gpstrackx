@@ -89,60 +89,60 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
 
   const gpsDevices = [
     {
-      id: 'ais140',
-      title: 'AIS-140 Certified Commercial Fleet Tracker',
-      category: 'Govt. Approved & Mining',
-      price: '₹3,499',
-      features: [
-        'Dual SMA GNSS + 4G LTE High-Gain Antennas',
-        'Emergency SOS Panic Button & Alarm Wiring',
-        'IP67 Waterproof & Dustproof Rugged Metal Casing',
-        'Full RTO / VLT Govt. Regulatory Compliance'
-      ],
-      description: 'Heavy-duty certified telematics unit engineered for commercial trucks, tippers, container carriers, and school buses.',
-      image: '/images/gps-device-ais140.png'
-    },
-    {
-      id: 'obd',
-      title: 'OBD-II Plug & Play Vehicle Tracker',
+      id: 'slim-4g',
+      title: 'Slim 4G Micro Vehicle & Car GPS Tracker',
       category: 'Cars, Taxis & Light Freight',
       price: '₹1,999',
       features: [
-        '5-Second OBD Port Plug-In (Zero Wire Cutting)',
-        '100% Safe (Does Not Void Vehicle Warranty)',
-        'Live Engine Diagnostics & Trouble Codes (DTC)',
-        'Speeding, Harsh Braking & Trip Analytics'
+        'Ultra-Slim Micro Design with Type-C Configuration',
+        'Live Real-Time GPS/GLONASS Fleet Positioning',
+        'Ignition ACC On/Off Detection & Towing Alarm',
+        'Low Power Consumption & Battery Protection'
       ],
-      description: 'Instant plug-in GPS tracker for commercial delivery vans, corporate fleet cars, and app-based cabs.',
-      image: '/images/gps-device-obd.png'
+      description: 'Compact lightweight 4G GPS tracker designed for cars, commercial cabs, and light cargo vehicles with seamless discrete installation.',
+      image: '/images/gps-tracker-compact-4g.png'
     },
     {
-      id: 'magnetic',
-      title: 'Heavy-Duty Magnetic Asset & Cargo Tracker',
-      category: 'Containers & Long-Haul Cargo',
-      price: '₹4,299',
-      features: [
-        'Ultra-Strong Neodymium Magnetic Base Plates',
-        '10,000mAh Battery (30+ Days Continuous Standby)',
-        'IP68 Submersible Waterproof & Shockproof Body',
-        'Light-Sensor Anti-Tamper & Drop-Off Alert'
-      ],
-      description: 'Standalone wireless GPS tracker for maritime containers, railway freight, machinery, and high-value cargo.',
-      image: '/images/gps-device-magnetic.png'
-    },
-    {
-      id: 'hardwired',
-      title: 'Slim Hardwired Tracker + Engine Cut-Off',
-      category: 'Commercial Trucks & Motorbikes',
+      id: 'fleet-4g-pro',
+      title: '4G LTE Heavy-Duty Fleet GPS Tracker',
+      category: 'Trucks, Tippers & Logistics Fleets',
       price: '₹2,799',
       features: [
-        'Remote Engine Cut-Off / Anti-Theft Relay',
-        '9V-90V Universal Wide Working Voltage',
-        'Ignition Key ACC Detection & Towing Alert',
-        'Compact Discrete Design with Internal Battery'
+        'High-Sensitivity 4G LTE High-Precision Antenna',
+        '9V–90V Universal Wide Working Voltage Range',
+        'Instant Geo-Fence Entry & Exit Alert Notifications',
+        'Over-Speeding & Route Deviation Protection'
       ],
-      description: 'Compact hardwired GPS unit with remote vehicle immobilizer, ideal for logistics fleet trucks and bikes.',
-      image: '/images/gps-device-hardwired.png'
+      description: 'High-performance commercial 4G GPS tracking unit built for Indian heavy freight trucks, trailers, and multi-axle logistics.',
+      image: '/images/gps-tracker-4g-podium.png'
+    },
+    {
+      id: 'gs910-4g',
+      title: 'GS910 4G Advanced Fleet GPS Tracker',
+      category: 'Smart Protection & Total Fleet Control',
+      price: '₹3,499',
+      features: [
+        'Remote Engine Cut-Off / Anti-Theft Immobilizer',
+        'Built-in Backup Battery for Anti-Tamper Power-Cut Alarms',
+        'Ultra-Fast 4G High-Speed Telematics Network',
+        'Live Real-Time Tracking & Instant Geo-fence Alerts'
+      ],
+      description: 'Professional GS910 telematics unit with remote engine cut-off immobilizer, internal battery backup, and complete real-time fleet security.',
+      image: '/images/gps-tracker-gs910.jpg'
+    },
+    {
+      id: 'ev-bike-iot',
+      title: 'EV Bike & Electric Vehicle IoT GPS Tracker',
+      category: 'EV Bikes & Electric 2-Wheelers',
+      price: '₹2,299',
+      features: [
+        'Specialized for EV Scooters, E-Bikes & Electric 2-Wheelers',
+        'Direct EV Battery Compatible (Wide 12V–90V Range)',
+        'Smart Anti-Theft Alarm & Vibration Motion Sensor',
+        'Compact Waterproof IoT Casing with Plug Harness'
+      ],
+      description: 'High-efficiency IoT GPS tracker specifically designed for Electric Bikes (EV Bikes) and electric scooters with zero battery drain.',
+      image: '/images/gps-tracker-ev-bike.jpg'
     }
   ];
 
@@ -153,7 +153,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
       return;
     }
 
-    const orderText = `🚨 *New GPS Hardware Order Inquiry* 🚨\n*GpsTrackX Fleet Systems*\n\n📦 *Device Model:* ${selectedDeviceForBuy?.title || 'GPS Hardware Tracker'}\n🏷️ *Category:* ${selectedDeviceForBuy?.category || 'Fleet Tracker'}\n💰 *Price:* ${selectedDeviceForBuy?.price || 'Best Price'}\n🔢 *Quantity:* ${buyerForm.quantity || '1'} unit(s)\n\n👤 *Customer Name:* ${buyerForm.name.trim()}\n📱 *Customer Mobile:* ${buyerForm.phone.trim()}\n📍 *Delivery Location:* ${buyerForm.address.trim() || 'Not specified'}\n\n-----------------------------\n_Order inquiry sent from GpsTrackX Official Website_`;
+    const orderText = `🚨 *New GPS Hardware Order Inquiry* 🚨\n*GPSTRACKX.CO Fleet Systems*\n\n📦 *Device Model:* ${selectedDeviceForBuy?.title || 'GPS Hardware Tracker'}\n🏷️ *Category:* ${selectedDeviceForBuy?.category || 'Fleet Tracker'}\n💰 *Price:* ${selectedDeviceForBuy?.price || 'Best Price'}\n🔢 *Quantity:* ${buyerForm.quantity || '1'} unit(s)\n\n👤 *Customer Name:* ${buyerForm.name.trim()}\n📱 *Customer Mobile:* ${buyerForm.phone.trim()}\n📍 *Delivery Location:* ${buyerForm.address.trim() || 'Not specified'}\n\n-----------------------------\n_Order inquiry sent from GPSTRACKX.CO Official Website_`;
 
     const whatsappUrl = `https://wa.me/917389507201?text=${encodeURIComponent(orderText)}`;
 
@@ -741,17 +741,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
                 </div>
                 <h3 className="font-extrabold text-slate-900 text-lg">Order Sent to WhatsApp!</h3>
                 <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
-                  Thank you, <strong>{buyerForm.name}</strong>. Your order inquiry for {buyerForm.quantity} unit(s) of <strong>{selectedDeviceForBuy.title}</strong> has been directed to our official WhatsApp support (<strong>+91 7389507201</strong>).
+                  Thank you, <strong>{buyerForm.name}</strong>. Your order inquiry for {buyerForm.quantity} unit(s) of <strong>{selectedDeviceForBuy.title}</strong> has been directed to our official WhatsApp support (<strong>GPSTRACKX.CO</strong>).
                 </p>
                 <div className="pt-2">
                   <a
-                    href={`https://wa.me/917389507201?text=${encodeURIComponent(`🚨 *New GPS Hardware Order Inquiry* 🚨\n*GpsTrackX Fleet Systems*\n\n📦 *Device:* ${selectedDeviceForBuy?.title}\n💰 *Price:* ${selectedDeviceForBuy?.price}\n🔢 *Quantity:* ${buyerForm.quantity || 1} unit(s)\n👤 *Customer Name:* ${buyerForm.name}\n📱 *Customer Mobile:* ${buyerForm.phone}\n📍 *Delivery Location:* ${buyerForm.address || 'Not specified'}`)}`}
+                    href={`https://wa.me/917389507201?text=${encodeURIComponent(`🚨 *New GPS Hardware Order Inquiry* 🚨\n*GPSTRACKX.CO Fleet Systems*\n\n📦 *Device:* ${selectedDeviceForBuy?.title}\n💰 *Price:* ${selectedDeviceForBuy?.price}\n🔢 *Quantity:* ${buyerForm.quantity || 1} unit(s)\n👤 *Customer Name:* ${buyerForm.name}\n📱 *Customer Mobile:* ${buyerForm.phone}\n📍 *Delivery Location:* ${buyerForm.address || 'Not specified'}`)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
                   >
                     <MessageCircle className="w-4 h-4 text-white" />
-                    <span>Open WhatsApp Chat (+91 7389507201)</span>
+                    <span>Open WhatsApp Chat (GPSTRACKX.CO)</span>
                   </a>
                 </div>
               </div>
@@ -823,10 +823,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
                       className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs uppercase tracking-wider transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <MessageCircle className="w-4 h-4 text-white" />
-                      <span>Order on WhatsApp (+91 7389507201)</span>
+                      <span>Send WhatsApp (GPSTRACKX.CO)</span>
                     </button>
                     <p className="text-[10px] text-slate-400 text-center mt-2">
-                      Instant WhatsApp alert to <strong>+91 7389507201</strong> • Cash on Delivery / GST Invoice Available
+                      Instant WhatsApp alert to <strong>GPSTRACKX.CO</strong> • Cash on Delivery / GST Invoice Available
                     </p>
                   </div>
                 </form>
