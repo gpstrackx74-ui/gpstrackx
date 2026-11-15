@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { Vehicle, User } from '../types';
+import { Pagination } from '../components/Pagination';
 import { DMYDateInput } from '../components/DMYDateInput';
 import {
   enhanceRouteWithRoadGeometry,
@@ -161,6 +162,27 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const [userFilter, setUserFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // Pagination State (10 items per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const VEHICLES_PER_PAGE = 10;
+
+  const totalPages = Math.ceil(vehicles.length / VEHICLES_PER_PAGE) || 1;
+
+  const paginatedVehicles = useMemo(() => {
+    const start = (currentPage - 1) * VEHICLES_PER_PAGE;
+    return vehicles.slice(start, start + VEHICLES_PER_PAGE);
+  }, [vehicles, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, userFilter, typeFilter, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
 
   // Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1048,13 +1070,17 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
     );
   };
 
+  const pageVehicleIds = useMemo(() => {
+    return paginatedVehicles.map(v => v.id);
+  }, [paginatedVehicles]);
+
+  const isPageAllSelected = pageVehicleIds.length > 0 && pageVehicleIds.every(id => selectedVehicleIds.includes(id));
+
   const handleToggleSelectAll = () => {
-    const currentIds = vehicles.map(v => v.id);
-    const isAllSelected = currentIds.length > 0 && currentIds.every(id => selectedVehicleIds.includes(id));
-    if (isAllSelected) {
-      setSelectedVehicleIds(prev => prev.filter(id => !currentIds.includes(id)));
+    if (isPageAllSelected) {
+      setSelectedVehicleIds(prev => prev.filter(id => !pageVehicleIds.includes(id)));
     } else {
-      setSelectedVehicleIds(prev => Array.from(new Set([...prev, ...currentIds])));
+      setSelectedVehicleIds(prev => Array.from(new Set([...prev, ...pageVehicleIds])));
     }
   };
 
@@ -1233,13 +1259,13 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                 <th className="py-3.5 px-4 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <span>Actions</span>
-                    {isAdmin && vehicles.length > 0 && (
+                    {isAdmin && paginatedVehicles.length > 0 && (
                       <input
                         type="checkbox"
-                        checked={vehicles.length > 0 && vehicles.every(v => selectedVehicleIds.includes(v.id))}
+                        checked={isPageAllSelected}
                         onChange={handleToggleSelectAll}
                         className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer accent-red-600 ml-1"
-                        title={vehicles.every(v => selectedVehicleIds.includes(v.id)) ? 'Deselect All' : 'Select All Vehicles'}
+                        title={isPageAllSelected ? 'Deselect All on Page' : 'Select All on Page'}
                       />
                     )}
                   </div>
@@ -1254,7 +1280,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                   </td>
                 </tr>
               ) : (
-                vehicles.map((v) => {
+                paginatedVehicles.map((v) => {
                   return (
                     <tr key={v.id} className={`transition ${selectedVehicleIds.includes(v.id) ? 'bg-red-50/50 hover:bg-red-50/70' : 'hover:bg-slate-50/70'}`}>
                       <td className="py-3.5 px-4">
@@ -1385,6 +1411,16 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={vehicles.length}
+          itemsPerPage={VEHICLES_PER_PAGE}
+          itemLabel="vehicles"
+        />
       </div>
 
       {/* Add / Edit Vehicle Modal */}

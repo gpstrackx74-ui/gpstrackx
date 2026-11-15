@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { User } from '../types';
+import { Pagination } from '../components/Pagination';
 import {
   Users as UsersIcon,
   Search,
@@ -32,6 +33,10 @@ export const UsersManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // Pagination State (10 items per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const USERS_PER_PAGE = 10;
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -76,12 +81,30 @@ export const UsersManagement: React.FC = () => {
     }
   };
 
+  const totalPages = Math.ceil(users.length / USERS_PER_PAGE) || 1;
+
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * USERS_PER_PAGE;
+    return users.slice(start, start + USERS_PER_PAGE);
+  }, [users, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
   useEffect(() => {
     fetchUsers();
   }, [statusFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setCurrentPage(1);
     fetchUsers();
   };
 
@@ -192,6 +215,12 @@ export const UsersManagement: React.FC = () => {
     return users.filter(u => u.id !== currentUser?.id);
   }, [users, currentUser]);
 
+  const pageDeletableUsers = useMemo(() => {
+    return paginatedUsers.filter(u => u.id !== currentUser?.id);
+  }, [paginatedUsers, currentUser]);
+
+  const isPageAllSelected = pageDeletableUsers.length > 0 && pageDeletableUsers.every(u => selectedUserIds.includes(u.id));
+
   const handleToggleSelectUser = (id: number) => {
     setSelectedUserIds(prev =>
       prev.includes(id) ? prev.filter(uId => uId !== id) : [...prev, id]
@@ -199,12 +228,11 @@ export const UsersManagement: React.FC = () => {
   };
 
   const handleToggleSelectAllUsers = () => {
-    const deletableIds = deletableUsers.map(u => u.id);
-    const isAllSelected = deletableIds.length > 0 && deletableIds.every(id => selectedUserIds.includes(id));
-    if (isAllSelected) {
-      setSelectedUserIds(prev => prev.filter(id => !deletableIds.includes(id)));
+    const pageIds = pageDeletableUsers.map(u => u.id);
+    if (isPageAllSelected) {
+      setSelectedUserIds(prev => prev.filter(id => !pageIds.includes(id)));
     } else {
-      setSelectedUserIds(prev => Array.from(new Set([...prev, ...deletableIds])));
+      setSelectedUserIds(prev => Array.from(new Set([...prev, ...pageIds])));
     }
   };
 
@@ -725,19 +753,16 @@ export const UsersManagement: React.FC = () => {
                 <th className="px-5 py-3.5 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <span>Actions</span>
-                    {deletableUsers.length > 0 && (
+                    {pageDeletableUsers.length > 0 && (
                       <input
                         type="checkbox"
-                        checked={
-                          deletableUsers.length > 0 &&
-                          deletableUsers.every(u => selectedUserIds.includes(u.id))
-                        }
+                        checked={isPageAllSelected}
                         onChange={handleToggleSelectAllUsers}
                         className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer accent-red-600 ml-1"
                         title={
-                          deletableUsers.every(u => selectedUserIds.includes(u.id))
-                            ? 'Deselect All'
-                            : 'Select All Users'
+                          isPageAllSelected
+                            ? 'Deselect All on Page'
+                            : 'Select All on Page'
                         }
                       />
                     )}
@@ -759,7 +784,7 @@ export const UsersManagement: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                users.map((u) => {
+                paginatedUsers.map((u) => {
                   const isCurrentUser = currentUser?.id === u.id;
                   const assignedList = u.assigned_vehicles || (u.assigned_reg_nos ? u.assigned_reg_nos.split(',').map((reg, idx) => ({ id: idx, registration_no: reg })) : []);
                   const hasAssigned = assignedList.length > 0;
@@ -940,6 +965,16 @@ export const UsersManagement: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={users.length}
+          itemsPerPage={USERS_PER_PAGE}
+          itemLabel="users"
+        />
       </div>
 
       {/* Add / Edit User Modal */}
