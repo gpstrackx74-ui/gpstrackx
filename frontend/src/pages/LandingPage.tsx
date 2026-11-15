@@ -17,7 +17,8 @@ import {
   ChevronRight,
   ShoppingCart,
   Phone,
-  Check
+  Check,
+  MessageCircle
 } from 'lucide-react';
 
 interface LandingPageProps {
@@ -151,12 +152,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
       alert('Please enter your Name and Mobile Number.');
       return;
     }
+
+    const orderText = `🚨 *New GPS Hardware Order Inquiry* 🚨\n*GpsTrackX Fleet Systems*\n\n📦 *Device Model:* ${selectedDeviceForBuy?.title || 'GPS Hardware Tracker'}\n🏷️ *Category:* ${selectedDeviceForBuy?.category || 'Fleet Tracker'}\n💰 *Price:* ${selectedDeviceForBuy?.price || 'Best Price'}\n🔢 *Quantity:* ${buyerForm.quantity || '1'} unit(s)\n\n👤 *Customer Name:* ${buyerForm.name.trim()}\n📱 *Customer Mobile:* ${buyerForm.phone.trim()}\n📍 *Delivery Location:* ${buyerForm.address.trim() || 'Not specified'}\n\n-----------------------------\n_Order inquiry sent from GpsTrackX Official Website_`;
+
+    const whatsappUrl = `https://wa.me/917389507201?text=${encodeURIComponent(orderText)}`;
+
+    // Open WhatsApp directly with prefilled order details
+    try {
+      window.open(whatsappUrl, '_blank');
+    } catch (err) {}
+
     setBuyOrderSuccess(true);
     setTimeout(() => {
       setBuyOrderSuccess(false);
       setSelectedDeviceForBuy(null);
       setBuyerForm({ name: '', phone: '', address: '', quantity: '1' });
-    }, 2800);
+    }, 4500);
   };
 
   return (
@@ -725,13 +736,24 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
 
             {buyOrderSuccess ? (
               <div className="text-center py-6 space-y-3">
-                <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-2xl">
+                <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-2xl font-bold">
                   ✓
                 </div>
-                <h3 className="font-extrabold text-slate-900 text-lg">Order Inquiry Received!</h3>
-                <p className="text-xs text-slate-500">
-                  Thank you, <strong>{buyerForm.name}</strong>. Our hardware sales team will contact you at <strong>{buyerForm.phone}</strong> with dispatch details for {buyerForm.quantity} unit(s) of <strong>{selectedDeviceForBuy.title}</strong>.
+                <h3 className="font-extrabold text-slate-900 text-lg">Order Sent to WhatsApp!</h3>
+                <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
+                  Thank you, <strong>{buyerForm.name}</strong>. Your order inquiry for {buyerForm.quantity} unit(s) of <strong>{selectedDeviceForBuy.title}</strong> has been directed to our official WhatsApp support (<strong>+91 7389507201</strong>).
                 </p>
+                <div className="pt-2">
+                  <a
+                    href={`https://wa.me/917389507201?text=${encodeURIComponent(`🚨 *New GPS Hardware Order Inquiry* 🚨\n*GpsTrackX Fleet Systems*\n\n📦 *Device:* ${selectedDeviceForBuy?.title}\n💰 *Price:* ${selectedDeviceForBuy?.price}\n🔢 *Quantity:* ${buyerForm.quantity || 1} unit(s)\n👤 *Customer Name:* ${buyerForm.name}\n📱 *Customer Mobile:* ${buyerForm.phone}\n📍 *Delivery Location:* ${buyerForm.address || 'Not specified'}`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 text-white" />
+                    <span>Open WhatsApp Chat (+91 7389507201)</span>
+                  </a>
+                </div>
               </div>
             ) : (
               <div>
@@ -798,12 +820,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) 
                   <div className="pt-2">
                     <button
                       type="submit"
-                      className="w-full py-2.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white font-extrabold text-xs uppercase tracking-wider transition shadow-xs cursor-pointer"
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs uppercase tracking-wider transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
                     >
-                      Confirm Order Inquiry
+                      <MessageCircle className="w-4 h-4 text-white" />
+                      <span>Order on WhatsApp (+91 7389507201)</span>
                     </button>
                     <p className="text-[10px] text-slate-400 text-center mt-2">
-                      Instant response • Cash on Delivery / GST Invoice Available
+                      Instant WhatsApp alert to <strong>+91 7389507201</strong> • Cash on Delivery / GST Invoice Available
                     </p>
                   </div>
                 </form>
