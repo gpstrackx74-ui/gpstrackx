@@ -16,7 +16,11 @@ export function removeAuthToken() {
   localStorage.removeItem('gpstrackx_token');
 }
 
-export async function apiRequest<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export interface ApiRequestOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
+export async function apiRequest<T = any>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
   const token = getAuthToken();
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -24,15 +28,24 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
     ...(options.headers || {})
   };
 
-  // 10s default timeout protection so network calls never hang indefinitely
+  // Generous timeout protection: 5 minutes for bulk imports, 60s for other operations
+  const defaultTimeout = endpoint.includes('/fleet/import-excel') ? 300000 : 60000;
+  const timeoutMs = options.timeoutMs ?? defaultTimeout;
+
   let controller: AbortController | null = null;
   let signal = options.signal;
   let timeoutId: any = null;
 
-  if (!signal) {
+  if (!signal && timeoutMs > 0) {
     controller = new AbortController();
     signal = controller.signal;
-    timeoutId = setTimeout(() => controller?.abort(), 10000);
+    timeoutId = setTimeout(() => {
+      try {
+        controller?.abort(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Please try again.`));
+      } catch (_) {
+        controller?.abort();
+      }
+    }, timeoutMs);
   }
 
   try {
@@ -56,6 +69,13 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
     }
 
     return data;
+  } catch (err: any) {
+    if (err?.name === 'AbortError' || signal?.aborted) {
+      const reason = (signal as any)?.reason;
+      const msg = reason?.message || (typeof reason === 'string' ? reason : null);
+      throw new Error(msg || 'Request timed out. Please check your internet connection and try again.');
+    }
+    throw err;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
@@ -167,7 +187,8 @@ export const api = {
     errors?: string[];
   }>('/fleet/import-excel', {
     method: 'POST',
-    body: JSON.stringify(data)
+    body: JSON.stringify(data),
+    timeoutMs: 300000 // 5 minutes generous timeout for large/batch imports
   }),
 
   // Routes

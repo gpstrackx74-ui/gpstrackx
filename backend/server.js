@@ -1387,32 +1387,29 @@ async function processSingleFleetImport(item, adminUserId) {
   // 1. Resolve or Create User
   const allUsers = db.prepare('SELECT * FROM users').all();
   let targetUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === cleanPhone);
+  let isNewUser = false;
+  let userPasswordHash = null;
 
   if (!targetUser) {
+    isNewUser = true;
     const colors = ['#EF4444', '#DC2626', '#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'];
     const avatarColor = colors[Math.floor(Math.random() * colors.length)];
     const defaultPassword = cleanPhone; // User mobile number as initial password
-    const hash = bcrypt.hashSync(defaultPassword, 10);
+    userPasswordHash = bcrypt.hashSync(defaultPassword, 10);
     const userEmail = `${cleanPhone}@gpstrackx.in`;
     const formattedPhone = `+91 ${cleanPhone}`;
 
     const userInsert = db.prepare(`
       INSERT INTO users (name, email, password, phone, role, status, avatar_color, company_name)
       VALUES (?, ?, ?, ?, 'user', 'active', ?, ?)
-    `).run(userName, userEmail, hash, formattedPhone, avatarColor, ownerName);
+    `).run(userName, userEmail, userPasswordHash, formattedPhone, avatarColor, ownerName);
 
     targetUser = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(userInsert.lastInsertRowid);
-    try {
-      await supabaseService.syncUser({ ...targetUser, password: hash });
-    } catch (e) {
-      console.error('[Excel Import] User sync warning:', e.message);
-    }
   } else {
     // Update company name if provided and not previously set
     if (ownerName && (!targetUser.company_name || targetUser.company_name.trim() === '')) {
       db.prepare('UPDATE users SET company_name = ? WHERE id = ?').run(ownerName, targetUser.id);
       targetUser.company_name = ownerName;
-      try { await supabaseService.syncUser(targetUser); } catch (e) {}
     }
   }
 
@@ -1447,33 +1444,13 @@ async function processSingleFleetImport(item, adminUserId) {
     if (ownerName) targetVehicle.owner_name = ownerName;
   }
 
-  // Immediately sync vehicle to Supabase
-  try {
-    await supabaseService.syncVehicle(targetVehicle, db);
-  } catch (e) {
-    console.error('[Excel Import] Vehicle sync warning:', e.message);
-  }
-
-  // Record allocation in vehicle_allocations in both SQLite & Supabase
+  // Record allocation in vehicle_allocations table in SQLite
   try {
     db.prepare(`
       INSERT INTO vehicle_allocations (vehicle_id, user_id, allocated_by, allocation_status, notes)
       VALUES (?, ?, ?, 'active', 'Allocated via Excel Import')
     `).run(targetVehicle.id, targetUser.id, adminUserId || 1);
-
-    await supabaseService.syncVehicleAllocation({
-      vehicle_id: targetVehicle.id,
-      user_id: targetUser.id,
-      registration_no: cleanReg,
-      user_phone: targetUser.phone,
-      user_email: targetUser.email,
-      allocated_by: adminUserId || 1,
-      allocation_status: 'ACTIVE',
-      notes: 'Allocated via Excel Import'
-    });
-  } catch (e) {
-    console.error('[Excel Import] Allocation sync warning:', e.message);
-  }
+  } catch (e) {}
 
   // 3. Process Sheet 1: FASTag Transactions
   let createdTxnsCount = 0;
@@ -1594,24 +1571,48 @@ async function processSingleFleetImport(item, adminUserId) {
       if (totalToll && totalToll.total) {
         db.prepare('UPDATE vehicles SET total_toll_fee = ? WHERE id = ?').run(totalToll.total, targetVehicle.id);
         targetVehicle.total_toll_fee = totalToll.total;
-        await supabaseService.syncVehicle(targetVehicle, db);
       }
     } catch (e) {}
-
-    // Immediately push all FASTag transactions to Supabase Cloud
-    if (txsToSync.length > 0) {
-      try {
-        await supabaseService.syncFastagTransactionsBatch(txsToSync);
-      } catch (err) {
-        console.error('[Excel Import] Supabase batch fastag sync warning:', err.message);
-      }
-    }
   }
 
   // Force full SQLite WAL checkpoint so data is immediately saved to disk
   try {
     db.pragma('wal_checkpoint(FULL)');
   } catch (e) {}
+
+  // Asynchronously sync everything to Supabase Cloud in background so HTTP response is instant & never times out
+  const userToSync = { ...targetUser };
+  const vehicleToSync = { ...targetVehicle };
+  const allocToSync = {
+    vehicle_id: targetVehicle.id,
+    user_id: targetUser.id,
+    registration_no: cleanReg,
+    user_phone: targetUser.phone,
+    user_email: targetUser.email,
+    allocated_by: adminUserId || 1,
+    allocation_status: 'ACTIVE',
+    notes: 'Allocated via Excel Import'
+  };
+  const txsListToSync = [...txsToSync];
+  const isCreatedUser = isNewUser;
+  const hashVal = userPasswordHash;
+
+  setImmediate(async () => {
+    try {
+      if (isCreatedUser) {
+        await supabaseService.syncUser({ ...userToSync, password: hashVal });
+      } else if (ownerName) {
+        await supabaseService.syncUser(userToSync);
+      }
+      await supabaseService.syncVehicle(vehicleToSync, db);
+      await supabaseService.syncVehicleAllocation(allocToSync);
+      if (txsListToSync.length > 0) {
+        await supabaseService.syncFastagTransactionsBatch(txsListToSync);
+      }
+    } catch (err) {
+      console.error('[Excel Import] Background Supabase sync warning:', err.message);
+    }
+  });
 
   return {
     user: targetUser,
