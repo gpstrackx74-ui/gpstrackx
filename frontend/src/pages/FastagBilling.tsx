@@ -12,6 +12,7 @@ import {
   formatTransactionId,
   parseDescriptionLines
 } from '../utils/generateFastagStatementPdf';
+import { Pagination } from '../components/Pagination';
 import {
   Receipt,
   Truck,
@@ -58,6 +59,10 @@ export const FastagBilling: React.FC = () => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Pagination State for FASTag toll transactions (10 items per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const TRANSACTIONS_PER_PAGE = 10;
 
   // --- Step 3: Statement Receipt Modal State ---
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
@@ -161,6 +166,23 @@ export const FastagBilling: React.FC = () => {
   const totalDebitAmount = useMemo(() => {
     return vehicleTransactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   }, [vehicleTransactions]);
+
+  const totalPages = Math.ceil(vehicleTransactions.length / TRANSACTIONS_PER_PAGE) || 1;
+
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * TRANSACTIONS_PER_PAGE;
+    return vehicleTransactions.slice(start, start + TRANSACTIONS_PER_PAGE);
+  }, [vehicleTransactions, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedVehicleId, startDate, endDate, searchQuery]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
 
   // Date range presets
   const handleSetPreset = (preset: 'all' | 'this_month' | 'last_30_days') => {
@@ -606,7 +628,7 @@ export const FastagBilling: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-slate-800 font-medium">
-                      {vehicleTransactions.map((tx, idx) => {
+                      {paginatedTransactions.map((tx, idx) => {
                         const dt = formatTableDateTime(tx.crossing_time, tx.created_at);
                         const balStr =
                           tx.wallet_balance_after != null
@@ -682,6 +704,18 @@ export const FastagBilling: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+              )}
+
+              {/* Pagination Controls */}
+              {vehicleTransactions.length > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalItems={vehicleTransactions.length}
+                  itemsPerPage={TRANSACTIONS_PER_PAGE}
+                  itemLabel="toll transactions"
+                />
               )}
             </div>
           </div>
