@@ -817,7 +817,7 @@ export const FastagBilling: React.FC = () => {
                       <span>: <strong className="font-bold text-slate-950 ml-1">{statementData.truckOwnerName}</strong></span>
                     </div>
                     <div className="flex items-center pt-2">
-                      <span className="w-36 font-bold text-slate-900">Statement Duration</span>
+                      <span className="w-36 font-normal text-slate-700">Statement Duration</span>
                       <span>: <strong className="font-bold text-slate-950 ml-1">{durationText}</strong></span>
                     </div>
                   </div>

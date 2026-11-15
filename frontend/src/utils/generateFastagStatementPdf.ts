@@ -341,9 +341,12 @@ export const generateFastagStatementPdf = (input: FastagTransaction | FastagStat
   doc.setFont('helvetica', 'bold');
   doc.text(truckOwnerName, valueX, 51);
 
-  // Statement Duration (Both label and dates bold)
+  // Statement Duration (Label unbold, dates bold)
+  doc.setFont('helvetica', 'normal');
+  doc.text('Statement Duration :', marginX, 59.5);
+  const durLabelW = doc.getTextWidth('Statement Duration : ');
   doc.setFont('helvetica', 'bold');
-  doc.text(`Statement Duration : ${durationText}`, marginX, 59.5);
+  doc.text(durationText, marginX + durLabelW, 59.5);
 
   // Summary Box: Credit 0 | Debit {totalDebit}
   const boxW = 180;
