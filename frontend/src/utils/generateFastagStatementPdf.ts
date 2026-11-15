@@ -1,7 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { FastagTransaction } from '../types';
 import { AXIS_BANK_LOGO_BASE64 } from './axisBankLogoBase64';
-import { FASTAG_SUMMARY_HEADER_BASE64 } from './fastagSummaryHeaderBase64';
 
 export interface FastagStatementReportData {
   customerName?: string;
@@ -286,23 +285,25 @@ export const generateFastagStatementPdf = (input: FastagTransaction | FastagStat
   const boxW = 180;
   const colHalf = 90;
   const sBoxY = 66;
-  const sHeaderH = 7.5;
-  const sTotalH = 15;
+  const sHeaderH = 7;
+  const sTotalH = 14;
 
-  // Header image matching exact user image with crisp ₹ sign
-  doc.addImage(FASTAG_SUMMARY_HEADER_BASE64, 'PNG', marginX, sBoxY, boxW, sHeaderH);
-
-  // Border & Grid Lines
-  doc.setDrawColor(190, 190, 190);
+  doc.setFillColor(232, 239, 247); // Light blue
+  doc.rect(marginX, sBoxY, boxW, sHeaderH, 'F');
+  doc.setDrawColor(203, 213, 225);
   doc.setLineWidth(0.25);
   doc.rect(marginX, sBoxY, boxW, sTotalH, 'S');
-  doc.line(marginX, sBoxY + sHeaderH, marginX + boxW, sBoxY + sHeaderH);
   doc.line(marginX + colHalf, sBoxY, marginX + colHalf, sBoxY + sTotalH);
+  doc.line(marginX, sBoxY + sHeaderH, marginX + boxW, sBoxY + sHeaderH);
 
-  // Values row
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(20, 25, 35);
+  doc.text('Credit (Recharge) in ₹', marginX + colHalf / 2, sBoxY + 5, { align: 'center' });
+  doc.text('Debit (Swipe) in ₹', marginX + colHalf + colHalf / 2, sBoxY + 5, { align: 'center' });
+
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(9);
   doc.text('0', marginX + colHalf / 2, sBoxY + sHeaderH + 5, { align: 'center' });
   doc.text(totalDebit.toLocaleString('en-IN'), marginX + colHalf + colHalf / 2, sBoxY + sHeaderH + 5, { align: 'center' });
 

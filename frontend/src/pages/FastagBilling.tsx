@@ -824,16 +824,14 @@ export const FastagBilling: React.FC = () => {
                   </div>
 
                   {/* Summary Box (Credit 0 | Debit {totalDebit}) */}
-                  <div className="border border-[#BEBEBE] overflow-hidden text-xs">
-                    {/* Official Summary Header matching uploaded image */}
-                    <img
-                      src="/fastag_summary_header.png"
-                      alt="Credit (Recharge) in ₹ | Debit (Swipe) in ₹"
-                      className="w-full h-auto block border-b border-[#BEBEBE]"
-                    />
-                    <div className="grid grid-cols-2 text-center py-2 px-3 font-normal text-black bg-white">
+                  <div className="border border-slate-300 overflow-hidden text-xs rounded">
+                    <div className="grid grid-cols-2 bg-[#E8EFF7] border-b border-slate-300 font-bold text-slate-800 text-center py-2 px-3">
+                      <div>Credit (Recharge) in ₹</div>
+                      <div className="border-l border-slate-300">Debit (Swipe) in ₹</div>
+                    </div>
+                    <div className="grid grid-cols-2 text-center py-2 px-3 font-semibold text-slate-900 bg-white">
                       <div>0</div>
-                      <div className="border-l border-[#BEBEBE]">
+                      <div className="border-l border-slate-300 font-bold">
                         {totalDebit.toLocaleString('en-IN')}
                       </div>
                     </div>
