@@ -1199,48 +1199,69 @@ app.put('/api/vehicles/:id', authenticateToken, requireAdmin, (req, res) => {
   }
 });
 
+// Helper to permanently delete a vehicle record while preserving its corridors and telemetry
+async function deleteVehicleById(vehicleId) {
+  // Preserve vehicle registration and name in routes before detaching
+  const veh = db.prepare('SELECT registration_no, name_model FROM vehicles WHERE id = ?').get(vehicleId);
+  if (veh && veh.registration_no) {
+    try {
+      db.prepare('UPDATE routes SET vehicle_registration_no = COALESCE(vehicle_registration_no, ?) WHERE vehicle_id = ?').run(veh.registration_no, vehicleId);
+    } catch (_) {}
+  }
+
+  // Mirror all routes for this vehicle into saved_corridors so they are 100% permanently immortal
+  try {
+    const routesToSave = db.prepare('SELECT * FROM routes WHERE vehicle_id = ?').all(vehicleId);
+    for (const r of routesToSave) {
+      db.prepare(`
+        INSERT OR IGNORE INTO saved_corridors (
+          route_name, start_location_name, start_address, start_lat, start_lng,
+          end_location_name, end_address, end_lat, end_lng,
+          total_distance_km, estimated_travel_time_min,
+          overview_polyline, waypoints_json, toll_gates_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        r.route_name || `${r.start_location_name} to ${r.end_location_name}`,
+        r.start_location_name, r.start_address || '', r.start_lat, r.start_lng,
+        r.end_location_name, r.end_address || '', r.end_lat, r.end_lng,
+        r.total_distance_km || 0, r.estimated_travel_time_min || 0,
+        r.overview_polyline || '[]', r.waypoints_json || '[]', r.toll_gates_json || '[]'
+      );
+    }
+  } catch (_) {}
+
+  // Detach vehicle_id from routes (DO NOT DELETE ROUTES - PRESERVED PERMANENTLY)
+  db.prepare('UPDATE routes SET vehicle_id = NULL WHERE vehicle_id = ?').run(vehicleId);
+  db.prepare('DELETE FROM fastag_transactions WHERE vehicle_id = ?').run(vehicleId);
+  db.prepare('DELETE FROM vehicle_allocations WHERE vehicle_id = ?').run(vehicleId);
+  db.prepare('DELETE FROM vehicles WHERE id = ?').run(vehicleId);
+  await supabaseService.deleteVehicle(vehicleId);
+}
+
 // Delete Vehicle (Admin Only) - PERMANENTLY PRESERVE ALL ROUTES AND CORRIDORS
 app.delete('/api/vehicles/:id', authenticateToken, requireAdmin, async (req, res) => {
   const vehicleId = req.params.id;
   try {
-    // Preserve vehicle registration and name in routes before detaching
-    const veh = db.prepare('SELECT registration_no, name_model FROM vehicles WHERE id = ?').get(vehicleId);
-    if (veh && veh.registration_no) {
-      try {
-        db.prepare('UPDATE routes SET vehicle_registration_no = COALESCE(vehicle_registration_no, ?) WHERE vehicle_id = ?').run(veh.registration_no, vehicleId);
-      } catch (_) {}
-    }
-
-    // Mirror all routes for this vehicle into saved_corridors so they are 100% permanently immortal
-    try {
-      const routesToSave = db.prepare('SELECT * FROM routes WHERE vehicle_id = ?').all(vehicleId);
-      for (const r of routesToSave) {
-        db.prepare(`
-          INSERT OR IGNORE INTO saved_corridors (
-            route_name, start_location_name, start_address, start_lat, start_lng,
-            end_location_name, end_address, end_lat, end_lng,
-            total_distance_km, estimated_travel_time_min,
-            overview_polyline, waypoints_json, toll_gates_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          r.route_name || `${r.start_location_name} to ${r.end_location_name}`,
-          r.start_location_name, r.start_address || '', r.start_lat, r.start_lng,
-          r.end_location_name, r.end_address || '', r.end_lat, r.end_lng,
-          r.total_distance_km || 0, r.estimated_travel_time_min || 0,
-          r.overview_polyline || '[]', r.waypoints_json || '[]', r.toll_gates_json || '[]'
-        );
-      }
-    } catch (_) {}
-
-    // Detach vehicle_id from routes (DO NOT DELETE ROUTES - PRESERVED PERMANENTLY)
-    db.prepare('UPDATE routes SET vehicle_id = NULL WHERE vehicle_id = ?').run(vehicleId);
-    db.prepare('DELETE FROM fastag_transactions WHERE vehicle_id = ?').run(vehicleId);
-    db.prepare('DELETE FROM vehicle_allocations WHERE vehicle_id = ?').run(vehicleId);
-    db.prepare('DELETE FROM vehicles WHERE id = ?').run(vehicleId);
-    await supabaseService.deleteVehicle(vehicleId);
+    await deleteVehicleById(vehicleId);
     res.json({ message: 'Vehicle deleted successfully. All saved routes permanently preserved.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete vehicle: ' + err.message });
+  }
+});
+
+// Bulk Delete Vehicles (Admin Only)
+app.post('/api/vehicles/bulk-delete', authenticateToken, requireAdmin, async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids must be a non-empty array' });
+  }
+  try {
+    for (const vehicleId of ids) {
+      await deleteVehicleById(vehicleId);
+    }
+    res.json({ message: `Successfully deleted ${ids.length} vehicles. All saved routes permanently preserved.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to bulk delete vehicles: ' + err.message });
   }
 });
 

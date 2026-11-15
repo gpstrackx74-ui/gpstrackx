@@ -122,6 +122,11 @@ export const api = {
       body: JSON.stringify({ status })
     }),
   deleteVehicle: (id: number | string) => apiRequest(`/vehicles/${id}`, { method: 'DELETE' }),
+  bulkDeleteVehicles: (ids: (number | string)[]) =>
+    apiRequest<{ message: string }>('/vehicles/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids })
+    }),
 
   // Users
   getUsers: (params: { search?: string; status?: string } = {}) => {
