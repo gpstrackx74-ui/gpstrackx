@@ -7,7 +7,8 @@ import {
   generateFastagStatementPdf,
   FastagStatementReportData,
   formatDurationDate,
-  formatTableDateTime
+  formatTableDateTime,
+  formatMobileNumber
 } from '../utils/generateFastagStatementPdf';
 import {
   Receipt,
@@ -194,11 +195,13 @@ export const FastagBilling: React.FC = () => {
         list[0]?.driver_name ||
         'Ramniwas',
       customerMobile:
-        selectedVehicle?.customer_mobile ||
-        (selectedVehicle as any)?.owner_phone ||
-        list[0]?.customer_mobile ||
-        list[0]?.driver_phone ||
-        '8094249011',
+        formatMobileNumber(
+          selectedVehicle?.customer_mobile ||
+          (selectedVehicle as any)?.owner_phone ||
+          list[0]?.customer_mobile ||
+          list[0]?.driver_phone ||
+          '8094249011'
+        ),
       truckNumber:
         selectedVehicle?.registration_no ||
         list[0]?.vehicle_registration_no ||
@@ -439,7 +442,7 @@ export const FastagBilling: React.FC = () => {
                     </span>
                     <span>•</span>
                     <span>
-                      Mobile: <strong className="text-slate-800">{selectedVehicle?.customer_mobile || (selectedVehicle as any)?.owner_phone || '8094249011'}</strong>
+                      Mobile: <strong className="text-slate-800">{formatMobileNumber(selectedVehicle?.customer_mobile || (selectedVehicle as any)?.owner_phone || '8094249011')}</strong>
                     </span>
                     <span>•</span>
                     <span>
@@ -797,22 +800,22 @@ export const FastagBilling: React.FC = () => {
                   </div>
 
                   {/* Customer Information Block */}
-                  <div className="space-y-1.5 text-xs text-slate-900 font-medium">
+                  <div className="space-y-1.5 text-xs text-slate-900">
                     <div className="flex items-center">
-                      <span className="w-36 text-slate-700">Customer Name</span>
-                      <span>: <strong className="text-slate-950 ml-1">{statementData.customerName}</strong></span>
+                      <span className="w-36 font-normal text-slate-700">Customer Name</span>
+                      <span>: <strong className="font-bold text-slate-950 ml-1">{statementData.customerName}</strong></span>
                     </div>
                     <div className="flex items-center">
-                      <span className="w-36 text-slate-700">Customer Mobile</span>
-                      <span>: <strong className="text-slate-950 ml-1">{statementData.customerMobile}</strong></span>
+                      <span className="w-36 font-normal text-slate-700">Customer Mobile</span>
+                      <span>: <strong className="font-bold text-slate-950 ml-1">{formatMobileNumber(statementData.customerMobile)}</strong></span>
                     </div>
                     <div className="flex items-center">
-                      <span className="w-36 text-slate-700">Truck Number</span>
-                      <span>: <strong className="text-slate-950 font-mono ml-1">{statementData.truckNumber}</strong></span>
+                      <span className="w-36 font-normal text-slate-700">Truck Number</span>
+                      <span>: <strong className="font-bold text-slate-950 font-mono ml-1">{statementData.truckNumber}</strong></span>
                     </div>
                     <div className="flex items-center">
-                      <span className="w-36 text-slate-700">Truck Owner Name</span>
-                      <span>: <strong className="text-slate-950 ml-1">{statementData.truckOwnerName}</strong></span>
+                      <span className="w-36 font-normal text-slate-700">Truck Owner Name</span>
+                      <span>: <strong className="font-bold text-slate-950 ml-1">{statementData.truckOwnerName}</strong></span>
                     </div>
                     <div className="flex items-center pt-2">
                       <span className="w-36 font-bold text-slate-900">Statement Duration</span>

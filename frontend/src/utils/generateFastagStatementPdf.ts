@@ -12,6 +12,12 @@ export interface FastagStatementReportData {
   transactions: FastagTransaction[];
 }
 
+export function formatMobileNumber(mobile?: string | null): string {
+  if (!mobile) return '';
+  const digits = String(mobile).replace(/\+91/g, '').replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
 interface ParsedDateTime {
   sortKey: string;      // 'YYYY-MM-DD'
   displayDate: string;  // 'DD/MM/YYYY'
@@ -188,7 +194,7 @@ export const generateFastagStatementPdf = (input: FastagTransaction | FastagStat
     const singleTx = input as FastagTransaction;
     data = {
       customerName: singleTx.customer_name || singleTx.driver_name || 'Ramniwas',
-      customerMobile: singleTx.customer_mobile || singleTx.driver_phone || '8094249011',
+      customerMobile: formatMobileNumber(singleTx.customer_mobile || singleTx.driver_phone) || '8094249011',
       truckNumber: singleTx.vehicle_registration_no || 'RJ22GB7999',
       truckOwnerName: singleTx.truck_owner_name || 'Rajendra Kumar',
       transactions: [singleTx]
@@ -236,14 +242,41 @@ export const generateFastagStatementPdf = (input: FastagTransaction | FastagStat
   doc.setTextColor(0, 0, 0);
 
   const customerName = data.customerName || txs[0]?.customer_name || txs[0]?.driver_name || 'Ramniwas';
-  const customerMobile = data.customerMobile || txs[0]?.customer_mobile || txs[0]?.driver_phone || '8094249011';
+  const rawMobile = data.customerMobile || txs[0]?.customer_mobile || txs[0]?.driver_phone || '8094249011';
+  const customerMobile = formatMobileNumber(rawMobile) || '8094249011';
   const truckNumber = data.truckNumber || txs[0]?.vehicle_registration_no || 'RJ22GB7999';
   const truckOwnerName = data.truckOwnerName || txs[0]?.truck_owner_name || 'Rajendra Kumar';
 
-  doc.text(`Customer Name     : ${customerName}`, marginX, 33);
-  doc.text(`Customer Mobile   : ${customerMobile}`, marginX, 39);
-  doc.text(`Truck Number      : ${truckNumber}`, marginX, 45);
-  doc.text(`Truck Owner Name  : ${truckOwnerName}`, marginX, 51);
+  const colonX = marginX + 35;
+  const valueX = colonX + 2.5;
+
+  // Customer Name (Label normal, Value bold)
+  doc.setFont('helvetica', 'normal');
+  doc.text('Customer Name', marginX, 33);
+  doc.text(':', colonX, 33);
+  doc.setFont('helvetica', 'bold');
+  doc.text(customerName, valueX, 33);
+
+  // Customer Mobile (Label normal, Value bold, clean 10-digit without +91 or spaces)
+  doc.setFont('helvetica', 'normal');
+  doc.text('Customer Mobile', marginX, 39);
+  doc.text(':', colonX, 39);
+  doc.setFont('helvetica', 'bold');
+  doc.text(customerMobile, valueX, 39);
+
+  // Truck Number (Label normal, Value bold)
+  doc.setFont('helvetica', 'normal');
+  doc.text('Truck Number', marginX, 45);
+  doc.text(':', colonX, 45);
+  doc.setFont('helvetica', 'bold');
+  doc.text(truckNumber, valueX, 45);
+
+  // Truck Owner Name (Label normal, Value bold)
+  doc.setFont('helvetica', 'normal');
+  doc.text('Truck Owner Name', marginX, 51);
+  doc.text(':', colonX, 51);
+  doc.setFont('helvetica', 'bold');
+  doc.text(truckOwnerName, valueX, 51);
 
   doc.setFont('helvetica', 'bold');
   doc.text(`Statement Duration : ${durationText}`, marginX, 60);
