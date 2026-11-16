@@ -226,7 +226,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       required
                       value={loginIdentifier}
                       onChange={(e) => setLoginIdentifier(e.target.value)}
-                      placeholder="e.g. admin@gpstrackx.com or 9876543210"
+                      placeholder="Email or phone"
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012] focus:ring-2 focus:ring-[#E60012]/15 transition"
                     />
                   </div>
