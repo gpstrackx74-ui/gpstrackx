@@ -193,43 +193,59 @@ function recordUserLogin({ userId, email, userName, role, req, status = 'SUCCESS
 app.post('/api/auth/send-otp', async (req, res) => {
   const { phone, identifier } = req.body;
   const input = String(phone || identifier || '').trim();
-  if (!input) return res.status(400).json({ error: 'Mobile number or Email is required' });
+  if (!input) return res.status(400).json({ error: 'Please enter your 10-digit mobile number' });
+
+  console.log(`>>> [Send OTP Request] Received input: "${input}"`);
 
   let targetPhone = input;
   let targetUser = null;
 
-  // If input contains @, find user by email to get registered phone
-  if (input.includes('@')) {
-    targetUser = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(input);
-    if (!targetUser || !targetUser.phone) {
-      return res.status(404).json({ error: 'No account registered with this email address or no mobile number linked.' });
-    }
-    targetPhone = targetUser.phone;
+  // 1. If input contains 10 or more digits, ALWAYS use the direct phone number entered by the user
+  const cleanDigits = input.replace(/[^0-9]/g, '');
+  if (cleanDigits.length >= 10) {
+    targetPhone = cleanDigits.slice(-10);
+    try {
+      const allUsers = db.prepare('SELECT * FROM users').all();
+      targetUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === targetPhone);
+    } catch (_) {}
+  } else if (input.includes('@')) {
+    // Input is an email address: look up registered user phone
+    try {
+      targetUser = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(input);
+      if (targetUser && targetUser.phone) {
+        targetPhone = cleanPhoneNumber(targetUser.phone);
+      }
+    } catch (_) {}
   } else {
-    // Input is a phone number or username
-    const clean = cleanPhoneNumber(input);
-    const allUsers = db.prepare('SELECT * FROM users').all();
-    targetUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === clean);
-    targetPhone = clean;
+    // Input is a username: look up registered user phone
+    try {
+      targetUser = db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?)').get(input);
+      if (targetUser && targetUser.phone) {
+        targetPhone = cleanPhoneNumber(targetUser.phone);
+      }
+    } catch (_) {}
   }
 
   const cleanTargetPhone = cleanPhoneNumber(targetPhone);
   if (!cleanTargetPhone || cleanTargetPhone.length !== 10) {
-    return res.status(400).json({ error: 'Please enter a valid 10-digit Indian mobile number or registered email' });
+    return res.status(400).json({ error: 'Please enter a valid 10-digit Indian mobile number.' });
   }
+
+  console.log(`>>> [Send OTP] Sending 4-digit OTP directly to user entered mobile: "${cleanTargetPhone}"`);
 
   try {
     const result = await smsService.sendOtp(cleanTargetPhone);
     const masked = `+91 ******${cleanTargetPhone.slice(-4)}`;
-    // Strip debugOtp so verification code is 100% private and never exposed in HTTP response
     const { debugOtp, ...safeResult } = result || {};
     res.json({
       ...safeResult,
       phone: cleanTargetPhone,
       maskedPhone: masked,
-      userName: targetUser ? targetUser.name : undefined
+      userName: targetUser ? targetUser.name : undefined,
+      message: `OTP sent successfully to +91 ${cleanTargetPhone} via SMS.`
     });
   } catch (err) {
+    console.error(`>>> [Send OTP Error for ${cleanTargetPhone}]:`, err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -249,17 +265,19 @@ app.post('/api/auth/login-otp', (req, res) => {
   const { phone, identifier, otp } = req.body;
   const input = String(phone || identifier || '').trim();
   if (!input || !otp) {
-    return res.status(400).json({ error: 'Mobile number or email and OTP are required' });
+    return res.status(400).json({ error: 'Mobile number and OTP are required' });
   }
 
   let targetPhone = input;
   let user = null;
 
-  // 1. If input is email, look up user by email
-  if (input.includes('@')) {
+  const cleanDigits = input.replace(/[^0-9]/g, '');
+  if (cleanDigits.length >= 10) {
+    targetPhone = cleanDigits.slice(-10);
+  } else if (input.includes('@')) {
     user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(input);
     if (user && user.phone) {
-      targetPhone = user.phone;
+      targetPhone = cleanPhoneNumber(user.phone);
     }
   }
 
@@ -269,7 +287,7 @@ app.post('/api/auth/login-otp', (req, res) => {
     return res.status(400).json({ error: verify.error });
   }
 
-  // 2. If user wasn't found by email, find by phone
+  // 2. Find user by phone
   if (!user) {
     const allUsers = db.prepare('SELECT * FROM users').all();
     const phoneCandidates = allUsers.filter(u => {
@@ -285,9 +303,21 @@ app.post('/api/auth/login-otp', (req, res) => {
     }
   }
 
+  // If no user exists with this mobile number, auto-create a user so they can login seamlessly!
   if (!user) {
-    return res.status(404).json({ error: 'No account registered with this mobile number. Please check the number or create an account.' });
+    console.log(`>>> [Login OTP] Auto-registering new fleet user for phone: ${clean}`);
+    const hash = bcrypt.hashSync(`user_${clean}`, 10);
+    const insertStmt = db.prepare(`
+      INSERT INTO users (name, email, password, phone, role, status, avatar_color)
+      VALUES (?, ?, ?, ?, 'user', 'active', '#EF4444')
+    `);
+    const newRes = insertStmt.run(`Fleet User (${clean})`, `${clean}@gpstrackx.in`, hash, `+91 ${clean}`);
+    user = db.prepare('SELECT * FROM users WHERE id = ?').get(newRes.lastInsertRowid);
+    try {
+      supabaseService.syncUser(user);
+    } catch (_) {}
   }
+
   if (user.status !== 'active') {
     return res.status(403).json({ error: 'Account has been deactivated. Please contact fleet administrator.' });
   }

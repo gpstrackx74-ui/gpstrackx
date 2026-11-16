@@ -72,8 +72,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     try {
       const res = await api.sendOtp(target);
       setIsOtpSent(true);
-      setSentTargetPhone((res as any).maskedPhone || (res as any).phone || target);
-      setSuccessMessage((res as any).message || `OTP sent successfully to ${(res as any).maskedPhone || target} via SMS.`);
+      const displayPhone = (res as any).phone ? `+91 ${(res as any).phone}` : ((res as any).maskedPhone || target);
+      setSentTargetPhone(displayPhone);
+      setSuccessMessage((res as any).message || `OTP sent successfully to ${displayPhone} via SMS.`);
       setOtpCountdown(30);
     } catch (err: any) {
       setError(err.message || 'Failed to send SMS OTP. Please check the mobile number or email.');
