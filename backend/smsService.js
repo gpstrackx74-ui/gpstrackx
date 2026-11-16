@@ -1,103 +1,83 @@
 require('dotenv').config();
 const https = require('https');
 
-const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY || 'TLvthWvGs0bRbxakqDHFJiIlwum6y9PpKnUAyxygRVg5DoS5JIa7XdFpTclqMsHErGXIwa5nD5ZxM8W9';
+const APITXT_AUTH_KEY = process.env.APITXT_AUTH_KEY || '7In83Nb_BvbAhsBRtzoym6f_uqTJ2cK1zUI019sEDsE';
 
-// In-memory OTP storage: phone -> { otp, expiresAt, verified }
+// In-memory OTP storage: phone -> { otp, expiresAt, verified, createdAt }
 const otpStore = new Map();
 
 function cleanPhoneNumber(phone) {
   if (!phone) return '';
-  return phone.replace(/[^0-9]/g, '').slice(-10);
+  return String(phone).replace(/[^0-9]/g, '').slice(-10);
 }
 
+function formatMobileForApiTxt(phone) {
+  if (!phone) return '';
+  const digits = String(phone).replace(/[^0-9]/g, '');
+  if (digits.length === 10) {
+    return `91${digits}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits;
+  }
+  if (digits.length > 10) {
+    return `91${digits.slice(-10)}`;
+  }
+  return `91${digits}`;
+}
+
+// Generate 4-digit OTP code (e.g. 1000 - 9999)
 function generateOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
-async function callFast2SmsApi(payload) {
+// Send OTP via ApiTxt API
+async function sendSmsViaApiTxt(mobile, otp) {
   return new Promise((resolve) => {
-    const postData = JSON.stringify(payload);
-    const options = {
-      hostname: 'www.fast2sms.com',
-      port: 443,
-      path: '/dev/bulkV2',
-      method: 'POST',
-      headers: {
-        'authorization': FAST2SMS_API_KEY,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
-      },
-      timeout: 8000
-    };
+    const url = `https://apitxt.com/api/sendOTP?authkey=${encodeURIComponent(APITXT_AUTH_KEY)}&mobile=${encodeURIComponent(mobile)}&otp=${encodeURIComponent(otp)}`;
 
-    const req = https.request(options, (res) => {
+    const req = https.get(url, { timeout: 10000 }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          resolve(json);
+          console.log(`[ApiTxt sendOTP for ${mobile}]: Status ${res.statusCode}`, json);
+          if (json.status === 'success' || res.statusCode === 200) {
+            resolve({ success: true, message: json.message || 'OTP sent successfully', response: json });
+          } else {
+            resolve({
+              success: false,
+              message: json.message || 'Failed to send OTP via ApiTxt',
+              response: json
+            });
+          }
         } catch {
-          resolve({ return: false, raw: data });
+          console.log(`[ApiTxt sendOTP raw response]:`, data);
+          if (res.statusCode === 200) {
+            resolve({ success: true, message: 'OTP sent successfully', raw: data });
+          } else {
+            resolve({ success: false, message: 'Invalid response from ApiTxt', raw: data });
+          }
         }
       });
     });
 
     req.on('error', (err) => {
-      resolve({ return: false, error: err.message });
+      console.error('[ApiTxt Network Error]:', err.message);
+      resolve({ success: false, message: `ApiTxt connection failed: ${err.message}` });
     });
 
     req.on('timeout', () => {
       req.destroy();
-      resolve({ return: false, error: 'Request timeout' });
+      console.error('[ApiTxt Timeout]');
+      resolve({ success: false, message: 'ApiTxt request timed out' });
     });
-
-    req.write(postData);
-    req.end();
   });
 }
 
-async function sendSmsViaFast2Sms(phone, otp) {
-  // 1. Try Quick SMS route ('q') which delivers real SMS immediately without website verification
-  const quickPayload = {
-    route: 'q',
-    message: `Your GpsTrackX OTP verification code is ${otp}. Valid for 10 minutes. Do not share this OTP with anyone.`,
-    language: 'english',
-    flash: 0,
-    numbers: phone
-  };
-
-  const quickResult = await callFast2SmsApi(quickPayload);
-  console.log(`[Fast2SMS Quick Route for ${phone}]:`, quickResult);
-
-  if (quickResult.return === true || quickResult.status_code === 200) {
-    return { success: true, response: quickResult };
-  }
-
-  // 2. Fallback to 'otp' route if 'q' fails
-  const otpPayload = {
-    route: 'otp',
-    variables_values: String(otp),
-    numbers: phone
-  };
-
-  const otpResult = await callFast2SmsApi(otpPayload);
-  console.log(`[Fast2SMS OTP Route for ${phone}]:`, otpResult);
-
-  if (otpResult.return === true || otpResult.status_code === 200) {
-    return { success: true, response: otpResult };
-  }
-
-  return {
-    success: false,
-    message: quickResult.message || otpResult.message || 'SMS delivery pending verification',
-    response: quickResult
-  };
-}
-
 const smsService = {
-  // Send 6-digit OTP to mobile number
+  // Send 4-digit OTP to mobile number via ApiTxt
   async sendOtp(rawPhone) {
     const phone = cleanPhoneNumber(rawPhone);
     if (!phone || phone.length !== 10) {
@@ -107,7 +87,7 @@ const smsService = {
     const otp = generateOtp();
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
 
-    // Save in storage
+    // Save in storage (keyed by clean 10-digit phone)
     otpStore.set(phone, {
       otp,
       expiresAt,
@@ -115,10 +95,15 @@ const smsService = {
       createdAt: new Date().toISOString()
     });
 
-    console.log(`>>> [Fast2SMS] Sending OTP [${otp}] to ${phone}...`);
+    const apiMobile = formatMobileForApiTxt(phone);
+    console.log(`>>> [ApiTxt] Sending 4-digit OTP [${otp}] to ${apiMobile}...`);
 
-    // Call Fast2SMS API
-    const fast2smsResult = await sendSmsViaFast2Sms(phone, otp);
+    // Call ApiTxt sendOTP API
+    const apiResult = await sendSmsViaApiTxt(apiMobile, otp);
+
+    if (!apiResult.success) {
+      throw new Error(apiResult.message || 'Failed to send SMS OTP. Please try again.');
+    }
 
     return {
       success: true,
@@ -145,7 +130,7 @@ const smsService = {
     }
 
     if (String(record.otp).trim() !== String(enteredOtp).trim()) {
-      return { success: false, error: 'Incorrect OTP. Please enter the valid 6-digit code.' };
+      return { success: false, error: 'Incorrect OTP. Please enter the valid 4-digit code.' };
     }
 
     // Mark as verified
@@ -170,4 +155,3 @@ const smsService = {
 };
 
 module.exports = smsService;
-

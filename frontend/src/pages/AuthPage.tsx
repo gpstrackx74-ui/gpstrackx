@@ -95,8 +95,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       setError('Please enter your mobile number or email.');
       return;
     }
-    if (!code || code.length !== 6) {
-      setError('Please enter the valid 6-digit OTP code received on your mobile.');
+    if (!code || code.length !== 4) {
+      setError('Please enter the valid 4-digit OTP code received on your mobile.');
       return;
     }
 
@@ -188,7 +188,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               Sign In to GpsTrackX
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              {isPasswordFlow ? 'Enter your registered email and password to sign in' : 'Enter your registered mobile number to receive a 6-digit SMS OTP'}
+              {isPasswordFlow ? 'Enter your registered email and password to sign in' : 'Enter your registered mobile number to receive a 4-digit SMS OTP'}
             </p>
           </div>
 
@@ -329,7 +329,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
                 <div>
                   <label htmlFor="login-otp-code" className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Enter 6-Digit SMS OTP *
+                    Enter 4-Digit SMS OTP *
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -338,22 +338,24 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     <input
                       id="login-otp-code"
                       type="text"
-                      maxLength={6}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={4}
                       required
                       value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                      placeholder="Enter 6-digit OTP code from SMS"
-                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-mono font-bold text-center tracking-widest text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#E60012] focus:ring-2 focus:ring-[#E60012]/15 transition"
+                      onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+                      placeholder="Enter 4-digit OTP"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-mono font-bold text-center tracking-[0.4em] text-base text-slate-900 placeholder:text-slate-400 placeholder:tracking-normal placeholder:font-sans placeholder:text-xs focus:outline-none focus:border-[#E60012] focus:ring-2 focus:ring-[#E60012]/15 transition"
                     />
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    Check your mobile SMS inbox for the 6-digit verification code.
+                    Check your mobile SMS inbox for the 4-digit verification code.
                   </p>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={loading || !otpCode.trim() || otpCode.trim().length !== 6}
+                  disabled={loading || !otpCode.trim() || otpCode.trim().length !== 4}
                   className="w-full py-3 px-4 bg-[#E60012] hover:bg-[#CC0010] text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
                 >
                   <CheckCircle2 className="w-4 h-4 text-emerald-300" />

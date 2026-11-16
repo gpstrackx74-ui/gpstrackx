@@ -188,7 +188,7 @@ function recordUserLogin({ userId, email, userName, role, req, status = 'SUCCESS
   }
 }
 
-// ---------------- FAST2SMS OTP ROUTES ---------------- //
+// ---------------- APITXT OTP ROUTES ---------------- //
 
 app.post('/api/auth/send-otp', async (req, res) => {
   const { phone, identifier } = req.body;
@@ -778,13 +778,13 @@ app.get('/api/vehicles/:id/trips', authenticateToken, (req, res) => {
         try {
           const wp = typeof t.waypoints_json === 'string' ? JSON.parse(t.waypoints_json) : t.waypoints_json;
           if (Array.isArray(wp) && wp.length > 0) waypoints = wp;
-        } catch (_) {}
+        } catch (_) { }
       }
       if (waypoints.length === 0) {
         try {
           const sqlStops = db.prepare('SELECT * FROM stoppages WHERE route_id = ? ORDER BY sequence_order ASC').all(t.id);
           if (sqlStops && sqlStops.length > 0) waypoints = sqlStops;
-        } catch (_) {}
+        } catch (_) { }
       }
 
       let tollGates = [];
@@ -792,13 +792,13 @@ app.get('/api/vehicles/:id/trips', authenticateToken, (req, res) => {
         try {
           const tg = typeof t.toll_gates_json === 'string' ? JSON.parse(t.toll_gates_json) : t.toll_gates_json;
           if (Array.isArray(tg) && tg.length > 0) tollGates = tg;
-        } catch (_) {}
+        } catch (_) { }
       }
       if (tollGates.length === 0) {
         try {
           const sqlTolls = db.prepare('SELECT * FROM manual_toll_gates WHERE route_id = ?').all(t.id);
           if (sqlTolls && sqlTolls.length > 0) tollGates = sqlTolls;
-        } catch (_) {}
+        } catch (_) { }
       }
 
       const stopsCount = (t.stoppages_count != null && Number(t.stoppages_count) > 0)
@@ -841,7 +841,7 @@ app.put('/api/routes/:id/activate', authenticateToken, (req, res) => {
 
     db.prepare('UPDATE routes SET is_active = 0 WHERE vehicle_id = ?').run(route.vehicle_id);
     db.prepare('UPDATE routes SET is_active = 1 WHERE id = ?').run(routeId);
-    
+
     // Also update vehicle's quick telemetry
     db.prepare(`
       UPDATE vehicles
@@ -990,7 +990,7 @@ app.get('/api/vehicles/:id', authenticateToken, (req, res) => {
             stop_duration_mins: wp.duration || wp.stop_duration_mins || 20
           }));
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Fallback to toll_gates_json if manual_toll_gates is empty
@@ -1000,7 +1000,7 @@ app.get('/api/vehicles/:id', authenticateToken, (req, res) => {
         if (Array.isArray(parsedTolls)) {
           manualTolls = parsedTolls;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
   }
 
@@ -1206,7 +1206,7 @@ async function deleteVehicleById(vehicleId) {
   if (veh && veh.registration_no) {
     try {
       db.prepare('UPDATE routes SET vehicle_registration_no = COALESCE(vehicle_registration_no, ?) WHERE vehicle_id = ?').run(veh.registration_no, vehicleId);
-    } catch (_) {}
+    } catch (_) { }
   }
 
   // Mirror all routes for this vehicle into saved_corridors so they are 100% permanently immortal
@@ -1228,7 +1228,7 @@ async function deleteVehicleById(vehicleId) {
         r.overview_polyline || '[]', r.waypoints_json || '[]', r.toll_gates_json || '[]'
       );
     }
-  } catch (_) {}
+  } catch (_) { }
 
   // Detach vehicle_id from routes (DO NOT DELETE ROUTES - PRESERVED PERMANENTLY)
   db.prepare('UPDATE routes SET vehicle_id = NULL WHERE vehicle_id = ?').run(vehicleId);
@@ -1354,7 +1354,7 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
     const newUser = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
     try {
       supabaseService.syncUser({ ...newUser, password: hash });
-    } catch (e) {}
+    } catch (e) { }
     return res.status(201).json(newUser);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to create user: ' + err.message });
@@ -1448,7 +1448,7 @@ async function processSingleFleetImport(item, adminUserId) {
       INSERT INTO vehicle_allocations (vehicle_id, user_id, allocated_by, allocation_status, notes)
       VALUES (?, ?, ?, 'active', 'Allocated via Excel Import')
     `).run(targetVehicle.id, targetUser.id, adminUserId || 1);
-  } catch (e) {}
+  } catch (e) { }
 
   // 3. Process Sheet 1: FASTag Transactions
   let createdTxnsCount = 0;
@@ -1460,7 +1460,7 @@ async function processSingleFleetImport(item, adminUserId) {
       if (!cols.includes('description')) {
         db.exec('ALTER TABLE fastag_transactions ADD COLUMN description TEXT');
       }
-    } catch (e) {}
+    } catch (e) { }
 
     const insertTxStmt = db.prepare(`
       INSERT INTO fastag_transactions (
@@ -1575,13 +1575,13 @@ async function processSingleFleetImport(item, adminUserId) {
         db.prepare('UPDATE vehicles SET total_toll_fee = ? WHERE id = ?').run(totalToll.total, targetVehicle.id);
         targetVehicle.total_toll_fee = totalToll.total;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // Force full SQLite WAL checkpoint so data is immediately saved to disk
   try {
     db.pragma('wal_checkpoint(FULL)');
-  } catch (e) {}
+  } catch (e) { }
 
   // Synchronously persist user, vehicle, allocation, and FASTag transactions to Cloud Supabase
   try {
@@ -1659,7 +1659,7 @@ app.post('/api/fleet/import-excel', authenticateToken, requireAdmin, async (req,
     // Full WAL checkpoint after entire batch
     try {
       db.pragma('wal_checkpoint(FULL)');
-    } catch (e) {}
+    } catch (e) { }
 
     console.log(`>>> [Excel Import Batch Complete] Processed ${items.length} file(s): ${results.length} succeeded, ${errors.length} failed, ${totalTxns} FASTag transactions recorded.`);
 
@@ -2035,7 +2035,7 @@ app.get('/api/locations/search', async (req, res) => {
   // 1. High-precision multi-token local street & area matching (Raigarh, Raipur, Bilaspur, Delhi, Mumbai, etc.)
   LOCAL_AREAS_DATABASE.forEach(hub => {
     const targetText = `${hub.name} ${hub.address} ${hub.category || ''}`.toLowerCase();
-    
+
     const allTokensMatch = searchTokens.every(tok => targetText.includes(tok));
     const anyTokenMatch = searchTokens.some(tok => tok.length >= 3 && targetText.includes(tok));
 
@@ -2267,7 +2267,7 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
         total_distance_km || 0, estimated_travel_time_min || 0,
         polylineStr, waypointsJson, tollGatesJson
       );
-    } catch (_) {}
+    } catch (_) { }
 
     const routeId = result.lastInsertRowid;
 
@@ -2375,7 +2375,7 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
     if (savedRoute) {
       try {
         await supabaseService.query('UPDATE routes SET is_active = 0 WHERE vehicle_id = $1', [vehicle_id]);
-      } catch (e) {}
+      } catch (e) { }
       supabaseService.syncRoute(savedRoute);
 
       const targetVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
@@ -2457,7 +2457,7 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
         FROM saved_corridors
         ORDER BY id DESC
       `).all();
-    } catch (e) {}
+    } catch (e) { }
 
     const routesCorridors = db.prepare(`
       SELECT 
@@ -2510,7 +2510,7 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
             }
           }
         }
-      } catch (_) {}
+      } catch (_) { }
       return list;
     };
 
@@ -2522,7 +2522,7 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
       if (!seenKeys.has(k)) {
         seenKeys.add(k);
         let wp = [];
-        try { if (c.waypoints_json) wp = typeof c.waypoints_json === 'string' ? JSON.parse(c.waypoints_json) : c.waypoints_json; } catch (_) {}
+        try { if (c.waypoints_json) wp = typeof c.waypoints_json === 'string' ? JSON.parse(c.waypoints_json) : c.waypoints_json; } catch (_) { }
         const tg = sanitizeTolls(c.toll_gates_json);
         combined.push({ ...c, waypoints: wp, toll_gates: tg });
       }
@@ -2534,7 +2534,7 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
       if (!seenKeys.has(k)) {
         seenKeys.add(k);
         let wp = [];
-        try { if (r.waypoints_json) wp = typeof r.waypoints_json === 'string' ? JSON.parse(r.waypoints_json) : r.waypoints_json; } catch (_) {}
+        try { if (r.waypoints_json) wp = typeof r.waypoints_json === 'string' ? JSON.parse(r.waypoints_json) : r.waypoints_json; } catch (_) { }
         const tg = sanitizeTolls(r.toll_gates_json);
         combined.push({ ...r, waypoints: wp, toll_gates: tg });
       }
@@ -2565,9 +2565,9 @@ app.get('/api/trips/all', authenticateToken, requireAdmin, (req, res) => {
 
     const formatted = trips.map(t => {
       let waypoints = [];
-      try { if (t.waypoints_json) waypoints = typeof t.waypoints_json === 'string' ? JSON.parse(t.waypoints_json) : t.waypoints_json; } catch (_) {}
+      try { if (t.waypoints_json) waypoints = typeof t.waypoints_json === 'string' ? JSON.parse(t.waypoints_json) : t.waypoints_json; } catch (_) { }
       let toll_gates = [];
-      try { if (t.toll_gates_json) toll_gates = typeof t.toll_gates_json === 'string' ? JSON.parse(t.toll_gates_json) : t.toll_gates_json; } catch (_) {}
+      try { if (t.toll_gates_json) toll_gates = typeof t.toll_gates_json === 'string' ? JSON.parse(t.toll_gates_json) : t.toll_gates_json; } catch (_) { }
       return {
         ...t,
         waypoints: Array.isArray(waypoints) ? waypoints : [],
@@ -2850,7 +2850,7 @@ app.get('/api/fastag/transactions', authenticateToken, (req, res) => {
               );
             });
           }
-        } catch (e) {}
+        } catch (e) { }
       }
       transactions = db.prepare(sql).all(...params);
     }
@@ -3123,7 +3123,7 @@ app.get('/api/search', authenticateToken, (req, res) => {
     const systemPages = isAdmin ? adminPages : userPages;
 
     const qLower = q.toLowerCase();
-    const pages = systemPages.filter(p => 
+    const pages = systemPages.filter(p =>
       p.title.toLowerCase().includes(qLower) || p.desc.toLowerCase().includes(qLower)
     );
 
