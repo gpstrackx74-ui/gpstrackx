@@ -88,51 +88,42 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   }, [effectiveDate, todayYMD]);
 
   // Operational status resolution
-  const isVehicleMovingStatus = (vehicle?.status as string) === 'moving';
-  const isRouteMovingStatus = (activeRoute?.operational_status === 'moving') || (activeRoute?.is_active && isVehicleMovingStatus);
-  const isTripStopOrComplete = Boolean(
-    historicalTrip ||
+  const vehicleStatusRaw = String(vehicle?.status || '').toLowerCase().trim();
+  const routeStatusRaw = String(activeRoute?.operational_status || '').toLowerCase().trim();
+
+  // Explicit stop status check
+  const isVehicleExplicitlyStopped = Boolean(
+    vehicleStatusRaw === 'stop' ||
+    vehicleStatusRaw === 'stopped' ||
+    vehicleStatusRaw === 'inactive' ||
+    vehicleStatusRaw === 'parking' ||
+    routeStatusRaw === 'stop' ||
+    routeStatusRaw === 'stopped' ||
+    routeStatusRaw === 'completed' ||
+    (historicalTrip && (Number(historicalTrip.is_active) === 0 || historicalTrip.operational_status === 'stop')) ||
     viewSource === 'trip-history' ||
-    Number(activeRoute?.is_active) === 0 ||
-    activeRoute?.operational_status === 'stop' ||
-    activeRoute?.operational_status === 'stopped' ||
-    activeRoute?.operational_status === 'completed' ||
-    (activeRoute as any)?.status === 'completed'
+    isPreviousDate
   );
 
-  const isMoving = React.useMemo(() => {
-    // If there is NO route allotted on this selected date, the vehicle is NOT moving on this date!
-    if (!activeRoute) return false;
+  // Explicit moving status check
+  const isVehicleExplicitlyMoving = !isVehicleExplicitlyStopped && Boolean(
+    vehicleStatusRaw === 'moving' ||
+    routeStatusRaw === 'moving'
+  );
 
-    // If reviewing a specific historical completed trip
-    if (historicalTrip) {
-      if (Number(historicalTrip.is_active) === 0 || historicalTrip.operational_status === 'stop' || historicalTrip.operational_status === 'stopped' || historicalTrip.operational_status === 'completed') {
-        return false;
-      }
-      return historicalTrip.operational_status === 'moving' || (Boolean(historicalTrip.is_active) && isVehicleMovingStatus);
-    }
-
-    // If viewing from trip-history or if trip is stopped / completed, it is a completed trip (NOT live moving)
-    if (isTripStopOrComplete) return false;
-
-    // If selected date is in the past: completed trip!
-    if (isPreviousDate) return false;
-
-    // Active vehicle / new user / new vehicle:
-    // If vehicle status is moving, it is ALWAYS moving!
-    if (isVehicleMovingStatus) return true;
-    if (isRouteMovingStatus) return true;
-    return false;
-  }, [activeRoute, historicalTrip, isTripStopOrComplete, isRouteMovingStatus, isVehicleMovingStatus, isPreviousDate]);
-
-  const isStopped = (vehicle?.status as string) === 'stop' || (vehicle?.status as string) === 'stopped' || (activeRoute?.operational_status === 'stop');
-  const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
-
-  // LIVE MOVING MODE RULES:
-  // When vehicle is in moving status in USER LOGIN: DO NOT show route polyline, ONLY show moving vehicle along the route!
-  // When vehicle is stopped/inactive in USER LOGIN: Show full route polyline, pins, and details.
-  // In Admin Login: Always show route polyline along with moving vehicle.
+  // Overall isMoving flag
+  const isMoving = Boolean(activeRoute && isVehicleExplicitlyMoving);
+  const isStopped = !isMoving;
+  const isParking = vehicleStatusRaw === 'parking';
   const isLiveMovingMode = isMoving;
+
+  // RULE:
+  // When vehicle status is moving in user login (!isAdmin):
+  // 1. DO NOT show route line (hideRouteForUser = true)
+  // 2. DO NOT show route play (showRoutePlayBar = false, isPlaying = false)
+  // When vehicle status is stop:
+  // 1. DO show route line (hideRouteForUser = false)
+  // 2. DO show route play (showRoutePlayBar = true)
   const hideRouteForUser = !isAdmin && isMoving;
 
   const [liveSpeed, setLiveSpeed] = useState<number>(48);
@@ -352,6 +343,11 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     return interpolated;
   }, [parsedCoordinates]);
 
+  // Route playback controller bar visibility:
+  // When vehicle status is STOP (or not actively moving): show playback controller so user can play route simulation
+  // When vehicle status is MOVING: hide playback bar
+  const showRoutePlayBar = !isMoving && Boolean(activeRoute && parsedCoordinates.length > 0);
+
   // Parse tolls safely with useMemo
   const routeTolls = React.useMemo<TollGate[]>(() => {
     if (activeRoute?.toll_gates_json) {
@@ -367,22 +363,18 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     return manualTolls;
   }, [activeRoute?.toll_gates_json, manualTolls]);
 
-  // Auto play/move when vehicle is in LIVE moving mode today, park at END POINT when status is NOT moving or in history review
+  // Playback state synchronization:
+  // When vehicle status is MOVING: do NOT auto-play route play
+  // When vehicle status is STOP: prepare playback at Start Point (0) so user can click "Play Route"
   useEffect(() => {
     if (!vehicle) return;
-    if (isLiveMovingMode) {
-      setIsPlaying(true);
-      // Start moving smoothly along the allocated route from beginning if at the end
-      setPlaybackIndex(prev => (prev >= smoothPlaybackCoordinates.length - 1 ? 0 : prev));
-    } else {
-      setIsPlaying(false);
-      if (smoothPlaybackCoordinates.length > 0) {
-        setPlaybackIndex(smoothPlaybackCoordinates.length - 1);
-      }
+    setIsPlaying(false);
+    if (!isMoving && smoothPlaybackCoordinates.length > 0) {
+      setPlaybackIndex(0);
     }
-  }, [vehicle?.id, isLiveMovingMode, smoothPlaybackCoordinates.length]);
+  }, [vehicle?.id, isMoving, smoothPlaybackCoordinates.length]);
 
-  // Playback timer ticker - moves vehicle along assigned route smoothly with random 3-4s intervals
+  // Playback timer ticker - plays route simulation when user clicks "Play Route" on stopped/review trip
   useEffect(() => {
     if (!isPlaying || smoothPlaybackCoordinates.length <= 1) return;
 
@@ -390,23 +382,13 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     let isCancelled = false;
 
     const tick = () => {
-      // In live moving mode: random delay between 3000ms and 4000ms (3 to 4 sec)
-      // In historical replay: snappy replay (~250ms scaled by playback speed)
-      const delayMs = isLiveMovingMode
-        ? Math.floor((3000 + Math.random() * 1000) / (playbackSpeed || 1))
-        : Math.max(100, Math.round(250 / (playbackSpeed || 1)));
+      const delayMs = Math.max(80, Math.round(250 / (playbackSpeed || 1)));
 
       timeoutId = setTimeout(() => {
         if (isCancelled) return;
         setPlaybackIndex(prev => {
-          // In live moving mode, advance smoothly along the route coordinates
-          const step = isLiveMovingMode ? Math.max(1, Math.ceil(smoothPlaybackCoordinates.length / 500)) : 1;
-          const next = prev + step;
+          const next = prev + 1;
           if (next >= smoothPlaybackCoordinates.length - 1) {
-            // Loop continuously along the assigned route in live moving mode
-            if (isLiveMovingMode) {
-              return 0;
-            }
             setIsPlaying(false);
             return smoothPlaybackCoordinates.length - 1;
           }
@@ -422,7 +404,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       isCancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length, isLiveMovingMode]);
+  }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length]);
 
   const handleResetPlayback = () => {
     setIsPlaying(false);
@@ -481,49 +463,55 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   const currentPlaybackPoint: [number, number] | null = React.useMemo(() => {
     // If no active route (vehicle did not run on this selected date), return null so map is completely blank
     if (!activeRoute) return null;
-    if (smoothPlaybackCoordinates.length > 0) {
-      // If vehicle is NOT in live moving mode and not actively replaying, park truck at the END POINT of the route
-      if (!isLiveMovingMode && !isPlaying) {
-        return smoothPlaybackCoordinates[smoothPlaybackCoordinates.length - 1];
+
+    // In moving mode, use vehicle current GPS coordinates or start coordinates
+    if (isMoving) {
+      if (vehicle?.current_lat && vehicle?.current_lng && Number(vehicle.current_lat) !== 0) {
+        return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
       }
-      return smoothPlaybackCoordinates[Math.min(playbackIndex, smoothPlaybackCoordinates.length - 1)];
+      if (smoothPlaybackCoordinates.length > 0) {
+        return smoothPlaybackCoordinates[0];
+      }
     }
-    if (vehicle?.current_lat && vehicle?.current_lng) {
+
+    // In stopped mode / playback simulation
+    if (smoothPlaybackCoordinates.length > 0) {
+      const idx = Math.max(0, Math.min(playbackIndex, smoothPlaybackCoordinates.length - 1));
+      return smoothPlaybackCoordinates[idx];
+    }
+    if (vehicle?.current_lat && vehicle?.current_lng && Number(vehicle.current_lat) !== 0) {
       return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
     }
     return null;
-  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, isLiveMovingMode, isPlaying]);
+  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, isMoving]);
 
   const playbackProgressPercent = activeRoute && smoothPlaybackCoordinates.length > 1
     ? Math.min(100, Math.round((playbackIndex / (smoothPlaybackCoordinates.length - 1)) * 100))
-    : (activeRoute && !isLiveMovingMode ? 100 : 0);
+    : 0;
 
   const simulatedDistanceCoveredKm = activeRoute?.total_distance_km
     ? ((playbackProgressPercent / 100) * Number(activeRoute.total_distance_km)).toFixed(1)
     : '0';
 
-  const simulatedSpeed = (activeRoute && (isLiveMovingMode || isPlaying)) ? liveSpeed : 0;
+  const simulatedSpeed = (activeRoute && (isMoving || isPlaying)) ? (liveSpeed || Number(vehicle?.current_speed) || 48) : 0;
 
   // Real-time heading along assigned route tangent
   const currentHeading = React.useMemo(() => {
     if (!smoothPlaybackCoordinates || smoothPlaybackCoordinates.length <= 1) return 150;
-    if (!isLiveMovingMode && !isPlaying) {
-      return getHeadingAlongRoute(smoothPlaybackCoordinates, smoothPlaybackCoordinates.length - 1);
-    }
     return getHeadingAlongRoute(smoothPlaybackCoordinates, playbackIndex);
-  }, [smoothPlaybackCoordinates, playbackIndex, isLiveMovingMode, isPlaying]);
+  }, [smoothPlaybackCoordinates, playbackIndex]);
 
   const simulatedVehiclePosition = React.useMemo(() => {
     if (!activeRoute || !currentPlaybackPoint || !vehicle) return null;
     return {
       lat: currentPlaybackPoint[0],
       lng: currentPlaybackPoint[1],
-      speed: simulatedSpeed,
-      status: (isLiveMovingMode || isPlaying) ? 'moving' : 'stopped',
+      speed: isMoving ? (liveSpeed || Number(vehicle.current_speed) || 48) : (isPlaying ? simulatedSpeed : 0),
+      status: (isMoving || isPlaying) ? 'moving' : 'stop',
       plate: vehicle.registration_no,
-      heading: currentHeading
+      heading: isMoving ? 90 : currentHeading
     };
-  }, [activeRoute, currentPlaybackPoint, vehicle, simulatedSpeed, isLiveMovingMode, isPlaying, currentHeading]);
+  }, [activeRoute, currentPlaybackPoint, vehicle, isMoving, liveSpeed, isPlaying, simulatedSpeed, currentHeading]);
 
   // Stoppages with calculated arrival and departure times based on route duration
   const stoppagesWithTimings = React.useMemo(() => {
@@ -1051,7 +1039,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
             )}
 
             {/* VEHICLE ROUTE PLAYBACK CONTROLLER BAR (Simulation & Replay for Completed/Stopped Trips - Available in both Admin and User Logins) */}
-            {!isMoving && !isLiveMovingMode && activeRoute && parsedCoordinates.length > 0 && (
+            {showRoutePlayBar && (
               <div className="mb-3.5 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/90 shadow-2xs space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
