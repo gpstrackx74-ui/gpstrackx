@@ -263,7 +263,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     let isCancelled = false;
 
     const tick = () => {
-      const delayMs = Math.floor(3000 + Math.random() * 1000); // 3 to 4 seconds
+      const delayMs = 1200; // Smooth 1.2 second cadence along road
       timeoutId = setTimeout(() => {
         if (isCancelled) return;
         setAnimIndex(prev => prev + 1);

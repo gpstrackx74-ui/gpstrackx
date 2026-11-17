@@ -45,8 +45,8 @@ function getPreloadedTruckImage(onLoaded?: () => void): HTMLImageElement {
 }
 
 function getRotatedTruckIconUrl(heading: number, onLoaded?: () => void): string {
-  // Base offset of the 3D truck is 150 deg (pointing South-East)
-  const rotation = Math.round(((heading - 150) % 360 + 360) % 360);
+  // Base offset of the 3D truck is 140 deg (pointing South-East)
+  const rotation = Math.round(((heading - 140) % 360 + 360) % 360);
   // Quantize to nearest 3 degrees to optimize cache performance
   const stepAngle = Math.round(rotation / 3) * 3;
   if (rotatedIconCache.has(stepAngle)) {
@@ -1361,7 +1361,7 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
     const pos = new google.maps.LatLng(vehiclePosition.lat, vehiclePosition.lng);
 
     // Calculate heading / angle along route
-    let heading = 150;
+    let heading = 0;
     if (typeof vehiclePosition.heading === 'number' && !isNaN(vehiclePosition.heading)) {
       heading = vehiclePosition.heading;
     } else if (prevVehiclePosRef.current && (prevVehiclePosRef.current.lat !== vehiclePosition.lat || prevVehiclePosRef.current.lng !== vehiclePosition.lng)) {

@@ -364,31 +364,41 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   }, [activeRoute?.toll_gates_json, manualTolls]);
 
   // Playback state synchronization:
-  // When vehicle status is MOVING: do NOT auto-play route play
-  // When vehicle status is STOP: prepare playback at Start Point (0) so user can click "Play Route"
+  // When vehicle status is MOVING: start moving ticker along the assigned route
+  // When vehicle status is STOP: pause playback at Start Point (0) so user can click "Play Route"
   useEffect(() => {
     if (!vehicle) return;
-    setIsPlaying(false);
-    if (!isMoving && smoothPlaybackCoordinates.length > 0) {
-      setPlaybackIndex(0);
+    if (!isMoving) {
+      setIsPlaying(false);
+      if (smoothPlaybackCoordinates.length > 0) {
+        setPlaybackIndex(0);
+      }
     }
   }, [vehicle?.id, isMoving, smoothPlaybackCoordinates.length]);
 
-  // Playback timer ticker - plays route simulation when user clicks "Play Route" on stopped/review trip
+  // Motion ticker - drives vehicle smoothly along assigned route when in LIVE moving mode OR during Playback Simulation
   useEffect(() => {
-    if (!isPlaying || smoothPlaybackCoordinates.length <= 1) return;
+    if (!isMoving && !isPlaying) return;
+    if (smoothPlaybackCoordinates.length <= 1) return;
 
     let timeoutId: any = null;
     let isCancelled = false;
 
     const tick = () => {
-      const delayMs = Math.max(80, Math.round(250 / (playbackSpeed || 1)));
+      // In live moving mode: smooth 1000ms cadence
+      // In replay mode: snappy 250ms scaled by playbackSpeed
+      const delayMs = isMoving
+        ? 1000
+        : Math.max(80, Math.round(250 / (playbackSpeed || 1)));
 
       timeoutId = setTimeout(() => {
         if (isCancelled) return;
         setPlaybackIndex(prev => {
           const next = prev + 1;
-          if (next >= smoothPlaybackCoordinates.length - 1) {
+          if (next >= smoothPlaybackCoordinates.length) {
+            if (isMoving) {
+              return 0; // Loop continuously along the route in live moving mode
+            }
             setIsPlaying(false);
             return smoothPlaybackCoordinates.length - 1;
           }
@@ -404,7 +414,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       isCancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isPlaying, playbackSpeed, smoothPlaybackCoordinates.length]);
+  }, [isMoving, isPlaying, playbackSpeed, smoothPlaybackCoordinates.length]);
 
   const handleResetPlayback = () => {
     setIsPlaying(false);
@@ -464,17 +474,6 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     // If no active route (vehicle did not run on this selected date), return null so map is completely blank
     if (!activeRoute) return null;
 
-    // In moving mode, use vehicle current GPS coordinates or start coordinates
-    if (isMoving) {
-      if (vehicle?.current_lat && vehicle?.current_lng && Number(vehicle.current_lat) !== 0) {
-        return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
-      }
-      if (smoothPlaybackCoordinates.length > 0) {
-        return smoothPlaybackCoordinates[0];
-      }
-    }
-
-    // In stopped mode / playback simulation
     if (smoothPlaybackCoordinates.length > 0) {
       const idx = Math.max(0, Math.min(playbackIndex, smoothPlaybackCoordinates.length - 1));
       return smoothPlaybackCoordinates[idx];
@@ -483,7 +482,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
     }
     return null;
-  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, isMoving]);
+  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng]);
 
   const playbackProgressPercent = activeRoute && smoothPlaybackCoordinates.length > 1
     ? Math.min(100, Math.round((playbackIndex / (smoothPlaybackCoordinates.length - 1)) * 100))
@@ -497,7 +496,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
 
   // Real-time heading along assigned route tangent
   const currentHeading = React.useMemo(() => {
-    if (!smoothPlaybackCoordinates || smoothPlaybackCoordinates.length <= 1) return 150;
+    if (!smoothPlaybackCoordinates || smoothPlaybackCoordinates.length <= 1) return 0;
     return getHeadingAlongRoute(smoothPlaybackCoordinates, playbackIndex);
   }, [smoothPlaybackCoordinates, playbackIndex]);
 
@@ -509,7 +508,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       speed: isMoving ? (liveSpeed || Number(vehicle.current_speed) || 48) : (isPlaying ? simulatedSpeed : 0),
       status: (isMoving || isPlaying) ? 'moving' : 'stop',
       plate: vehicle.registration_no,
-      heading: isMoving ? 90 : currentHeading
+      heading: currentHeading
     };
   }, [activeRoute, currentPlaybackPoint, vehicle, isMoving, liveSpeed, isPlaying, simulatedSpeed, currentHeading]);
 

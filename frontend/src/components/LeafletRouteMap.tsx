@@ -107,7 +107,8 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
   const layersRef = useRef<{ [key: string]: L.Layer }>({});
   const vehicleMarkerRef = useRef<L.Marker | null>(null);
   const prevVehiclePosRef = useRef<{ lat: number; lng: number } | null>(null);
-  const currentHeadingRef = useRef<number>(150);
+  const currentHeadingRef = useRef<number>(0);
+  const continuousRotationRef = useRef<number>(0);
   const lastFittedBoundsKeyRef = useRef<string>('');
   const wrapperRef = useRef<HTMLDivElement>(null);
   const onRouteChangeRef = useRef(onRouteChange);
@@ -503,7 +504,7 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     const pos = L.latLng(vehiclePosition.lat, vehiclePosition.lng);
 
     // Calculate heading / road angle
-    let heading = 150;
+    let heading = 0;
     if (typeof vehiclePosition.heading === 'number' && !isNaN(vehiclePosition.heading)) {
       heading = vehiclePosition.heading;
     } else if (prevVehiclePosRef.current && (prevVehiclePosRef.current.lat !== vehiclePosition.lat || prevVehiclePosRef.current.lng !== vehiclePosition.lng)) {
@@ -514,14 +515,18 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     prevVehiclePosRef.current = { lat: vehiclePosition.lat, lng: vehiclePosition.lng };
     currentHeadingRef.current = heading;
 
-    // Natural orientation of the 3D truck is ~150 degrees (pointing South-East)
-    const rotationAngle = Math.round(((heading - 150) % 360 + 360) % 360);
+    // Natural orientation of the 3D truck is ~140 degrees (pointing South-East)
+    // Compute shortest angular difference so rotation is fluid, smooth, and flexible without 360-deg flipping
+    const targetBaseRotation = Math.round(((heading - 140) % 360 + 360) % 360);
+    const diff = ((targetBaseRotation - (continuousRotationRef.current % 360) + 540) % 360) - 180;
+    continuousRotationRef.current += diff;
+    const rotationAngle = continuousRotationRef.current;
 
     const truckIcon = L.divIcon({
       className: 'custom-vehicle-3d-marker',
       html: `
         <div style="width: 44px; height: 44px; position: relative; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35));">
-          <div style="width: 100%; height: 100%; transform: rotate(${rotationAngle}deg); transform-origin: 50% 50%; transition: transform 0.4s ease-out;">
+          <div class="truck-rotator" style="width: 100%; height: 100%; transform: rotate(${rotationAngle}deg); transform-origin: 50% 50%; transition: transform 0.4s ease-out;">
             <img src="/images/truck-3d.png" alt="3D Vehicle" style="width: 100%; height: 100%; object-fit: contain; display: block;" />
           </div>
           ${vehiclePosition.status === 'moving' ? '<span style="position: absolute; bottom: 0px; right: 0px; width: 10px; height: 10px; background-color: #10B981; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 6px #10B981;"></span>' : ''}
@@ -533,7 +538,13 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
 
     if (vehicleMarkerRef.current) {
       vehicleMarkerRef.current.setLatLng(pos);
-      vehicleMarkerRef.current.setIcon(truckIcon);
+      const markerEl = vehicleMarkerRef.current.getElement();
+      const rotContainer = markerEl?.querySelector('.truck-rotator') as HTMLElement;
+      if (rotContainer) {
+        rotContainer.style.transform = `rotate(${rotationAngle}deg)`;
+      } else {
+        vehicleMarkerRef.current.setIcon(truckIcon);
+      }
     } else {
       const marker = L.marker(pos, { icon: truckIcon, zIndexOffset: 1000 }).addTo(map);
       marker.bindPopup(`

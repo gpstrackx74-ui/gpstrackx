@@ -260,7 +260,7 @@ function sampleWaypoints(pts: [number, number][], maxPoints: number): [number, n
  * between two GPS coordinates [lat1, lng1] and [lat2, lng2].
  */
 export function calculateBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  if (lat1 === lat2 && lng1 === lng2) return 150;
+  if (lat1 === lat2 && lng1 === lng2) return 0;
   const dLng = (lng2 - lng1) * (Math.PI / 180);
   const lat1Rad = lat1 * (Math.PI / 180);
   const lat2Rad = lat2 * (Math.PI / 180);
@@ -272,23 +272,37 @@ export function calculateBearing(lat1: number, lng1: number, lat2: number, lng2:
 
 /**
  * Calculates road heading along a path of coordinates at a specific index,
- * looking ahead 1-3 points for a stable forward tangent.
+ * looking ahead 1-5 points for a stable forward tangent.
  */
 export function getHeadingAlongRoute(coords: [number, number][], currentIndex: number): number {
-  if (!coords || coords.length < 2) return 150;
+  if (!coords || coords.length < 2) return 0;
   const currIdx = Math.max(0, Math.min(currentIndex, coords.length - 1));
   const curr = coords[currIdx];
 
-  // Look ahead 2 points for a smooth, stable forward direction tangent
-  const targetIdx = Math.min(currIdx + 2, coords.length - 1);
-  if (targetIdx > currIdx) {
-    const next = coords[targetIdx];
-    return calculateBearing(curr[0], curr[1], next[0], next[1]);
-  } else if (currIdx > 0) {
-    // If at the end of the route, look back to preserve arriving direction
-    const prev = coords[Math.max(0, currIdx - 2)];
-    return calculateBearing(prev[0], prev[1], curr[0], curr[1]);
+  // Look ahead for the next distinct coordinate to find the exact road direction
+  for (let offset = 1; offset <= 5; offset++) {
+    const targetIdx = currIdx + offset;
+    if (targetIdx < coords.length) {
+      const next = coords[targetIdx];
+      const dist = Math.abs(next[0] - curr[0]) + Math.abs(next[1] - curr[1]);
+      if (dist > 0.00003) {
+        return calculateBearing(curr[0], curr[1], next[0], next[1]);
+      }
+    }
   }
-  return 150;
+
+  // If at the end or near the end, look backwards to preserve arriving direction
+  for (let offset = 1; offset <= 5; offset++) {
+    const prevIdx = currIdx - offset;
+    if (prevIdx >= 0) {
+      const prev = coords[prevIdx];
+      const dist = Math.abs(curr[0] - prev[0]) + Math.abs(curr[1] - prev[1]);
+      if (dist > 0.00003) {
+        return calculateBearing(prev[0], prev[1], curr[0], curr[1]);
+      }
+    }
+  }
+
+  return 0;
 }
 
