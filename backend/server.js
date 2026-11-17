@@ -1243,20 +1243,38 @@ async function deleteVehicleById(vehicleId) {
   try {
     const routesToSave = db.prepare('SELECT * FROM routes WHERE vehicle_id = ?').all(vehicleId);
     for (const r of routesToSave) {
-      db.prepare(`
-        INSERT OR IGNORE INTO saved_corridors (
-          route_name, start_location_name, start_address, start_lat, start_lng,
-          end_location_name, end_address, end_lat, end_lng,
-          total_distance_km, estimated_travel_time_min,
-          overview_polyline, waypoints_json, toll_gates_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        r.route_name || `${r.start_location_name} to ${r.end_location_name}`,
-        r.start_location_name, r.start_address || '', r.start_lat, r.start_lng,
-        r.end_location_name, r.end_address || '', r.end_lat, r.end_lng,
-        r.total_distance_km || 0, r.estimated_travel_time_min || 0,
-        r.overview_polyline || '[]', r.waypoints_json || '[]', r.toll_gates_json || '[]'
-      );
+      const cleanRName = (r.route_name || `${r.start_location_name} to ${r.end_location_name}`)
+        .replace(/^[A-Z0-9]{8,12}:\s*/i, '')
+        .replace(/\r?\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const sLoc = (r.start_location_name || '').replace(/\r?\n/g, ' ').trim();
+      const eLoc = (r.end_location_name || '').replace(/\r?\n/g, ' ').trim();
+
+      const existingCorridor = db.prepare(`
+        SELECT id FROM saved_corridors 
+        WHERE LOWER(TRIM(route_name)) = LOWER(TRIM(?))
+           OR (LOWER(TRIM(start_location_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(end_location_name)) = LOWER(TRIM(?)))
+      `).get(cleanRName, sLoc, eLoc);
+
+      if (!existingCorridor) {
+        const info = db.prepare(`
+          INSERT INTO saved_corridors (
+            route_name, start_location_name, start_address, start_lat, start_lng,
+            end_location_name, end_address, end_lat, end_lng,
+            total_distance_km, estimated_travel_time_min,
+            overview_polyline, waypoints_json, toll_gates_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          cleanRName,
+          sLoc, r.start_address || '', r.start_lat, r.start_lng,
+          eLoc, r.end_address || '', r.end_lat, r.end_lng,
+          r.total_distance_km || 0, r.estimated_travel_time_min || 0,
+          r.overview_polyline || '[]', r.waypoints_json || '[]', r.toll_gates_json || '[]'
+        );
+        const savedC = db.prepare('SELECT * FROM saved_corridors WHERE id = ?').get(info.lastInsertRowid);
+        if (savedC) supabaseService.syncCorridor(savedC);
+      }
     }
   } catch (_) { }
 
@@ -1784,8 +1802,8 @@ app.put('/api/vehicles/:id/quick-route', authenticateToken, requireAdmin, (req, 
   }
 });
 
-// STANDALONE SAVE CORRIDOR ENDPOINT (For Excel Imported & Draggable Routes)
-app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, (req, res) => {
+// STANDALONE SAVE CORRIDOR ENDPOINT (For Excel Imported & Draggable Routes - Immortal & Permanent)
+app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, async (req, res) => {
   const {
     route_name,
     start_location_name,
@@ -1807,18 +1825,31 @@ app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, (req, res
     return res.status(400).json({ error: 'Route name, start point, and destination are required' });
   }
 
+  const cleanRouteName = (route_name || '')
+    .replace(/^[A-Z0-9]{8,12}:\s*/i, '')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const sLoc = (start_location_name || '').replace(/\r?\n/g, ' ').trim();
+  const eLoc = (end_location_name || '').replace(/\r?\n/g, ' ').trim();
+
   const polyStr = typeof overview_polyline === 'string' ? overview_polyline : JSON.stringify(overview_polyline || []);
   const wpJson = typeof waypoints === 'string' ? waypoints : JSON.stringify(waypoints || []);
   const tollJson = typeof toll_gates === 'string' ? toll_gates : JSON.stringify(toll_gates || []);
 
   try {
-    const existing = db.prepare('SELECT id FROM saved_corridors WHERE route_name = ?').get(route_name.trim());
+    const existing = db.prepare(`
+      SELECT id FROM saved_corridors 
+      WHERE LOWER(TRIM(route_name)) = LOWER(TRIM(?))
+         OR (LOWER(TRIM(start_location_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(end_location_name)) = LOWER(TRIM(?)))
+    `).get(cleanRouteName, sLoc, eLoc);
     let corridorId;
 
     if (existing) {
       db.prepare(`
         UPDATE saved_corridors 
         SET 
+          route_name = ?,
           start_location_name = ?, start_address = ?, start_lat = ?, start_lng = ?,
           end_location_name = ?, end_address = ?, end_lat = ?, end_lng = ?,
           total_distance_km = ?, estimated_travel_time_min = ?,
@@ -1826,8 +1857,9 @@ app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, (req, res
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(
-        start_location_name, start_address || '', start_lat, start_lng,
-        end_location_name, end_address || '', end_lat, end_lng,
+        cleanRouteName,
+        sLoc, start_address || '', start_lat, start_lng,
+        eLoc, end_address || '', end_lat, end_lng,
         total_distance_km || 0, estimated_travel_time_min || 0,
         polyStr, wpJson, tollJson,
         existing.id
@@ -1842,8 +1874,8 @@ app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, (req, res
           overview_polyline, waypoints_json, toll_gates_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        route_name.trim(), start_location_name, start_address || '', start_lat, start_lng,
-        end_location_name, end_address || '', end_lat, end_lng,
+        cleanRouteName, sLoc, start_address || '', start_lat, start_lng,
+        eLoc, end_address || '', end_lat, end_lng,
         total_distance_km || 0, estimated_travel_time_min || 0,
         polyStr, wpJson, tollJson
       );
@@ -1851,6 +1883,10 @@ app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, (req, res
     }
 
     const saved = db.prepare('SELECT * FROM saved_corridors WHERE id = ?').get(corridorId);
+    try {
+      await supabaseService.syncCorridor(saved);
+    } catch (_) {}
+
     res.status(201).json({ success: true, corridor: saved });
   } catch (err) {
     res.status(500).json({ error: 'Failed to save corridor: ' + err.message });
@@ -2281,22 +2317,62 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
       vehicleRegNo
     );
 
-    // Also mirror into saved_corridors permanently
+    // Also mirror into saved_corridors permanently (Immortal across Vehicle / User deletion)
     try {
-      db.prepare(`
-        INSERT OR IGNORE INTO saved_corridors (
-          route_name, start_location_name, start_address, start_lat, start_lng,
-          end_location_name, end_address, end_lat, end_lng,
-          total_distance_km, estimated_travel_time_min,
-          overview_polyline, waypoints_json, toll_gates_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        route_name || `${start_location_name} to ${end_location_name}`,
-        start_location_name, start_address || '', start_lat, start_lng,
-        end_location_name, end_address || '', end_lat, end_lng,
-        total_distance_km || 0, estimated_travel_time_min || 0,
-        polylineStr, waypointsJson, tollGatesJson
-      );
+      const cleanCorridorName = (route_name || `${start_location_name} to ${end_location_name}`)
+        .replace(/^[A-Z0-9]{8,12}:\s*/i, '')
+        .replace(/\r?\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const sLoc = (start_location_name || '').replace(/\r?\n/g, ' ').trim();
+      const eLoc = (end_location_name || '').replace(/\r?\n/g, ' ').trim();
+
+      const existingCorridor = db.prepare(`
+        SELECT id FROM saved_corridors 
+        WHERE LOWER(TRIM(route_name)) = LOWER(TRIM(?))
+           OR (LOWER(TRIM(start_location_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(end_location_name)) = LOWER(TRIM(?)))
+      `).get(cleanCorridorName, sLoc, eLoc);
+
+      let savedCorridorRow;
+      if (existingCorridor) {
+        db.prepare(`
+          UPDATE saved_corridors SET
+            route_name = ?,
+            start_location_name = ?, start_address = ?, start_lat = ?, start_lng = ?,
+            end_location_name = ?, end_address = ?, end_lat = ?, end_lng = ?,
+            total_distance_km = ?, estimated_travel_time_min = ?,
+            overview_polyline = ?, waypoints_json = ?, toll_gates_json = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          cleanCorridorName,
+          sLoc, start_address || '', start_lat, start_lng,
+          eLoc, end_address || '', end_lat, end_lng,
+          total_distance_km || 0, estimated_travel_time_min || 0,
+          polylineStr, waypointsJson, tollGatesJson,
+          existingCorridor.id
+        );
+        savedCorridorRow = db.prepare('SELECT * FROM saved_corridors WHERE id = ?').get(existingCorridor.id);
+      } else {
+        const cInfo = db.prepare(`
+          INSERT INTO saved_corridors (
+            route_name, start_location_name, start_address, start_lat, start_lng,
+            end_location_name, end_address, end_lat, end_lng,
+            total_distance_km, estimated_travel_time_min,
+            overview_polyline, waypoints_json, toll_gates_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          cleanCorridorName,
+          sLoc, start_address || '', start_lat, start_lng,
+          eLoc, end_address || '', end_lat, end_lng,
+          total_distance_km || 0, estimated_travel_time_min || 0,
+          polylineStr, waypointsJson, tollGatesJson
+        );
+        savedCorridorRow = db.prepare('SELECT * FROM saved_corridors WHERE id = ?').get(cInfo.lastInsertRowid);
+      }
+      if (savedCorridorRow) {
+        supabaseService.syncCorridor(savedCorridorRow);
+      }
     } catch (_) { }
 
     const routeId = result.lastInsertRowid;
@@ -2446,21 +2522,116 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// Delete Route (Admin Only)
+// Edit Route / Trip Record (Admin Only)
+app.put('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) => {
+  const routeId = req.params.id;
+  const {
+    route_name,
+    start_location_name,
+    start_address,
+    end_location_name,
+    end_address,
+    trip_date,
+    start_trip_time,
+    end_trip_time,
+    total_distance_km,
+    operational_status
+  } = req.body;
+
+  try {
+    const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(routeId);
+    if (!route) {
+      return res.status(404).json({ error: 'Route / trip not found' });
+    }
+
+    const updatedName = route_name !== undefined ? route_name.trim() : route.route_name;
+    const updatedStart = start_location_name !== undefined ? start_location_name.replace(/\r?\n/g, ' ').trim() : route.start_location_name;
+    const updatedStartAddr = start_address !== undefined ? start_address : route.start_address;
+    const updatedEnd = end_location_name !== undefined ? end_location_name.replace(/\r?\n/g, ' ').trim() : route.end_location_name;
+    const updatedEndAddr = end_address !== undefined ? end_address : route.end_address;
+    const updatedDate = trip_date !== undefined ? trip_date : route.trip_date;
+    const updatedStartTime = start_trip_time !== undefined ? start_trip_time : route.start_trip_time;
+    const updatedEndTime = end_trip_time !== undefined ? end_trip_time : route.end_trip_time;
+    const updatedDist = total_distance_km !== undefined ? Number(total_distance_km) : route.total_distance_km;
+    const updatedStatus = operational_status !== undefined ? operational_status : (route.operational_status || 'stop');
+
+    db.prepare(`
+      UPDATE routes SET
+        route_name = ?,
+        start_location_name = ?,
+        start_address = ?,
+        end_location_name = ?,
+        end_address = ?,
+        trip_date = ?,
+        start_trip_time = ?,
+        end_trip_time = ?,
+        total_distance_km = ?,
+        operational_status = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      updatedName, updatedStart, updatedStartAddr,
+      updatedEnd, updatedEndAddr,
+      updatedDate, updatedStartTime, updatedEndTime,
+      updatedDist, updatedStatus, routeId
+    );
+
+    const updatedRoute = db.prepare('SELECT * FROM routes WHERE id = ?').get(routeId);
+
+    // If this route is active, update vehicle status and route name
+    if (updatedRoute.vehicle_id && (updatedRoute.is_active === 1 || updatedRoute.is_active === true)) {
+      db.prepare(`
+        UPDATE vehicles SET
+          status = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(updatedStatus, updatedRoute.vehicle_id);
+    }
+
+    // Mirror update into saved_corridors if exists
+    try {
+      const existingCorridor = db.prepare('SELECT id FROM saved_corridors WHERE LOWER(TRIM(route_name)) = LOWER(TRIM(?))').get(updatedName);
+      if (existingCorridor) {
+        db.prepare(`
+          UPDATE saved_corridors SET
+            start_location_name = ?, end_location_name = ?, total_distance_km = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(updatedStart, updatedEnd, updatedDist, existingCorridor.id);
+      }
+    } catch (_) {}
+
+    await supabaseService.syncRoute(updatedRoute);
+
+    res.json({ success: true, message: 'Route updated successfully', route: updatedRoute });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update route: ' + err.message });
+  }
+});
+
+// Delete Route (Admin Only) - Removes specific trip record while permanently keeping saved corridors immortal
 app.delete('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) => {
   const routeId = req.params.id;
   try {
+    const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(routeId);
     db.prepare('DELETE FROM stoppages WHERE route_id = ?').run(routeId);
     db.prepare('DELETE FROM manual_toll_gates WHERE route_id = ?').run(routeId);
     db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
     await supabaseService.deleteRoute(routeId);
-    res.json({ message: 'Route deleted successfully' });
+
+    if (route && route.vehicle_id && (route.is_active === 1 || route.is_active === true)) {
+      const nextActive = db.prepare('SELECT id FROM routes WHERE vehicle_id = ? ORDER BY id DESC LIMIT 1').get(route.vehicle_id);
+      if (nextActive) {
+        db.prepare('UPDATE routes SET is_active = 1 WHERE id = ?').run(nextActive.id);
+      }
+    }
+
+    res.json({ message: 'Route trip record deleted successfully from history' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete route: ' + err.message });
   }
 });
 
-// Get Previously Saved / Existing Corridors Across ALL Users and Vehicles
+// Get Previously Saved / Existing Corridors Across ALL Users and Vehicles (100% Immortal & Deduplicated - 1 Entry Per Route)
 app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
   try {
     let dedicatedCorridors = [];
@@ -2544,29 +2715,68 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
       return list;
     };
 
-    const combined = [];
-    const seenKeys = new Set();
+    // Helper to get clean normalized route name
+    const getCleanName = (rawName, startLoc, endLoc) => {
+      let name = (rawName || '').replace(/^[A-Z0-9]{8,12}:\s*/i, '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!name && startLoc && endLoc) {
+        name = `${startLoc} to ${endLoc}`.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+      return name;
+    };
 
+    const combined = [];
+    const seenNames = new Set();
+    const seenEndpoints = new Set();
+
+    // 1. Process dedicated saved corridors first (Highest priority permanent corridors)
     for (const c of dedicatedCorridors) {
-      const k = `dedicated_${c.id}_${(c.route_name || '').toLowerCase()}`;
-      if (!seenKeys.has(k)) {
-        seenKeys.add(k);
+      const cleanName = getCleanName(c.route_name, c.start_location_name, c.end_location_name);
+      const nameKey = cleanName.toLowerCase();
+      const startClean = (c.start_location_name || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      const endClean = (c.end_location_name || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      const endPointKey = startClean && endClean ? `${startClean}__${endClean}` : null;
+
+      if (!seenNames.has(nameKey) && (!endPointKey || !seenEndpoints.has(endPointKey))) {
+        seenNames.add(nameKey);
+        if (endPointKey) seenEndpoints.add(endPointKey);
+
         let wp = [];
         try { if (c.waypoints_json) wp = typeof c.waypoints_json === 'string' ? JSON.parse(c.waypoints_json) : c.waypoints_json; } catch (_) { }
         const tg = sanitizeTolls(c.toll_gates_json);
-        combined.push({ ...c, waypoints: wp, toll_gates: tg });
+        combined.push({
+          ...c,
+          route_name: cleanName,
+          start_location_name: (c.start_location_name || '').replace(/\r?\n/g, ' ').trim(),
+          end_location_name: (c.end_location_name || '').replace(/\r?\n/g, ' ').trim(),
+          waypoints: wp,
+          toll_gates: tg
+        });
       }
     }
 
+    // 2. Process routes from routes table (only add if not already in saved corridors)
     for (const r of routesCorridors) {
-      const rName = (r.route_name || '').trim();
-      const k = `route_${r.id}_${rName.toLowerCase()}_${r.vehicle_id || ''}`;
-      if (!seenKeys.has(k)) {
-        seenKeys.add(k);
+      const cleanName = getCleanName(r.route_name, r.start_location_name, r.end_location_name);
+      const nameKey = cleanName.toLowerCase();
+      const startClean = (r.start_location_name || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      const endClean = (r.end_location_name || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      const endPointKey = startClean && endClean ? `${startClean}__${endClean}` : null;
+
+      if (!seenNames.has(nameKey) && (!endPointKey || !seenEndpoints.has(endPointKey))) {
+        seenNames.add(nameKey);
+        if (endPointKey) seenEndpoints.add(endPointKey);
+
         let wp = [];
         try { if (r.waypoints_json) wp = typeof r.waypoints_json === 'string' ? JSON.parse(r.waypoints_json) : r.waypoints_json; } catch (_) { }
         const tg = sanitizeTolls(r.toll_gates_json);
-        combined.push({ ...r, waypoints: wp, toll_gates: tg });
+        combined.push({
+          ...r,
+          route_name: cleanName,
+          start_location_name: (r.start_location_name || '').replace(/\r?\n/g, ' ').trim(),
+          end_location_name: (r.end_location_name || '').replace(/\r?\n/g, ' ').trim(),
+          waypoints: wp,
+          toll_gates: tg
+        });
       }
     }
 

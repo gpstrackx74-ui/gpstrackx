@@ -129,9 +129,11 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   const isParking = (vehicle?.status as string) === 'parking' || (activeRoute?.operational_status === 'parking');
 
   // LIVE MOVING MODE RULES:
-  // When vehicle is in moving status: NEVER show route polyline, ONLY show moving vehicle!
-  // When vehicle is stopped/inactive: Show full route polyline, pins, and playback simulator.
+  // When vehicle is in moving status in USER LOGIN: DO NOT show route polyline, ONLY show moving vehicle along the route!
+  // When vehicle is stopped/inactive in USER LOGIN: Show full route polyline, pins, and details.
+  // In Admin Login: Always show route polyline along with moving vehicle.
   const isLiveMovingMode = isMoving;
+  const hideRouteForUser = !isAdmin && isMoving;
 
   const [liveSpeed, setLiveSpeed] = useState<number>(48);
 
@@ -1159,14 +1161,14 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 <InteractiveMap
                   height="520px"
                   center={currentPlaybackPoint || (vehicle.current_lat && Number(vehicle.current_lat) !== 0 ? [Number(vehicle.current_lat), Number(vehicle.current_lng)] : (activeRoute?.start_lat ? [Number(activeRoute.start_lat), Number(activeRoute.start_lng)] : (parsedCoordinates.length > 0 ? parsedCoordinates[0] : [21.8974, 82.8000])))}
-                  zoom={isLiveMovingMode ? 11 : 8}
-                  routes={isLiveMovingMode ? [] : trackingRoutes}
-                  selectedRouteId={isLiveMovingMode ? '' : (activeRoute ? `active-${activeRoute.id}` : '')}
+                  zoom={hideRouteForUser ? 11 : 8}
+                  routes={hideRouteForUser ? [] : trackingRoutes}
+                  selectedRouteId={hideRouteForUser ? '' : (activeRoute ? `active-${activeRoute.id}` : '')}
                   vehiclePosition={simulatedVehiclePosition}
-                  startPoint={isLiveMovingMode ? null : memoizedStart}
-                  endPoint={isLiveMovingMode ? null : memoizedEnd}
-                  stoppages={isLiveMovingMode ? [] : stoppagesWithTimings}
-                  tollGates={isLiveMovingMode ? [] : routeTolls}
+                  startPoint={hideRouteForUser ? null : memoizedStart}
+                  endPoint={hideRouteForUser ? null : memoizedEnd}
+                  stoppages={hideRouteForUser ? [] : stoppagesWithTimings}
+                  tollGates={hideRouteForUser ? [] : routeTolls}
                   hideEditTools={true}
                   hideBreadcrumbs={true}
                 />

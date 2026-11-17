@@ -431,12 +431,26 @@ export const LeafletRouteMap: React.FC<LeafletRouteMapProps> = ({
     };
   }, []);
 
-  // Center & zoom update
+  // Center & zoom sync with user manual zoom preservation
+  const prevZoomPropRef = useRef<number | undefined>(undefined);
+  const prevCenterRef = useRef<[number, number] | null>(null);
+
   useEffect(() => {
-    if (mapRef.current && center) {
-      mapRef.current.setView(center, typeof zoom === 'number' && zoom > 0 ? zoom : mapRef.current.getZoom());
+    if (!mapRef.current) return;
+    if (typeof zoom === 'number' && zoom > 0 && zoom !== prevZoomPropRef.current) {
+      prevZoomPropRef.current = zoom;
+      mapRef.current.setZoom(zoom);
     }
-  }, [center?.[0], center?.[1], zoom]);
+  }, [zoom]);
+
+  useEffect(() => {
+    if (!mapRef.current || !center) return;
+    const prev = prevCenterRef.current;
+    if (!prev || Math.abs(prev[0] - center[0]) > 0.005 || Math.abs(prev[1] - center[1]) > 0.005) {
+      prevCenterRef.current = [center[0], center[1]];
+      mapRef.current.panTo(center);
+    }
+  }, [center?.[0], center?.[1]]);
 
   // Search Location Pin
   useEffect(() => {

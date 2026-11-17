@@ -240,6 +240,83 @@ const supabaseService = {
     }
   },
 
+  // Ensure saved_corridors table exists in Supabase
+  async ensureCorridorsTable() {
+    if (!pool) return;
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS saved_corridors (
+          id SERIAL PRIMARY KEY,
+          route_name TEXT NOT NULL,
+          start_location_name TEXT NOT NULL,
+          start_address TEXT,
+          start_lat DOUBLE PRECISION NOT NULL,
+          start_lng DOUBLE PRECISION NOT NULL,
+          end_location_name TEXT NOT NULL,
+          end_address TEXT,
+          end_lat DOUBLE PRECISION NOT NULL,
+          end_lng DOUBLE PRECISION NOT NULL,
+          total_distance_km DOUBLE PRECISION DEFAULT 0,
+          estimated_travel_time_min INTEGER DEFAULT 0,
+          overview_polyline TEXT,
+          waypoints_json TEXT DEFAULT '[]',
+          toll_gates_json TEXT DEFAULT '[]',
+          alternative_routes_json TEXT DEFAULT '[]',
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (e) {
+      console.error('[Supabase ensureCorridorsTable Warning]:', e.message);
+    }
+  },
+
+  // Sync saved corridor permanently to Supabase
+  async syncCorridor(c) {
+    if (!pool || !c) return;
+    try {
+      await this.ensureCorridorsTable();
+      const wp = typeof c.waypoints_json === 'string' ? c.waypoints_json : JSON.stringify(c.waypoints_json || c.waypoints || []);
+      const tg = typeof c.toll_gates_json === 'string' ? c.toll_gates_json : JSON.stringify(c.toll_gates_json || c.toll_gates || []);
+      const poly = typeof c.overview_polyline === 'string' ? c.overview_polyline : JSON.stringify(c.overview_polyline || []);
+
+      const existing = await pool.query('SELECT id FROM saved_corridors WHERE LOWER(TRIM(route_name)) = LOWER(TRIM($1))', [c.route_name.trim()]);
+      if (existing && existing.rows.length > 0) {
+        await pool.query(`
+          UPDATE saved_corridors SET
+            start_location_name = $1, start_address = $2, start_lat = $3, start_lng = $4,
+            end_location_name = $5, end_address = $6, end_lat = $7, end_lng = $8,
+            total_distance_km = $9, estimated_travel_time_min = $10,
+            overview_polyline = $11, waypoints_json = $12, toll_gates_json = $13,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $14
+        `, [
+          c.start_location_name, c.start_address || '', c.start_lat, c.start_lng,
+          c.end_location_name, c.end_address || '', c.end_lat, c.end_lng,
+          c.total_distance_km || 0, c.estimated_travel_time_min || 0,
+          poly, wp, tg, existing.rows[0].id
+        ]);
+      } else {
+        await pool.query(`
+          INSERT INTO saved_corridors (
+            route_name, start_location_name, start_address, start_lat, start_lng,
+            end_location_name, end_address, end_lat, end_lng,
+            total_distance_km, estimated_travel_time_min,
+            overview_polyline, waypoints_json, toll_gates_json
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        `, [
+          c.route_name.trim(), c.start_location_name, c.start_address || '', c.start_lat, c.start_lng,
+          c.end_location_name, c.end_address || '', c.end_lat, c.end_lng,
+          c.total_distance_km || 0, c.estimated_travel_time_min || 0,
+          poly, wp, tg
+        ]);
+      }
+      console.log(`[Supabase] Synced saved corridor permanently: ${c.route_name}`);
+    } catch (err) {
+      console.error('[Supabase syncCorridor Error]:', err.message);
+    }
+  },
+
   // Sync FASTag Toll transaction to Supabase
   async syncFastagTransaction(tx) {
     if (!pool) return;
@@ -460,13 +537,16 @@ const supabaseService = {
       // Temporarily disable foreign keys during hydration so differing IDs across tables don't block restore
       try { localDb.pragma('foreign_keys = OFF'); } catch (e) {}
 
+      await this.ensureCorridorsTable();
+
       // Parallel fetch from Supabase
-      const [usersRes, vehRes, routeRes, allocRes, fastagRes] = await Promise.all([
+      const [usersRes, vehRes, routeRes, allocRes, fastagRes, corridorsRes] = await Promise.all([
         pool.query('SELECT * FROM users').catch(e => { console.error('[Hydration Users Query Error]:', e.message); return { rows: [] }; }),
         pool.query('SELECT * FROM vehicles').catch(e => { console.error('[Hydration Vehicles Query Error]:', e.message); return { rows: [] }; }),
         pool.query('SELECT * FROM routes').catch(e => { console.error('[Hydration Routes Query Error]:', e.message); return { rows: [] }; }),
         pool.query('SELECT * FROM vehicle_allocations').catch(e => { console.error('[Hydration Alloc Query Error]:', e.message); return { rows: [] }; }),
-        pool.query('SELECT * FROM fastag_transactions').catch(e => { console.error('[Hydration Fastag Query Error]:', e.message); return { rows: [] }; })
+        pool.query('SELECT * FROM fastag_transactions').catch(e => { console.error('[Hydration Fastag Query Error]:', e.message); return { rows: [] }; }),
+        pool.query('SELECT * FROM saved_corridors').catch(e => { console.error('[Hydration Corridors Query Error]:', e.message); return { rows: [] }; })
       ]);
 
       console.log(`>>> [Supabase -> SQLite] Fetched cloud data in ${Date.now() - t0}ms: Users=${usersRes.rows.length}, Vehicles=${vehRes.rows.length}, FASTag=${fastagRes.rows.length}`);
@@ -634,7 +714,46 @@ const supabaseService = {
         syncTxsTx(fastagRes.rows);
       }
 
-      // 6. Re-enable foreign keys & flush WAL
+      // 6. Sync Saved Corridors permanently between Cloud Supabase & Local SQLite
+      if (corridorsRes && corridorsRes.rows && corridorsRes.rows.length > 0) {
+        const insertCorridor = localDb.prepare(`
+          INSERT INTO saved_corridors (
+            route_name, start_location_name, start_address, start_lat, start_lng,
+            end_location_name, end_address, end_lat, end_lng,
+            total_distance_km, estimated_travel_time_min,
+            overview_polyline, waypoints_json, toll_gates_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const existingLocalCorrs = new Set(localDb.prepare('SELECT LOWER(TRIM(route_name)) as n FROM saved_corridors').all().map(r => r.n));
+        for (const cr of corridorsRes.rows) {
+          const normName = (cr.route_name || '').toLowerCase().trim();
+          if (normName && !existingLocalCorrs.has(normName)) {
+            try {
+              insertCorridor.run(
+                cr.route_name, cr.start_location_name, cr.start_address || '', cr.start_lat, cr.start_lng,
+                cr.end_location_name, cr.end_address || '', cr.end_lat, cr.end_lng,
+                cr.total_distance_km || 0, cr.estimated_travel_time_min || 0,
+                cr.overview_polyline || '', cr.waypoints_json || '[]', cr.toll_gates_json || '[]'
+              );
+              existingLocalCorrs.add(normName);
+            } catch (_) {}
+          }
+        }
+      }
+
+      // Also ensure any local corridors are pushed to Cloud Supabase
+      try {
+        const cloudCorridorNames = new Set((corridorsRes?.rows || []).map(c => (c.route_name || '').toLowerCase().trim()));
+        const localCorridors = localDb.prepare('SELECT * FROM saved_corridors').all();
+        for (const lc of localCorridors) {
+          const normName = (lc.route_name || '').toLowerCase().trim();
+          if (normName && !cloudCorridorNames.has(normName)) {
+            await this.syncCorridor(lc);
+          }
+        }
+      } catch (_) {}
+
+      // 7. Re-enable foreign keys & flush WAL
       localDb.pragma('foreign_keys = ON');
       localDb.pragma('wal_checkpoint(FULL)');
 

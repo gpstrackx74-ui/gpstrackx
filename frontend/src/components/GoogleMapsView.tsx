@@ -349,15 +349,26 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
     }
   };
 
-  // Center sync
+  // Center & zoom sync with user manual zoom preservation
+  const prevZoomPropRef = useRef<number | undefined>(undefined);
+  const prevCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+
   useEffect(() => {
-    if (mapInstanceRef.current && center && center.lat && center.lng) {
-      mapInstanceRef.current.panTo(center);
-      if (typeof zoom === 'number' && zoom > 0) {
-        mapInstanceRef.current.setZoom(zoom);
-      }
+    if (!mapInstanceRef.current) return;
+    if (typeof zoom === 'number' && zoom > 0 && zoom !== prevZoomPropRef.current) {
+      prevZoomPropRef.current = zoom;
+      mapInstanceRef.current.setZoom(zoom);
     }
-  }, [center?.lat, center?.lng, zoom]);
+  }, [zoom]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || !center || !center.lat || !center.lng) return;
+    const prev = prevCenterRef.current;
+    if (!prev || Math.abs(prev.lat - center.lat) > 0.005 || Math.abs(prev.lng - center.lng) > 0.005) {
+      prevCenterRef.current = { lat: center.lat, lng: center.lng };
+      mapInstanceRef.current.panTo(center);
+    }
+  }, [center?.lat, center?.lng]);
 
   const onMapClickRef = useRef(onMapClick);
   useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
@@ -600,6 +611,8 @@ export const GoogleMapsView: React.FC<GoogleMapsViewProps> = ({
       zoom,
       mapTypeId: google.maps.MapTypeId.ROADMAP,
       disableDefaultUI: true, // We provide clean custom UI controls
+      gestureHandling: 'greedy', // Fluid mouse scroll wheel & touch pinch zoom without requiring Ctrl
+      scrollwheel: true, // Enable mouse wheel zooming immediately
       zoomControl: false,
       streetViewControl: false,
       fullscreenControl: false,

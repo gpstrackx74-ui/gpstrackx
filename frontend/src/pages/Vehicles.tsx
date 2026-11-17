@@ -286,6 +286,20 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState<boolean>(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
 
+  // Edit Trip from Vehicle History Modal State
+  const [editingTrip, setEditingTrip] = useState<any | null>(null);
+  const [editingTripForm, setEditingTripForm] = useState({
+    route_name: '',
+    start_location_name: '',
+    end_location_name: '',
+    trip_date: '',
+    start_trip_time: '08:00 AM',
+    end_trip_time: '06:00 PM',
+    total_distance_km: '',
+    operational_status: 'moving'
+  });
+  const [savingEditingTrip, setSavingEditingTrip] = useState<boolean>(false);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -831,6 +845,72 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       const vehicleId = historyModalVehicle.id;
       setHistoryModalVehicle(null);
       onViewVehicle(vehicleId, trip, 'trip-history');
+    }
+  };
+
+  const handleStartEditTrip = (trip: any) => {
+    setEditingTrip(trip);
+    setEditingTripForm({
+      route_name: trip.route_name || '',
+      start_location_name: trip.start_location_name || '',
+      end_location_name: trip.end_location_name || '',
+      trip_date: trip.trip_date || new Date().toISOString().split('T')[0],
+      start_trip_time: trip.start_trip_time || '08:00 AM',
+      end_trip_time: trip.end_trip_time || '06:00 PM',
+      total_distance_km: String(trip.total_distance_km || ''),
+      operational_status: trip.operational_status || (trip.is_active ? (historyModalVehicle?.status || 'moving') : 'stop')
+    });
+  };
+
+  const handleSaveEditingTrip = async () => {
+    if (!editingTrip) return;
+    try {
+      setSavingEditingTrip(true);
+      await api.updateRoute(editingTrip.id, {
+        route_name: editingTripForm.route_name,
+        start_location_name: editingTripForm.start_location_name,
+        end_location_name: editingTripForm.end_location_name,
+        trip_date: editingTripForm.trip_date,
+        start_trip_time: editingTripForm.start_trip_time,
+        end_trip_time: editingTripForm.end_trip_time,
+        total_distance_km: editingTripForm.total_distance_km ? Number(editingTripForm.total_distance_km) : undefined,
+        operational_status: editingTripForm.operational_status
+      });
+
+      setVehicleHistoryTrips(prev => prev.map(t => t.id === editingTrip.id ? {
+        ...t,
+        ...editingTripForm,
+        total_distance_km: editingTripForm.total_distance_km ? Number(editingTripForm.total_distance_km) : t.total_distance_km
+      } : t));
+
+      if (historyModalVehicle) {
+        const updatedTrips = await api.getVehicleTrips(historyModalVehicle.id);
+        setVehicleHistoryTrips(updatedTrips || []);
+        fetchVehiclesAndUsers();
+      }
+
+      setEditingTrip(null);
+    } catch (err: any) {
+      alert('Failed to update route: ' + (err.message || 'Unknown error'));
+    } finally {
+      setSavingEditingTrip(false);
+    }
+  };
+
+  const handleDeleteTripFromHistory = async (tripId: number) => {
+    if (!window.confirm('Are you sure you want to delete this trip record from vehicle history?')) {
+      return;
+    }
+    try {
+      await api.deleteRoute(tripId);
+      setVehicleHistoryTrips(prev => prev.filter(t => t.id !== tripId));
+      if (historyModalVehicle) {
+        const updatedTrips = await api.getVehicleTrips(historyModalVehicle.id);
+        setVehicleHistoryTrips(updatedTrips || []);
+      }
+      fetchVehiclesAndUsers();
+    } catch (err: any) {
+      alert('Failed to delete trip record: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -2247,6 +2327,17 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                                 </button>
                               )}
 
+                              {/* Edit Current Route Record */}
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditTrip(trip)}
+                                className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                title="Edit this route details directly"
+                              >
+                                <Edit3 className="w-3 h-3 text-amber-600" />
+                                <span>Edit</span>
+                              </button>
+
                               {/* View on Map */}
                               <button
                                 type="button"
@@ -2256,6 +2347,16 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                               >
                                 <MapPin className="w-3 h-3" />
                                 <span>View Map</span>
+                              </button>
+
+                              {/* Delete from History */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTripFromHistory(trip.id)}
+                                className="p-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold flex items-center justify-center transition cursor-pointer shadow-2xs"
+                                title="Delete this trip from vehicle history"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                               </button>
                             </div>
                           </div>
@@ -2302,6 +2403,167 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Current Trip / Route Modal */}
+      {editingTrip && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-5 cursor-pointer"
+          onClick={() => setEditingTrip(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 relative animate-in fade-in zoom-in-95 duration-200 space-y-4 max-h-[92vh] overflow-y-auto cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                  <Edit3 className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">Edit Route / Trip #{editingTrip.id}</h3>
+                  <p className="text-xs text-slate-400 font-medium">Update current route parameters or edit on map</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingTrip(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Route Name</label>
+                <input
+                  type="text"
+                  value={editingTripForm.route_name}
+                  onChange={(e) => setEditingTripForm(prev => ({ ...prev, route_name: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                  placeholder="e.g. Raipur to Bilaspur Express Corridor"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Start Location</label>
+                  <input
+                    type="text"
+                    value={editingTripForm.start_location_name}
+                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, start_location_name: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                    placeholder="Origin / Start Point"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Destination Location</label>
+                  <input
+                    type="text"
+                    value={editingTripForm.end_location_name}
+                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, end_location_name: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                    placeholder="Destination Point"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Trip Date</label>
+                  <DMYDateInput
+                    value={editingTripForm.trip_date}
+                    onChange={(val) => setEditingTripForm(prev => ({ ...prev, trip_date: val }))}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Start Time</label>
+                  <input
+                    type="text"
+                    value={editingTripForm.start_trip_time}
+                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, start_trip_time: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:bg-white font-mono"
+                    placeholder="08:00 AM"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">End Time</label>
+                  <input
+                    type="text"
+                    value={editingTripForm.end_trip_time}
+                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, end_trip_time: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:bg-white font-mono"
+                    placeholder="06:00 PM"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Distance (KM)</label>
+                  <input
+                    type="number"
+                    value={editingTripForm.total_distance_km}
+                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, total_distance_km: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:bg-white font-mono"
+                    placeholder="120"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Operational Status</label>
+                  <select
+                    value={editingTripForm.operational_status}
+                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, operational_status: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-bold focus:outline-none focus:border-amber-500 focus:bg-white cursor-pointer"
+                  >
+                    <option value="moving">Moving</option>
+                    <option value="stop">Stop</option>
+                    <option value="parking">Parking</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+              {onPlanRouteForVehicle && historyModalVehicle && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const vId = historyModalVehicle.id;
+                    setEditingTrip(null);
+                    setHistoryModalVehicle(null);
+                    onPlanRouteForVehicle(vId);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer border border-blue-200"
+                  title="Open Interactive Map Route Planner to change route path and waypoints"
+                >
+                  <Navigation className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Open in Map Route Planner</span>
+                </button>
+              )}
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setEditingTrip(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEditingTrip}
+                  disabled={savingEditingTrip}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs transition shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {savingEditingTrip ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>Save Route Changes</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

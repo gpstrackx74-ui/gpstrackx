@@ -75,16 +75,50 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [showSavedCorridorSearch, setShowSavedCorridorSearch] = useState<boolean>(false);
   const [savedCorridorSearchTerm, setSavedCorridorSearchTerm] = useState<string>('');
 
+  // 100% Immortal & Deduplicated Saved Corridors List (1 Entry Per Route)
+  const uniqueSavedCorridors = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const c of savedCorridors) {
+      if (!c) continue;
+      const cleanName = (c.route_name || `${c.start_location_name} to ${c.end_location_name}`)
+        .replace(/^[A-Z0-9]{8,12}:\s*/i, '')
+        .replace(/\r?\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const sLoc = (c.start_location_name || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      const eLoc = (c.end_location_name || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      const endpointKey = sLoc && eLoc ? `${sLoc}__${eLoc}` : null;
+      const nameKey = cleanName.toLowerCase();
+
+      let alreadySeen = false;
+      for (const [key, existing] of map.entries()) {
+        const existingEndpoint = existing._endpointKey;
+        if (key === nameKey || (endpointKey && existingEndpoint === endpointKey)) {
+          alreadySeen = true;
+          if ((!existing.overview_polyline || existing.overview_polyline.length === 0) && c.overview_polyline) {
+            map.set(key, { ...c, displayName: cleanName, _endpointKey: endpointKey });
+          }
+          break;
+        }
+      }
+
+      if (!alreadySeen) {
+        map.set(nameKey, { ...c, displayName: cleanName, _endpointKey: endpointKey });
+      }
+    }
+    return Array.from(map.values());
+  }, [savedCorridors]);
+
   const filteredSavedCorridors = useMemo(() => {
-    if (!savedCorridorSearchTerm.trim()) return savedCorridors;
+    if (!savedCorridorSearchTerm.trim()) return uniqueSavedCorridors;
     const q = savedCorridorSearchTerm.toLowerCase().trim();
-    return savedCorridors.filter(c => {
-      const name = (c.route_name || '').toLowerCase();
-      const veh = (c.vehicle_registration_no || '').toLowerCase();
-      const user = (c.user_name || '').toLowerCase();
-      return name.includes(q) || veh.includes(q) || user.includes(q);
+    return uniqueSavedCorridors.filter(c => {
+      const name = (c.displayName || c.route_name || '').toLowerCase();
+      const start = (c.start_location_name || '').toLowerCase();
+      const end = (c.end_location_name || '').toLowerCase();
+      return name.includes(q) || start.includes(q) || end.includes(q);
     });
-  }, [savedCorridors, savedCorridorSearchTerm]);
+  }, [uniqueSavedCorridors, savedCorridorSearchTerm]);
 
   // Excel File Route Import State
   const [excelFileName, setExcelFileName] = useState<string | null>(null);
@@ -836,7 +870,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const handleSelectExistingCorridor = (cName: string) => {
     setSelectedCorridorId(cName);
     if (!cName) return;
-    const found = savedCorridors.find(c => c.route_name === cName);
+    const found = uniqueSavedCorridors.find(c => c.route_name === cName || c.displayName === cName) || savedCorridors.find(c => c.route_name === cName);
     if (!found) return;
 
     const newStart = {
@@ -2283,19 +2317,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                   >
                     <option value="">
                       {savedCorridorSearchTerm
-                        ? `-- Showing ${filteredSavedCorridors.length} of ${savedCorridors.length} Routes --`
-                        : `-- Select from ${savedCorridors.length} Saved Routes / Corridors --`}
+                        ? `-- Showing ${filteredSavedCorridors.length} of ${uniqueSavedCorridors.length} Routes --`
+                        : `-- Select from ${uniqueSavedCorridors.length} Saved Routes / Corridors --`}
                     </option>
-                    {filteredSavedCorridors.map((c, idx) => {
-                      const vehReg = c.vehicle_registration_no || '';
-                      const uName = c.user_name || '';
-                      const prefix = vehReg ? (uName ? `${vehReg} (${uName}): ` : `${vehReg}: `) : (uName ? `(${uName}): ` : '');
-                      return (
-                        <option key={idx} value={c.route_name}>
-                          {prefix}{c.route_name} ({c.total_distance_km} KM{c.trip_date ? ` • ${c.trip_date}` : ''})
-                        </option>
-                      );
-                    })}
+                    {filteredSavedCorridors.map((c, idx) => (
+                      <option key={idx} value={c.route_name || c.displayName}>
+                        {c.displayName || c.route_name} ({c.total_distance_km || 0} KM{c.trip_date ? ` • ${c.trip_date}` : ''})
+                      </option>
+                    ))}
                   </select>
                 </div>
 

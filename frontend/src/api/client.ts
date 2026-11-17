@@ -206,6 +206,8 @@ export const api = {
   saveCorridor: (data: any) => apiRequest('/routes/save-corridor', { method: 'POST', body: JSON.stringify(data) }),
   updateQuickRoute: (vehicleId: number | string, data: any) =>
     apiRequest(`/vehicles/${vehicleId}/quick-route`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateRoute: (id: number | string, data: any) =>
+    apiRequest<any>(`/routes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteRoute: (id: number | string) => apiRequest(`/routes/${id}`, { method: 'DELETE' }),
   getSavedCorridors: () => apiRequest<any[]>('/routes/saved-corridors'),
   getAllTrips: () => apiRequest<any[]>('/trips/all'),
