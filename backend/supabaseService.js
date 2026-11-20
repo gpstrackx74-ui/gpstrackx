@@ -303,7 +303,7 @@ const supabaseService = {
             end_location_name, end_address, end_lat, end_lng,
             total_distance_km, estimated_travel_time_min,
             overview_polyline, waypoints_json, toll_gates_json
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         `, [
           c.route_name.trim(), c.start_location_name, c.start_address || '', c.start_lat, c.start_lng,
           c.end_location_name, c.end_address || '', c.end_lat, c.end_lng,

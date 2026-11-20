@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { Vehicle, AlternativeRoute, Stoppage, TollGate } from '../types';
 import { InteractiveMap } from '../components/InteractiveMap';
 import { LocationSearchInput } from '../components/LocationSearchInput';
-import { DMYDateInput } from '../components/DMYDateInput';
+import { DMYDateInput, formatToDMY } from '../components/DMYDateInput';
 import {
   detectRealTollsOnRoute,
   detectAllTollsOnRoute,
@@ -36,6 +36,7 @@ import {
   Layers,
   Edit3,
   FileSpreadsheet,
+  Download,
   Search,
   Loader2,
   X,
@@ -69,11 +70,23 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>(initialVehicleId ? String(initialVehicleId) : '');
 
   // Saved Corridors / Existing Routes
-  const [savedCorridors, setSavedCorridors] = useState<any[]>([]);
+  const [savedCorridors, setSavedCorridors] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('gpstrackx_saved_corridors');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedCorridorId, setSelectedCorridorId] = useState<string>('');
   const [corridorNameInput, setCorridorNameInput] = useState<string>('');
   const [showSavedCorridorSearch, setShowSavedCorridorSearch] = useState<boolean>(false);
   const [savedCorridorSearchTerm, setSavedCorridorSearchTerm] = useState<string>('');
+
+  // Trip Schedule Excel Import State (Start/End Date, Start/End Time, Duration, Distance, Stoppages)
+  const [scheduleExcelRows, setScheduleExcelRows] = useState<any[]>([]);
+  const [selectedScheduleRowIdx, setSelectedScheduleRowIdx] = useState<number>(0);
+  const [scheduleImportSuccessMsg, setScheduleImportSuccessMsg] = useState<string>('');
 
   // 100% Immortal & Deduplicated Saved Corridors List (1 Entry Per Route)
   const uniqueSavedCorridors = useMemo(() => {
@@ -188,7 +201,12 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [customDistanceKm, setCustomDistanceKm] = useState<number | null>(null);
 
   // Auto-sync endTripTime when startTripTime or travel duration changes
+  const skipAutoEndTimeRef = useRef<boolean>(false);
   useEffect(() => {
+    if (skipAutoEndTimeRef.current) {
+      skipAutoEndTimeRef.current = false;
+      return;
+    }
     if (!startTripTime) return;
     const parts = startTripTime.split(':');
     const startH = parseInt(parts[0]) || 0;
@@ -424,6 +442,11 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       setVehicles(vehs || []);
       setUsersList(users || []);
       setSavedCorridors(corridors || []);
+      if (corridors && corridors.length > 0) {
+        try {
+          localStorage.setItem('gpstrackx_saved_corridors', JSON.stringify(corridors));
+        } catch (_) {}
+      }
       const initId = initialVehicleId ? String(initialVehicleId) : (vehs && vehs.length > 0 ? String(vehs[0].id) : '');
       if (initId) {
         setSelectedVehicleId(initId);
@@ -440,6 +463,238 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     }).catch(() => { });
   }, [initialVehicleId]);
 
+
+  // Helper to safely find property from Excel row with flexible casing/spacing
+  const findExcelProp = (row: any, keys: string[]) => {
+    if (!row || typeof row !== 'object') return undefined;
+    for (const k of Object.keys(row)) {
+      const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const target of keys) {
+        if (cleanK === target.toLowerCase().replace(/[^a-z0-9]/g, '')) {
+          return row[k];
+        }
+      }
+    }
+    return undefined;
+  };
+
+  // Helper to parse Excel dates (e.g. "1/1/2026", "1/3/2026", "2/10/2026", Excel serial numbers, Date objects) to YYYY-MM-DD
+  const parseExcelDateToYMD = (val: any): string | null => {
+    if (!val && val !== 0) return null;
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      const y = val.getFullYear();
+      const m = String(val.getMonth() + 1).padStart(2, '0');
+      const d = String(val.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    if (typeof val === 'number') {
+      const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+      if (!isNaN(d.getTime())) {
+        const y = d.getUTCFullYear();
+        const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(d.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+    }
+    const s = String(val).trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    const sep = s.includes('/') ? '/' : (s.includes('-') ? '-' : null);
+    if (sep) {
+      const parts = s.split(sep);
+      if (parts.length === 3) {
+        let p0 = parseInt(parts[0], 10);
+        let p1 = parseInt(parts[1], 10);
+        let yr = parts[2].trim();
+        if (yr.length === 2) yr = '20' + yr;
+        if (yr.length === 4) {
+          let month = p0;
+          let day = p1;
+          if (p0 > 12) {
+            day = p0;
+            month = p1;
+          }
+          return `${yr}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Helper to parse Excel times (e.g. "1:00", "14:02", "19:00", or Excel time decimal) to HH:mm
+  const parseExcelTimeToHHMM = (val: any): string | null => {
+    if (!val && val !== 0) return null;
+    if (typeof val === 'number') {
+      const totalMins = Math.round(val * 24 * 60);
+      const h = Math.floor(totalMins / 60) % 24;
+      const m = totalMins % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    const s = String(val).trim();
+    if (!s) return null;
+    if (s.includes(':')) {
+      const parts = s.split(':');
+      const h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return null;
+  };
+
+  // Helper to parse Trip Duration where first number is hours and after comma is minutes (e.g. "3,45" -> 3h 45m)
+  const parseExcelDuration = (val: any): { hours: number; minutes: number } => {
+    if (val === undefined || val === null) return { hours: 2, minutes: 15 };
+    const str = String(val).trim();
+    let h = 0;
+    let m = 0;
+    if (str.includes(',')) {
+      const parts = str.split(',');
+      h = parseInt(parts[0], 10) || 0;
+      m = parseInt(parts[1], 10) || 0;
+    } else if (str.includes(':')) {
+      const parts = str.split(':');
+      h = parseInt(parts[0], 10) || 0;
+      m = parseInt(parts[1], 10) || 0;
+    } else if (str.includes('.')) {
+      const parts = str.split('.');
+      h = parseInt(parts[0], 10) || 0;
+      m = parseInt(parts[1], 10) || 0;
+    } else {
+      const num = parseFloat(str);
+      if (!isNaN(num)) {
+        h = Math.floor(num);
+        m = Math.round((num - h) * 60);
+      }
+    }
+    return { hours: h, minutes: m };
+  };
+
+  // Apply Trip Schedule Row (from Excel Import)
+  const applyTripScheduleRow = (row: any, rowIdx: number = 0) => {
+    setSelectedScheduleRowIdx(rowIdx);
+
+    const sDate = findExcelProp(row, ['startdate', 'fromdate', 'tripdate', 'date']);
+    const eDate = findExcelProp(row, ['enddate', 'todate', 'endtripdate']);
+    const sTime = findExcelProp(row, ['starttime', 'start_time', 'dispatchtime', 'fromtime']);
+    const eTime = findExcelProp(row, ['endtime', 'end_time', 'arrivaltime', 'totime']);
+    const duration = findExcelProp(row, ['tripduration', 'duration', 'traveltime']);
+    const distance = findExcelProp(row, ['tripdistance', 'distance', 'totalkm', 'km']);
+    const stoppage = findExcelProp(row, ['stoppage', 'stoppages', 'stops', 'stopcount']);
+
+    const parsedStartD = parseExcelDateToYMD(sDate);
+    const parsedEndD = parseExcelDateToYMD(eDate);
+    const parsedStartT = parseExcelTimeToHHMM(sTime);
+    const parsedEndT = parseExcelTimeToHHMM(eTime);
+    const parsedDur = parseExcelDuration(duration);
+
+    if (parsedStartD) {
+      setTripDate(parsedStartD);
+      setEndTripDate(parsedEndD || parsedStartD);
+    } else if (parsedEndD) {
+      setEndTripDate(parsedEndD);
+    }
+
+    if (parsedStartT) setStartTripTime(parsedStartT);
+    if (parsedEndT) {
+      skipAutoEndTimeRef.current = true;
+      setEndTripTime(parsedEndT);
+    }
+
+    setTravelHours(parsedDur.hours);
+    setTravelMinutes(parsedDur.minutes);
+
+    if (distance !== undefined && distance !== null) {
+      const d = parseFloat(String(distance).replace(/[^0-9.]/g, ''));
+      if (!isNaN(d) && d > 0) {
+        setCustomDistanceKm(d);
+        setModifiedDistanceKm(d);
+      }
+    }
+
+    if (stoppage !== undefined && stoppage !== null) {
+      const sCount = parseInt(String(stoppage).replace(/[^0-9]/g, ''), 10) || 0;
+      if (sCount > 0) {
+        setStopsInput(String(sCount));
+        const currentCoords = (activeRoute?.coordinates && activeRoute.coordinates.length > 0)
+          ? activeRoute.coordinates
+          : (modifiedPolyline && modifiedPolyline.length > 0 ? modifiedPolyline : []);
+
+        if (currentCoords.length > 1) {
+          const autoStops: Stoppage[] = [];
+          for (let i = 0; i < sCount; i++) {
+            const ratio = (i + 1) / (sCount + 1);
+            const pIdx = Math.min(currentCoords.length - 1, Math.max(0, Math.floor(currentCoords.length * ratio)));
+            const pt = currentCoords[pIdx];
+            autoStops.push({
+              id: i + 1,
+              sequence_order: i + 1,
+              name: `Transit Halt #${i + 1}`,
+              address: `Highway Stoppage at ${pt[0].toFixed(4)}, ${pt[1].toFixed(4)}`,
+              lat: pt[0],
+              lng: pt[1],
+              duration: 15,
+              stop_duration_mins: 15
+            });
+          }
+          setStoppages(autoStops);
+        }
+      }
+    }
+
+    const distDisplay = distance ? `${distance} KM` : '';
+    setScheduleImportSuccessMsg(
+      `Trip Schedule (Row ${rowIdx + 1}) Loaded: ${parsedStartD ? formatToDMY(parsedStartD) : 'Date Set'} ${parsedStartT || ''} → ${parsedEndD ? formatToDMY(parsedEndD) : (parsedStartD ? formatToDMY(parsedStartD) : '')} ${parsedEndT || ''} | ${parsedDur.hours}h ${parsedDur.minutes}m${distDisplay ? ' | ' + distDisplay : ''}${stoppage ? ' | ' + stoppage + ' Stops' : ''}`
+    );
+  };
+
+  // Import Trip Schedule Excel (.xlsx, .xls, .csv)
+  const handleImportTripScheduleExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const data: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (!data || data.length === 0) {
+          alert('Excel file is empty. Please upload an Excel sheet with trip schedule details.');
+          return;
+        }
+
+        setScheduleExcelRows(data);
+        applyTripScheduleRow(data[0], 0);
+      } catch (err: any) {
+        alert('Failed to read Excel file: ' + err.message);
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  };
+
+  // Download Sample Trip Schedule Excel Template (.xlsx) matching exact format from user image
+  const handleDownloadTripScheduleTemplate = () => {
+    try {
+      const sampleRows = [
+        { 'Start Date': '1/1/2026', 'End Date': '1/1/2026', 'Start time': '1:00', 'End time': '22:00', 'Stoppage': 15, 'Trip Duration': '3,45', 'Trip Distance': 456 },
+        { 'Start Date': '1/3/2026', 'End Date': '1/4/2026', 'Start time': '14:02', 'End time': '3:00', 'Stoppage': 20, 'Trip Duration': '5,23', 'Trip Distance': 645 },
+        { 'Start Date': '1/6/2026', 'End Date': '1/6/2026', 'Start time': '3:00', 'End time': '16:59', 'Stoppage': 19, 'Trip Duration': '4,54', 'Trip Distance': 567 },
+        { 'Start Date': '1/8/2026', 'End Date': '1/9/2026', 'Start time': '19:00', 'End time': '2:00', 'Stoppage': 5, 'Trip Duration': '7,34', 'Trip Distance': 345 },
+        { 'Start Date': '2/10/2026', 'End Date': '2/10/2026', 'Start time': '5:00', 'End time': '14:00', 'Stoppage': 9, 'Trip Duration': '5,34', 'Trip Distance': 344 }
+      ];
+      const ws = XLSX.utils.json_to_sheet(sampleRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'TripSchedule');
+      XLSX.writeFile(wb, 'GpsTrackX_Trip_Schedule_Template.xlsx');
+    } catch (err: any) {
+      alert('Failed to download template: ' + err.message);
+    }
+  };
 
   // Download Sample Excel Template for Route Import
   const handleDownloadSampleExcel = () => {
@@ -800,6 +1055,9 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
       const corridors = await api.getSavedCorridors();
       setSavedCorridors(corridors || []);
+      if (corridors && corridors.length > 0) {
+        try { localStorage.setItem('gpstrackx_saved_corridors', JSON.stringify(corridors)); } catch (_) {}
+      }
       setSelectedCorridorId(routeName);
       alert(`Route "${routeName}" successfully saved to dropdown list!`);
     } catch (err: any) {
@@ -856,6 +1114,9 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
       const corridors = await api.getSavedCorridors();
       setSavedCorridors(corridors || []);
+      if (corridors && corridors.length > 0) {
+        try { localStorage.setItem('gpstrackx_saved_corridors', JSON.stringify(corridors)); } catch (_) {}
+      }
       setSelectedCorridorId(routeName);
       setCorridorNameInput(routeName);
       setIsRouteModifiedByDrag(false);
@@ -2024,13 +2285,106 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               </div>
             </div>
 
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-[11px] font-bold text-slate-400">Total Duration:</span>
-              <span className="px-2.5 py-1 rounded-full bg-[#0F172A] text-white font-mono font-bold text-xs">
-                {travelHours}h {travelMinutes}m
-              </span>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {/* Excel Import Option beside Scheduled Trip Date & Timings */}
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer transition">
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Import Trip Excel</span>
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={handleImportTripScheduleExcel}
+                  className="hidden"
+                />
+              </label>
+
+              {/* Sample Excel Format Download */}
+              <button
+                type="button"
+                onClick={handleDownloadTripScheduleTemplate}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs cursor-pointer transition"
+                title="Download Sample Format Excel"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>Sample Excel</span>
+              </button>
+
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs">
+                <span className="text-[10px] font-sans text-slate-400 font-semibold">Total Duration:</span>
+                <span>{travelHours}h {travelMinutes}m</span>
+              </div>
             </div>
           </div>
+
+          {/* Import Notification Banner */}
+          {scheduleImportSuccessMsg && (
+            <div className="p-2.5 px-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{scheduleImportSuccessMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setScheduleImportSuccessMsg(null)}
+                className="text-emerald-600 hover:text-emerald-800 font-bold text-xs px-1.5 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Multi-Row Trip Selector (when multiple rows uploaded from Excel) */}
+          {scheduleExcelRows.length > 0 && (
+            <div className="p-2.5 px-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  Excel Imported Trips ({scheduleExcelRows.length} Trips Available):
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScheduleExcelRows([]);
+                    setSelectedScheduleRowIdx(null);
+                    setScheduleImportSuccessMsg(null);
+                  }}
+                  className="text-[11px] font-bold text-red-600 hover:underline cursor-pointer"
+                >
+                  Clear Excel
+                </button>
+              </div>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {scheduleExcelRows.map((r, idx) => {
+                  const sD = findExcelProp(r, ['startdate', 'fromdate', 'tripdate', 'date']);
+                  const formattedD = parseExcelDateToYMD(sD);
+                  const dist = findExcelProp(r, ['tripdistance', 'distance', 'totalkm', 'km']);
+                  const isSelected = selectedScheduleRowIdx === idx;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => applyTripScheduleRow(r, idx)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>Trip {idx + 1}</span>
+                      <span className="opacity-80 text-[10px] font-mono">
+                        {formattedD ? formatToDMY(formattedD) : ''}
+                      </span>
+                      {dist && (
+                        <span className="text-[10px] opacity-75 font-mono">
+                          • {dist} KM
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 4-Column Inputs: Start Date, End Date, Start Time, End Time */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -2100,6 +2454,120 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 onChange={(e) => setEndTripTime(e.target.value)}
                 className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition"
               />
+            </div>
+          </div>
+
+          {/* Row 2: Trip Duration, Trip Distance, Stoppages */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+            {/* 5. Trip Duration */}
+            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Trip Duration (HH : MM)
+                </label>
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 flex items-center bg-white px-3 py-1.5 rounded-xl border border-[#E2E8F0]">
+                  <input
+                    type="number"
+                    min="0"
+                    max="999"
+                    value={travelHours}
+                    onChange={(e) => setTravelHours(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full bg-transparent text-xs font-mono font-bold text-slate-900 focus:outline-none text-center"
+                    placeholder="Hours"
+                  />
+                  <span className="text-[10px] font-bold text-slate-400 ml-1">hr</span>
+                </div>
+                <span className="text-slate-400 font-bold">:</span>
+                <div className="flex-1 flex items-center bg-white px-3 py-1.5 rounded-xl border border-[#E2E8F0]">
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={travelMinutes}
+                    onChange={(e) => setTravelMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                    className="w-full bg-transparent text-xs font-mono font-bold text-slate-900 focus:outline-none text-center"
+                    placeholder="Mins"
+                  />
+                  <span className="text-[10px] font-bold text-slate-400 ml-1">min</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 6. Trip Distance */}
+            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Trip Distance (KM)
+                </label>
+                <Navigation className="w-3.5 h-3.5 text-slate-400" />
+              </div>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={effectiveDistanceKm || ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setCustomDistanceKm(isNaN(val) ? 0 : Math.max(0, Math.round(val * 10) / 10));
+                  }}
+                  className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition pr-9"
+                  placeholder="Distance in KM"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 font-mono">
+                  KM
+                </span>
+              </div>
+            </div>
+
+            {/* 7. Stoppages */}
+            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Stoppages Count
+                </label>
+                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={stopsInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setStopsInput(val);
+                    const count = parseInt(val, 10);
+                    if (!isNaN(count) && count >= 0 && activeRoute?.coordinates) {
+                      const autoStops: Stoppage[] = [];
+                      for (let i = 0; i < count; i++) {
+                        const ratio = (i + 1) / (count + 1);
+                        const pIdx = Math.min(activeRoute.coordinates.length - 1, Math.max(0, Math.floor(activeRoute.coordinates.length * ratio)));
+                        const pt = activeRoute.coordinates[pIdx];
+                        autoStops.push({
+                          id: i + 1,
+                          sequence_order: i + 1,
+                          name: `Transit Halt #${i + 1}`,
+                          address: `Highway Stoppage at ${pt[0].toFixed(4)}, ${pt[1].toFixed(4)}`,
+                          lat: pt[0],
+                          lng: pt[1],
+                          duration: 15,
+                          stop_duration_mins: 15
+                        });
+                      }
+                      setStoppages(autoStops);
+                    }
+                  }}
+                  className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition"
+                  placeholder="0"
+                />
+                <span className="text-xs font-bold text-slate-500 shrink-0">
+                  {stoppages.length} Active
+                </span>
+              </div>
             </div>
           </div>
         </div>

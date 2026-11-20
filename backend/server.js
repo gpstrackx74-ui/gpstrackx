@@ -2632,7 +2632,7 @@ app.delete('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) 
 });
 
 // Get Previously Saved / Existing Corridors Across ALL Users and Vehicles (100% Immortal & Deduplicated - 1 Entry Per Route)
-app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
+app.get('/api/routes/saved-corridors', authenticateToken, async (req, res) => {
   try {
     let dedicatedCorridors = [];
     try {
@@ -2659,6 +2659,42 @@ app.get('/api/routes/saved-corridors', authenticateToken, (req, res) => {
         ORDER BY id DESC
       `).all();
     } catch (e) { }
+
+    // If local SQLite has no corridors (e.g. freshly started container or new machine), pull from Supabase Cloud
+    if (dedicatedCorridors.length === 0 && supabaseService.isConnected) {
+      try {
+        const sbRes = await supabaseService.query('SELECT * FROM saved_corridors ORDER BY id DESC');
+        if (sbRes && sbRes.rows && sbRes.rows.length > 0) {
+          dedicatedCorridors = sbRes.rows;
+          // Also persist into local SQLite so it stays fast
+          const insertStmt = db.prepare(`
+            INSERT INTO saved_corridors (
+              route_name, start_location_name, start_address, start_lat, start_lng,
+              end_location_name, end_address, end_lat, end_lng,
+              total_distance_km, estimated_travel_time_min,
+              overview_polyline, waypoints_json, toll_gates_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+          const existingNames = new Set(db.prepare('SELECT LOWER(TRIM(route_name)) as n FROM saved_corridors').all().map(r => r.n));
+          for (const c of sbRes.rows) {
+            const n = (c.route_name || '').toLowerCase().trim();
+            if (n && !existingNames.has(n)) {
+              existingNames.add(n);
+              try {
+                insertStmt.run(
+                  c.route_name, c.start_location_name, c.start_address || '', c.start_lat, c.start_lng,
+                  c.end_location_name, c.end_address || '', c.end_lat, c.end_lng,
+                  c.total_distance_km || 0, c.estimated_travel_time_min || 0,
+                  c.overview_polyline || '', c.waypoints_json || '[]', c.toll_gates_json || '[]'
+                );
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (sbErr) {
+        console.error('[saved-corridors Supabase Fallback Warning]:', sbErr.message);
+      }
+    }
 
     const routesCorridors = db.prepare(`
       SELECT 
