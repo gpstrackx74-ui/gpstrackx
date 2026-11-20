@@ -2285,8 +2285,8 @@ app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
         end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
         overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
         trip_date, end_trip_date, start_trip_time, end_trip_time, total_toll_fee, stoppages_count, toll_gates_count, is_active,
-        vehicle_registration_no
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+        vehicle_registration_no, operational_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'moving')
     `);
 
     const result = insertRouteStmt.run(
@@ -2580,12 +2580,14 @@ app.put('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) => 
 
     // If this route is active, update vehicle status and route name
     if (updatedRoute.vehicle_id && (updatedRoute.is_active === 1 || updatedRoute.is_active === true)) {
+      const newSpeed = updatedStatus === 'moving' ? 48 : 0;
       db.prepare(`
         UPDATE vehicles SET
           status = ?,
+          current_speed = ?,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(updatedStatus, updatedRoute.vehicle_id);
+      `).run(updatedStatus, newSpeed, updatedRoute.vehicle_id);
     }
 
     // Mirror update into saved_corridors if exists
