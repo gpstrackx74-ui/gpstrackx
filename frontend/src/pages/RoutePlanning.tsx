@@ -522,23 +522,64 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     return null;
   };
 
-  // Helper to parse Excel times (e.g. "1:00", "14:02", "19:00", or Excel time decimal) to HH:mm
+  // Helper to format 24-hr time HH:mm to 12-hr with AM/PM (e.g. "01:00" -> "01:00 AM", "22:00" -> "10:00 PM")
+  const formatTimeTo12Hour = (val: string): string => {
+    if (!val || !val.includes(':')) return '';
+    const parts = val.split(':');
+    let h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) || 0;
+    if (isNaN(h)) return '';
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+  };
+
+  // Helper to parse Excel times (e.g. "1:00" -> "01:00", "22:00" -> "22:00", "14:02" -> "14:02", or Excel numeric time fractions) to HH:mm
   const parseExcelTimeToHHMM = (val: any): string | null => {
     if (!val && val !== 0) return null;
+
+    // 1. Date object (if XLSX parsed as Date)
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      const h = val.getHours();
+      const m = val.getMinutes();
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+
+    // 2. Numeric Excel time fraction (e.g. 1/24 = 0.0416666... or 22/24 = 0.916666...)
     if (typeof val === 'number') {
-      const totalMins = Math.round(val * 24 * 60);
-      const h = Math.floor(totalMins / 60) % 24;
-      const m = totalMins % 60;
-      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      let frac = val;
+      if (frac > 1) {
+        frac = frac - Math.floor(frac);
+      }
+      if (frac >= 0 && frac <= 1) {
+        const totalSeconds = Math.round(frac * 86400);
+        const h = Math.floor(totalSeconds / 3600) % 24;
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      }
     }
-    const s = String(val).trim();
-    if (!s) return null;
-    if (s.includes(':')) {
-      const parts = s.split(':');
-      const h = parseInt(parts[0], 10) || 0;
-      const m = parseInt(parts[1], 10) || 0;
-      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+    // 3. String parsing (handles "1:00", "22:00", "14:02", "1:00 AM", "10:00 PM", etc.)
+    const str = String(val).trim();
+    if (!str) return null;
+
+    const match = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/i);
+    if (match) {
+      let h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      const ampm = match[3] ? match[3].toLowerCase() : null;
+
+      if (ampm === 'pm' && h < 12) {
+        h += 12;
+      } else if (ampm === 'am' && h === 12) {
+        h = 0;
+      }
+
+      h = Math.min(23, Math.max(0, h));
+      const safeM = Math.min(59, Math.max(0, m));
+      return `${String(h).padStart(2, '0')}:${String(safeM).padStart(2, '0')}`;
     }
+
     return null;
   };
 
@@ -642,9 +683,11 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       }
     }
 
+    const start12 = parsedStartT ? formatTimeTo12Hour(parsedStartT) : '';
+    const end12 = parsedEndT ? formatTimeTo12Hour(parsedEndT) : '';
     const distDisplay = distance ? `${distance} KM` : '';
     setScheduleImportSuccessMsg(
-      `Trip Schedule (Row ${rowIdx + 1}) Loaded: ${parsedStartD ? formatToDMY(parsedStartD) : 'Date Set'} ${parsedStartT || ''} → ${parsedEndD ? formatToDMY(parsedEndD) : (parsedStartD ? formatToDMY(parsedStartD) : '')} ${parsedEndT || ''} | ${parsedDur.hours}h ${parsedDur.minutes}m${distDisplay ? ' | ' + distDisplay : ''}${stoppage ? ' | ' + stoppage + ' Stops' : ''}`
+      `Trip Schedule (Row ${rowIdx + 1}) Loaded: ${parsedStartD ? formatToDMY(parsedStartD) : 'Date Set'} [${start12 || parsedStartT || ''}] → ${parsedEndD ? formatToDMY(parsedEndD) : (parsedStartD ? formatToDMY(parsedStartD) : '')} [${end12 || parsedEndT || ''}] | ${parsedDur.hours}h ${parsedDur.minutes}m${distDisplay ? ' | ' + distDisplay : ''}${stoppage ? ' | ' + stoppage + ' Stops' : ''}`
     );
   };
 
@@ -657,10 +700,18 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+        // Do not force cellDates: true to avoid timezone shift on time-only cells
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: false });
         const wsName = wb.SheetNames[0];
         const ws = wb.Sheets[wsName];
-        const data: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        const dataFormatted: any[] = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        const dataRaw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true });
+
+        const data = dataFormatted.map((rowF, idx) => {
+          const rowR = dataRaw[idx] || {};
+          return { ...rowR, ...rowF, _raw: rowR };
+        });
 
         if (!data || data.length === 0) {
           alert('Excel file is empty. Please upload an Excel sheet with trip schedule details.');
@@ -2430,7 +2481,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                   Start Time (Dispatch)
                 </label>
-                <Clock className="w-3.5 h-3.5 text-[#0F172A]" />
+                <div className="flex items-center gap-1.5">
+                  {startTripTime && (
+                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      {formatTimeTo12Hour(startTripTime)}
+                    </span>
+                  )}
+                  <Clock className="w-3.5 h-3.5 text-[#0F172A]" />
+                </div>
               </div>
               <input
                 type="time"
@@ -2446,7 +2504,14 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                   End Time (Arrival)
                 </label>
-                <Clock className="w-3.5 h-3.5 text-slate-500" />
+                <div className="flex items-center gap-1.5">
+                  {endTripTime && (
+                    <span className="text-[10px] font-mono font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                      {formatTimeTo12Hour(endTripTime)}
+                    </span>
+                  )}
+                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                </div>
               </div>
               <input
                 type="time"
@@ -2454,120 +2519,6 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 onChange={(e) => setEndTripTime(e.target.value)}
                 className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition"
               />
-            </div>
-          </div>
-
-          {/* Row 2: Trip Duration, Trip Distance, Stoppages */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
-            {/* 5. Trip Duration */}
-            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Trip Duration (HH : MM)
-                </label>
-                <Clock className="w-3.5 h-3.5 text-slate-400" />
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 flex items-center bg-white px-3 py-1.5 rounded-xl border border-[#E2E8F0]">
-                  <input
-                    type="number"
-                    min="0"
-                    max="999"
-                    value={travelHours}
-                    onChange={(e) => setTravelHours(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full bg-transparent text-xs font-mono font-bold text-slate-900 focus:outline-none text-center"
-                    placeholder="Hours"
-                  />
-                  <span className="text-[10px] font-bold text-slate-400 ml-1">hr</span>
-                </div>
-                <span className="text-slate-400 font-bold">:</span>
-                <div className="flex-1 flex items-center bg-white px-3 py-1.5 rounded-xl border border-[#E2E8F0]">
-                  <input
-                    type="number"
-                    min="0"
-                    max="59"
-                    value={travelMinutes}
-                    onChange={(e) => setTravelMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                    className="w-full bg-transparent text-xs font-mono font-bold text-slate-900 focus:outline-none text-center"
-                    placeholder="Mins"
-                  />
-                  <span className="text-[10px] font-bold text-slate-400 ml-1">min</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 6. Trip Distance */}
-            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Trip Distance (KM)
-                </label>
-                <Navigation className="w-3.5 h-3.5 text-slate-400" />
-              </div>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={effectiveDistanceKm || ''}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setCustomDistanceKm(isNaN(val) ? 0 : Math.max(0, Math.round(val * 10) / 10));
-                  }}
-                  className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition pr-9"
-                  placeholder="Distance in KM"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 font-mono">
-                  KM
-                </span>
-              </div>
-            </div>
-
-            {/* 7. Stoppages */}
-            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Stoppages Count
-                </label>
-                <MapPin className="w-3.5 h-3.5 text-slate-400" />
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={stopsInput}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setStopsInput(val);
-                    const count = parseInt(val, 10);
-                    if (!isNaN(count) && count >= 0 && activeRoute?.coordinates) {
-                      const autoStops: Stoppage[] = [];
-                      for (let i = 0; i < count; i++) {
-                        const ratio = (i + 1) / (count + 1);
-                        const pIdx = Math.min(activeRoute.coordinates.length - 1, Math.max(0, Math.floor(activeRoute.coordinates.length * ratio)));
-                        const pt = activeRoute.coordinates[pIdx];
-                        autoStops.push({
-                          id: i + 1,
-                          sequence_order: i + 1,
-                          name: `Transit Halt #${i + 1}`,
-                          address: `Highway Stoppage at ${pt[0].toFixed(4)}, ${pt[1].toFixed(4)}`,
-                          lat: pt[0],
-                          lng: pt[1],
-                          duration: 15,
-                          stop_duration_mins: 15
-                        });
-                      }
-                      setStoppages(autoStops);
-                    }
-                  }}
-                  className="w-full bg-white px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F172A] transition"
-                  placeholder="0"
-                />
-                <span className="text-xs font-bold text-slate-500 shrink-0">
-                  {stoppages.length} Active
-                </span>
-              </div>
             </div>
           </div>
         </div>
