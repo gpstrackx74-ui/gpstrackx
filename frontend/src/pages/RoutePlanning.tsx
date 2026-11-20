@@ -732,16 +732,29 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const handleDownloadTripScheduleTemplate = () => {
     try {
       const sampleRows = [
-        { 'Start Date': '1/1/2026', 'End Date': '1/1/2026', 'Start time': '1:00', 'End time': '22:00', 'Stoppage': 15, 'Trip Duration': '3,45', 'Trip Distance': 456 },
-        { 'Start Date': '1/3/2026', 'End Date': '1/4/2026', 'Start time': '14:02', 'End time': '3:00', 'Stoppage': 20, 'Trip Duration': '5,23', 'Trip Distance': 645 },
-        { 'Start Date': '1/6/2026', 'End Date': '1/6/2026', 'Start time': '3:00', 'End time': '16:59', 'Stoppage': 19, 'Trip Duration': '4,54', 'Trip Distance': 567 },
-        { 'Start Date': '1/8/2026', 'End Date': '1/9/2026', 'Start time': '19:00', 'End time': '2:00', 'Stoppage': 5, 'Trip Duration': '7,34', 'Trip Distance': 345 },
-        { 'Start Date': '2/10/2026', 'End Date': '2/10/2026', 'Start time': '5:00', 'End time': '14:00', 'Stoppage': 9, 'Trip Duration': '5,34', 'Trip Distance': 344 }
+        {
+          'Start Date': '1/1/2026',
+          'End Date': '1/1/2026',
+          'Start time': '1:00',
+          'End time': '22:00',
+          'Stoppage': 15,
+          'Trip Duration': '3,45',
+          'Trip Distance': 456
+        }
       ];
       const ws = XLSX.utils.json_to_sheet(sampleRows);
+      ws['!cols'] = [
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 15 },
+        { wch: 15 }
+      ];
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'TripSchedule');
-      XLSX.writeFile(wb, 'GpsTrackX_Trip_Schedule_Template.xlsx');
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      XLSX.writeFile(wb, 'Trip_Schedule_Sample.xlsx');
     } catch (err: any) {
       alert('Failed to download template: ' + err.message);
     }
