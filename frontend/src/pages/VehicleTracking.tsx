@@ -59,11 +59,10 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>('');
 
   // Filter Period
-  const todayYMD = React.useMemo(() => new Date().toISOString().split('T')[0], []);
   const [period, setPeriod] = useState<'today' | '7days' | '30days'>('today');
-  const [fromDate, setFromDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [fromDate, setFromDate] = useState('2026-10-31');
   const [fromTime, setFromTime] = useState('12:00 AM');
-  const [toDate, setToDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [toDate, setToDate] = useState('2026-10-31');
   const [toTime, setToTime] = useState('11:59 PM');
 
   // Vehicle Route Playback Simulation State (Unconditional top-level hooks)
@@ -71,10 +70,12 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   const [playbackIndex, setPlaybackIndex] = useState<number>(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
+  const todayYMD = React.useMemo(() => new Date().toISOString().split('T')[0], []);
+
   // Effective date selected or currently inspected
   const effectiveDate = React.useMemo(() => {
-    return normalizeToYMD(selectedDate || (activeRoute?.trip_date ? activeRoute.trip_date : todayYMD));
-  }, [selectedDate, activeRoute?.trip_date, todayYMD]);
+    return normalizeToYMD(selectedDate || fromDate || (activeRoute?.trip_date ? activeRoute.trip_date : todayYMD));
+  }, [selectedDate, fromDate, activeRoute?.trip_date, todayYMD]);
 
   // Is previous date (strictly earlier than today)
   const isPreviousDate = React.useMemo(() => {
@@ -90,31 +91,38 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   const vehicleStatusRaw = String(vehicle?.status || '').toLowerCase().trim();
   const routeStatusRaw = String(activeRoute?.operational_status || '').toLowerCase().trim();
 
-  // Live Moving Status Check:
-  // If vehicle.status is 'moving' OR activeRoute.operational_status is 'moving', then vehicle is LIVE MOVING!
-  // If vehicleStatusRaw is 'stop' or 'stopped' or 'parking' or 'inactive', and route is not explicitly moving, it is STOPPED.
-  const isMoving = Boolean(
-    activeRoute &&
-    (vehicleStatusRaw === 'moving' || routeStatusRaw === 'moving') &&
-    vehicleStatusRaw !== 'stop' &&
-    vehicleStatusRaw !== 'stopped' &&
-    vehicleStatusRaw !== 'parking' &&
-    routeStatusRaw !== 'stop' &&
-    routeStatusRaw !== 'stopped'
+  // Explicit stop status check
+  const isVehicleExplicitlyStopped = Boolean(
+    vehicleStatusRaw === 'stop' ||
+    vehicleStatusRaw === 'stopped' ||
+    vehicleStatusRaw === 'inactive' ||
+    vehicleStatusRaw === 'parking' ||
+    (routeStatusRaw === 'stop' && vehicleStatusRaw !== 'moving') ||
+    (routeStatusRaw === 'stopped' && vehicleStatusRaw !== 'moving') ||
+    (routeStatusRaw === 'completed' && vehicleStatusRaw !== 'moving')
   );
+
+  // Explicit moving status check
+  const isVehicleExplicitlyMoving = !isVehicleExplicitlyStopped && Boolean(
+    vehicleStatusRaw === 'moving' ||
+    routeStatusRaw === 'moving'
+  );
+
+  // Overall isMoving flag
+  const isMoving = Boolean(activeRoute && isVehicleExplicitlyMoving);
   const isStopped = !isMoving;
   const isParking = vehicleStatusRaw === 'parking';
   const isLiveMovingMode = isMoving;
 
-  // RULE FOR USER LOGIN (!isAdmin):
-  // When vehicle status is moving in user login (!isAdmin):
-  // 1. DO NOT show route line (hideRouteForUser = true)
-  // 2. DO NOT show route play bar (showRoutePlayBar = false, isPlaying = false)
-  // 3. SHOW the vehicle moving along that route on the map!
-  // When vehicle status is stop:
-  // 1. DO show route line (hideRouteForUser = false)
-  // 2. DO show route play bar (showRoutePlayBar = true)
-  const hideRouteForUser = !isAdmin && isMoving;
+  // RULE (from user request):
+  // When vehicle status is MOVING:
+  // 1. DO NOT show route line on map (hideRouteLine = true)
+  // 2. DO NOT show route play simulation controls (showRoutePlayBar = false)
+  // 3. DO show vehicle moving smoothly along the allotted route coordinates
+  // When vehicle status is STOP (or inactive):
+  // 1. DO show route line on map (hideRouteLine = false)
+  // 2. DO show route play simulation controls (showRoutePlayBar = true)
+  const hideRouteLine = isMoving;
 
   const [liveSpeed, setLiveSpeed] = useState<number>(48);
 
@@ -708,6 +716,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                         const newStatus = e.target.value;
                         try {
                           await api.updateVehicleStatus(vehicle.id, newStatus);
+                          if (activeRoute?.id) {
+                            api.updateRouteOperationalStatus(activeRoute.id, newStatus).catch(() => {});
+                          }
                           setVehicle(prev => prev ? { ...prev, status: newStatus as any, current_speed: newStatus === 'moving' ? 48 : 0 } : prev);
                           if (activeRoute) {
                             setActiveRoute(prev => prev ? { ...prev, operational_status: newStatus } : null);
@@ -1138,14 +1149,14 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 <InteractiveMap
                   height="520px"
                   center={currentPlaybackPoint || (vehicle.current_lat && Number(vehicle.current_lat) !== 0 ? [Number(vehicle.current_lat), Number(vehicle.current_lng)] : (activeRoute?.start_lat ? [Number(activeRoute.start_lat), Number(activeRoute.start_lng)] : (parsedCoordinates.length > 0 ? parsedCoordinates[0] : [21.8974, 82.8000])))}
-                  zoom={hideRouteForUser ? 11 : 8}
-                  routes={hideRouteForUser ? [] : trackingRoutes}
-                  selectedRouteId={hideRouteForUser ? '' : (activeRoute ? `active-${activeRoute.id}` : '')}
+                  zoom={hideRouteLine ? 11 : 8}
+                  routes={hideRouteLine ? [] : trackingRoutes}
+                  selectedRouteId={hideRouteLine ? '' : (activeRoute ? `active-${activeRoute.id}` : '')}
                   vehiclePosition={simulatedVehiclePosition}
-                  startPoint={hideRouteForUser ? null : memoizedStart}
-                  endPoint={hideRouteForUser ? null : memoizedEnd}
-                  stoppages={hideRouteForUser ? [] : stoppagesWithTimings}
-                  tollGates={hideRouteForUser ? [] : routeTolls}
+                  startPoint={hideRouteLine ? null : memoizedStart}
+                  endPoint={hideRouteLine ? null : memoizedEnd}
+                  stoppages={hideRouteLine ? [] : stoppagesWithTimings}
+                  tollGates={hideRouteLine ? [] : routeTolls}
                   hideEditTools={true}
                   hideBreadcrumbs={true}
                 />
