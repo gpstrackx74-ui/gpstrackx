@@ -993,8 +993,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
               {/* 5. Trip */}
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Trip</span>
-                <span className="font-bold text-slate-800 text-xs block truncate mt-1" title={activeRoute?.route_name?.replace(/\s*\(Modified on Map\)/gi, '') || 'No Active Trip'}>
-                  {activeRoute?.route_name?.replace(/\s*\(Modified on Map\)/gi, '') || 'No Active Trip'}
+                <span className="font-bold text-slate-800 text-xs block truncate mt-1" title={activeRoute?.route_name?.replace(/\s*\(Modified on Map\)/gi, '') || 'Completed Trip'}>
+                  {activeRoute?.route_name?.replace(/\s*\(Modified on Map\)/gi, '') || 'Completed Trip'}
                 </span>
               </div>
 
@@ -1023,7 +1023,23 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 </div>
               </div>
 
-              {/* 8. Stoppages */}
+              {/* 8. Duration */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Duration</span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="font-mono font-black text-purple-700 text-sm">
+                    {(() => {
+                      const mins = Number(activeRoute?.estimated_travel_time_min || 0);
+                      if (mins > 0) {
+                        return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+                      }
+                      return '--';
+                    })()}
+                  </span>
+                </div>
+              </div>
+
+              {/* 9. Stoppages */}
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stoppages</span>
                 <div className="flex items-baseline gap-1 mt-1">
@@ -1034,7 +1050,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 </div>
               </div>
 
-              {/* 9. Address */}
+              {/* 10. Address */}
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Address</span>
                 <span className="font-medium text-slate-700 text-xs block truncate mt-1" title={activeRoute?.start_location_name || vehicle.location || 'Raipur, Chhattisgarh'}>

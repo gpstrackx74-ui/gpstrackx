@@ -2378,6 +2378,8 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
       eT,
       stoppages_count: parseInt(t.stoppages_count ?? t.stoppage_count ?? t.stoppage ?? t.stops ?? 0, 10) || 0,
       distance_km: t.distance_km != null ? parseFloat(t.distance_km) : (t.km != null ? parseFloat(t.km) : (t.total_distance_km != null ? parseFloat(t.total_distance_km) : null)),
+      duration_min: t.duration_min != null ? parseInt(t.duration_min, 10) : (t.estimated_travel_time_min != null ? parseInt(t.estimated_travel_time_min, 10) : null),
+      duration_text: t.duration_text || '',
       interval: currentInterval
     });
   });
@@ -2417,9 +2419,12 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
     `);
 
     acceptedTrips.forEach((tripItem, index) => {
-      // The latest trip gets is_active = 1, older ones get is_active = 0
-      const isActive = index === acceptedTrips.length - 1 ? 1 : 0;
-      const durationMin = Math.max(15, Math.round((tripItem.interval.endMs - tripItem.interval.startMs) / (60 * 1000)));
+      // Requirement: All trips from Excel batch import are completed, none active!
+      // "और ट्रिप हिस्ट्री जो अपन हिस्ट्री देखेंगे उसमें से एक्टिव किसी को नहीं दिखाना है। सब कम्प्लीटेड रहेगा।"
+      const isActive = 0;
+      const durationMin = (tripItem.duration_min && Number(tripItem.duration_min) > 0)
+        ? Number(tripItem.duration_min)
+        : Math.max(15, Math.round((tripItem.interval.endMs - tripItem.interval.startMs) / (60 * 1000)));
       const effectiveDistKm = tripItem.distance_km && Number(tripItem.distance_km) > 0 ? Number(tripItem.distance_km) : (Number(total_distance_km) || 0);
 
       // Generate stoppages if stoppage count given (guaranteeing valid coordinates)
@@ -2582,7 +2587,10 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
         end_trip_time: tripItem.eT,
         stoppages_count: tripItem.stoppages_count,
         total_distance_km: effectiveDistKm,
-        is_active: isActive
+        estimated_travel_time_min: durationMin,
+        duration_text: tripItem.duration_text || `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`,
+        is_active: 0,
+        operational_status: 'completed'
       });
     });
 

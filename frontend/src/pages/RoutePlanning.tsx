@@ -605,32 +605,40 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     return null;
   };
 
-  // Helper to parse Trip Duration where first number is hours and after comma is minutes (e.g. "3,45" -> 3h 45m)
-  const parseExcelDuration = (val: any): { hours: number; minutes: number } => {
-    if (val === undefined || val === null) return { hours: 2, minutes: 15 };
+  // Helper to parse Trip Duration where first number is hours and after comma/dot/colon is minutes (e.g. "3,55" -> 3h 55m)
+  const parseExcelDuration = (val: any): { hours: number; minutes: number; totalMinutes: number; text: string } => {
+    if (val === undefined || val === null || val === '') return { hours: 2, minutes: 15, totalMinutes: 135, text: '2h 15m' };
     const str = String(val).trim();
     let h = 0;
     let m = 0;
-    if (str.includes(',')) {
-      const parts = str.split(',');
+
+    // Check delimiter: comma, colon, dot, or space (e.g. "3,55", "3:55", "3.55", "3 55", "3h 55m")
+    const match = str.match(/^(\d+)\s*[,.:hH\s]\s*(\d+)$/);
+    if (match) {
+      h = parseInt(match[1], 10) || 0;
+      m = parseInt(match[2], 10) || 0;
+    } else if (typeof val === 'number') {
+      const parts = String(val).split('.');
       h = parseInt(parts[0], 10) || 0;
-      m = parseInt(parts[1], 10) || 0;
-    } else if (str.includes(':')) {
-      const parts = str.split(':');
-      h = parseInt(parts[0], 10) || 0;
-      m = parseInt(parts[1], 10) || 0;
-    } else if (str.includes('.')) {
-      const parts = str.split('.');
-      h = parseInt(parts[0], 10) || 0;
-      m = parseInt(parts[1], 10) || 0;
+      let mStr = parts[1] || '0';
+      if (mStr.length === 1) mStr = mStr + '0';
+      m = parseInt(mStr.slice(0, 2), 10) || 0;
     } else {
-      const num = parseFloat(str);
-      if (!isNaN(num)) {
-        h = Math.floor(num);
-        m = Math.round((num - h) * 60);
+      const onlyNum = parseInt(str.replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(onlyNum) && onlyNum > 0) {
+        if (onlyNum > 24) {
+          const s = String(onlyNum);
+          h = parseInt(s.slice(0, -2) || '0', 10);
+          m = parseInt(s.slice(-2), 10);
+        } else {
+          h = onlyNum;
+          m = 0;
+        }
       }
     }
-    return { hours: h, minutes: m };
+    const totalMinutes = h * 60 + m;
+    const text = `${h}h ${m}m`;
+    return { hours: h, minutes: m, totalMinutes, text };
   };
 
   // Apply Trip Schedule Row (from Excel Import)
@@ -769,7 +777,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         let colIdxLoadingTime = -1;
         let colIdxUnloadingTime = -1;
         let colIdxStoppage = -1;
-        let colIdxKilometer = -1;
+        let colIdxDistance = -1;
+        let colIdxDuration = -1;
 
         for (let r = 0; r < Math.min(5, grid.length); r++) {
           const rowVals = (grid[r] || []).map((c: any) => String(c || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
@@ -782,19 +791,21 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               if (colIdxLoadingTime === -1 && (v.includes('loadingtime') || (v.includes('loading') && v.includes('time')) || v === 'starttime' || v === 'fromtime')) colIdxLoadingTime = cIdx;
               if (colIdxUnloadingTime === -1 && (v.includes('unloadingtime') || (v.includes('unloading') && v.includes('time')) || v === 'endtime' || v === 'totime')) colIdxUnloadingTime = cIdx;
               if (colIdxStoppage === -1 && (v.includes('stop') || v.includes('halt'))) colIdxStoppage = cIdx;
-              if (colIdxKilometer === -1 && (v.includes('km') || v.includes('kilo') || v.includes('dist'))) colIdxKilometer = cIdx;
+              if (colIdxDistance === -1 && (v.includes('tripdistance') || v.includes('distance') || v.includes('totalkm') || v.includes('km') || v.includes('kilo'))) colIdxDistance = cIdx;
+              if (colIdxDuration === -1 && (v.includes('tripduration') || v.includes('duration') || v.includes('traveltime') || v.includes('travelduration') || v.includes('totaltime'))) colIdxDuration = cIdx;
             });
             break;
           }
         }
 
-        // Fallbacks to standard positions from user Excel image (Col 0: Date of loading, Col 1: Date of unloading, Col 2: Loading time, Col 3: Unloading time, Col 4: Stoppage, Col 5: Kilometer)
+        // Positional fallbacks (Col 0: Date of loading, Col 1: Date of unloading, Col 2: Loading time, Col 3: Unloading time, Col 4: Stoppage, Col 5: Trip Distance, Col 6: Trip Duration)
         if (colIdxLoadingDate === -1) colIdxLoadingDate = 0;
         if (colIdxUnloadingDate === -1) colIdxUnloadingDate = 1;
         if (colIdxLoadingTime === -1) colIdxLoadingTime = 2;
         if (colIdxUnloadingTime === -1) colIdxUnloadingTime = 3;
         if (colIdxStoppage === -1) colIdxStoppage = 4;
-        if (colIdxKilometer === -1) colIdxKilometer = 5;
+        if (colIdxDistance === -1) colIdxDistance = 5;
+        if (colIdxDuration === -1) colIdxDuration = 6;
 
         const parsedTrips: any[] = [];
 
@@ -829,17 +840,25 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           let rawColE = gRow[colIdxStoppage] !== undefined && String(gRow[colIdxStoppage]).trim() !== '' ? (gRowRaw[colIdxStoppage] !== undefined ? gRowRaw[colIdxStoppage] : gRow[colIdxStoppage]) : undefined;
           if (rawColE === undefined) rawColE = findExcelProp(objRow, ['stoppage', 'stoppages', 'stops', 'stop', 'halt', 'halts', 'stoppagescount']);
 
-          // 6. Kilometer (new column added by user)
-          let rawColF = gRow[colIdxKilometer] !== undefined && String(gRow[colIdxKilometer]).trim() !== '' ? (gRowRaw[colIdxKilometer] !== undefined ? gRowRaw[colIdxKilometer] : gRow[colIdxKilometer]) : undefined;
-          if (rawColF === undefined) rawColF = findExcelProp(objRow, ['kilometer', 'kilometers', 'km', 'kms', 'distance', 'totalkm', 'distancekm', 'totaldistance', 'distanceinkm']);
+          // 6. Trip Distance (Col F)
+          let rawColF = gRow[colIdxDistance] !== undefined && String(gRow[colIdxDistance]).trim() !== '' ? (gRowRaw[colIdxDistance] !== undefined ? gRowRaw[colIdxDistance] : gRow[colIdxDistance]) : undefined;
+          if (rawColF === undefined) rawColF = findExcelProp(objRow, ['tripdistance', 'distance', 'totalkm', 'kilometer', 'kilometers', 'km', 'kms', 'distancekm', 'totaldistance', 'distanceinkm']);
+
+          // 7. Trip Duration (Col G - e.g. "3,55" -> 3h 55m)
+          let rawColG = gRow[colIdxDuration] !== undefined && String(gRow[colIdxDuration]).trim() !== '' ? (gRowRaw[colIdxDuration] !== undefined ? gRowRaw[colIdxDuration] : gRow[colIdxDuration]) : undefined;
+          if (rawColG === undefined) rawColG = findExcelProp(objRow, ['tripduration', 'duration', 'traveltime', 'trip_duration', 'estimatedtime', 'durationhours']);
 
           const pStartD = parseExcelDateToYMD(rawColA);
           const pEndD = parseExcelDateToYMD(rawColB) || pStartD;
           const pStartT = parseExcelTimeToHHMM(rawColC) || '08:00';
           const pEndT = parseExcelTimeToHHMM(rawColD) || '18:00';
           const pStops = parseInt(String(rawColE !== undefined ? rawColE : '').replace(/[^0-9]/g, ''), 10) || 0;
-          const pKmNum = parseFloat(String(rawColF !== undefined ? rawColF : '').replace(/[^0-9.]/g, ''));
-          const pKm = !isNaN(pKmNum) && pKmNum > 0 ? pKmNum : null;
+          const pDistNum = parseFloat(String(rawColF !== undefined ? rawColF : '').replace(/[^0-9.]/g, ''));
+          const pKm = !isNaN(pDistNum) && pDistNum > 0 ? pDistNum : null;
+
+          const durObj = parseExcelDuration(rawColG);
+          const pDurMins = durObj.totalMinutes > 0 ? durObj.totalMinutes : null;
+          const pDurText = durObj.text;
 
           if (pStartD) {
             parsedTrips.push({
@@ -853,7 +872,10 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               stops: pStops,
               distance_km: pKm,
               km: pKm,
-              total_distance_km: pKm
+              total_distance_km: pKm,
+              duration_min: pDurMins,
+              estimated_travel_time_min: pDurMins,
+              duration_text: pDurText
             });
           }
         }
@@ -928,7 +950,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Loading time': '1:00',
           'Unloading time': '22:00',
           'Stoppage': 15,
-          'Kilometer': 456
+          'Trip Distance': 334,
+          'Trip Duration': '3,55'
         },
         {
           'Date of loading': '1/3/2026',
@@ -936,7 +959,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Loading time': '14:02',
           'Unloading time': '3:00',
           'Stoppage': 20,
-          'Kilometer': 512
+          'Trip Distance': 654,
+          'Trip Duration': '4,15'
         },
         {
           'Date of loading': '1/6/2026',
@@ -944,7 +968,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Loading time': '3:00',
           'Unloading time': '16:59',
           'Stoppage': 19,
-          'Kilometer': 380
+          'Trip Distance': 876,
+          'Trip Duration': '7,33'
         },
         {
           'Date of loading': '1/8/2026',
@@ -952,7 +977,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Loading time': '19:00',
           'Unloading time': '2:00',
           'Stoppage': 5,
-          'Kilometer': 490
+          'Trip Distance': 566,
+          'Trip Duration': '5,33'
         },
         {
           'Date of loading': '2/10/2026',
@@ -960,7 +986,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Loading time': '5:00',
           'Unloading time': '14:00',
           'Stoppage': 9,
-          'Kilometer': 620
+          'Trip Distance': 787,
+          'Trip Duration': '5,45'
         }
       ];
       const ws = XLSX.utils.json_to_sheet(sampleRows);
@@ -970,7 +997,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         { wch: 14 },
         { wch: 16 },
         { wch: 12 },
-        { wch: 14 }
+        { wch: 15 },
+        { wch: 15 }
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Trip_Schedule');
@@ -2695,29 +2723,32 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                         <th className="p-2.5">Date of Unloading</th>
                         <th className="p-2.5">Unloading Time</th>
                         <th className="p-2.5">Stoppages</th>
-                        <th className="p-2.5">Kilometer</th>
+                        <th className="p-2.5">Trip Distance</th>
+                        <th className="p-2.5">Trip Duration</th>
                         <th className="p-2.5">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-mono">
-                      {batchImportResult.createdTrips.map((ct: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-slate-50/60 transition">
-                          <td className="p-2.5 font-sans font-bold text-slate-900">Trip {idx + 1}</td>
-                          <td className="p-2.5 text-slate-700">{formatToDMY(ct.trip_date)}</td>
-                          <td className="p-2.5 text-emerald-700 font-bold">{formatTimeTo12Hour(ct.start_trip_time) || ct.start_trip_time}</td>
-                          <td className="p-2.5 text-slate-700">{formatToDMY(ct.end_trip_date || ct.trip_date)}</td>
-                          <td className="p-2.5 text-red-700 font-bold">{formatTimeTo12Hour(ct.end_trip_time) || ct.end_trip_time}</td>
-                          <td className="p-2.5 font-sans font-bold text-amber-700">{ct.stoppages_count != null ? ct.stoppages_count : 0} Stops</td>
-                          <td className="p-2.5 font-mono font-bold text-blue-700">{ct.total_distance_km ? `${ct.total_distance_km} KM` : '-'}</td>
-                          <td className="p-2.5 font-sans">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              ct.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
-                            }`}>
-                              {ct.is_active ? '● Current Active' : '✓ Recorded History'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {batchImportResult.createdTrips.map((ct: any, idx: number) => {
+                        const durText = ct.duration_text || (ct.estimated_travel_time_min ? `${Math.floor(ct.estimated_travel_time_min / 60)}h ${ct.estimated_travel_time_min % 60}m` : '-');
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/60 transition">
+                            <td className="p-2.5 font-sans font-bold text-slate-900">Trip {idx + 1}</td>
+                            <td className="p-2.5 text-slate-700">{formatToDMY(ct.trip_date)}</td>
+                            <td className="p-2.5 text-emerald-700 font-bold">{formatTimeTo12Hour(ct.start_trip_time) || ct.start_trip_time}</td>
+                            <td className="p-2.5 text-slate-700">{formatToDMY(ct.end_trip_date || ct.trip_date)}</td>
+                            <td className="p-2.5 text-red-700 font-bold">{formatTimeTo12Hour(ct.end_trip_time) || ct.end_trip_time}</td>
+                            <td className="p-2.5 font-sans font-bold text-amber-700">{ct.stoppages_count != null ? ct.stoppages_count : 0} Stops</td>
+                            <td className="p-2.5 font-mono font-bold text-blue-700">{ct.total_distance_km ? `${ct.total_distance_km} KM` : '-'}</td>
+                            <td className="p-2.5 font-mono font-bold text-purple-700">{durText}</td>
+                            <td className="p-2.5 font-sans">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                ✓ Completed
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -2260,26 +2260,16 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                       return (
                         <div
                           key={trip.id || idx}
-                          className={`p-3 rounded-2xl border transition-all ${isActive
-                            ? 'bg-emerald-50/40 border-emerald-300 shadow-2xs'
-                            : 'bg-white border-slate-200/90 hover:border-slate-300'
-                            }`}
+                          className="p-3 rounded-2xl border transition-all bg-white border-slate-200/90 hover:border-slate-300"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-bold text-xs text-slate-900">
                                 {trip.route_name || `Trip #${trip.id}`}
                               </span>
-                              {isActive ? (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                                  Active Trip
-                                </span>
-                              ) : (
-                                <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200">
-                                  Completed
-                                </span>
-                              )}
+                              <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-200">
+                                Completed
+                              </span>
 
                               {/* Operational Status Selector directly on Trip Card (Admin Only) */}
                               {isAdmin ? (

@@ -816,16 +816,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     <span className="font-bold text-xs text-slate-900 truncate">
                                       {trip.route_name || `Trip #${idx + 1}`}
                                     </span>
-                                    {isActive ? (
-                                      <span className="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                                        Active Trip
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200 shrink-0">
-                                        Completed
-                                      </span>
-                                    )}
+                                    <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200 shrink-0">
+                                      Completed
+                                    </span>
                                   </div>
 
                                   <p className="text-[11px] text-slate-600 truncate">
@@ -984,16 +977,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               <span className="font-bold text-xs text-slate-900">
                                 {trip.route_name || `Trip #${vehicleHistoryTrips.length - idx}`}
                               </span>
-                              {isActive ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                                  Active Trip
+                                <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-200">
+                                  Completed
                                 </span>
-                              ) : (
-                                <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200">
-                                  Completed / Past Trip
-                                </span>
-                              )}
                             </div>
 
                             <div className="flex items-center gap-2">

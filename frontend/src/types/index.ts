@@ -117,6 +117,7 @@ export interface RouteDetail {
   stoppages_count?: number;
   toll_gates_count?: number;
   total_toll_fee?: number;
+  duration_text?: string;
   created_at: string;
 }
 
