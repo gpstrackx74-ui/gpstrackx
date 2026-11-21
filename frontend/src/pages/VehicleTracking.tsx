@@ -1179,7 +1179,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                     {allTrips.length > 0 && (
                       <div className="pt-2 flex flex-wrap justify-center gap-1.5">
                         <span className="text-[10px] font-bold text-slate-400 block w-full">Available Journey Dates:</span>
-                        {Array.from(new Set(allTrips.map((t: any) => normalizeToYMD(t.trip_date || (t.created_at ? t.created_at.split('T')[0] : ''))).filter(Boolean))).slice(0, 4).map((d: any) => (
+                        {Array.from(new Set(allTrips.map((t: any) => normalizeToYMD(t.trip_date || (t.created_at ? t.created_at.split('T')[0] : ''))).filter(Boolean))).slice(0, 20).map((d: any) => (
                           <button
                             key={d}
                             type="button"

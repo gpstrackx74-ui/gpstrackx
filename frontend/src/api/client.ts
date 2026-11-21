@@ -203,6 +203,20 @@ export const api = {
       body: JSON.stringify(data)
     }),
   saveRoute: (data: any) => apiRequest('/routes', { method: 'POST', body: JSON.stringify(data) }),
+  batchImportTrips: (data: any) =>
+    apiRequest<{
+      success: boolean;
+      totalRows: number;
+      createdCount: number;
+      restrictedCount: number;
+      createdTrips: any[];
+      restrictedTrips: any[];
+      message: string;
+      error?: string;
+    }>('/routes/batch-import-trips', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
   saveCorridor: (data: any) => apiRequest('/routes/save-corridor', { method: 'POST', body: JSON.stringify(data) }),
   updateQuickRoute: (vehicleId: number | string, data: any) =>
     apiRequest(`/vehicles/${vehicleId}/quick-route`, { method: 'PUT', body: JSON.stringify(data) }),

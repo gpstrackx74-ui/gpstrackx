@@ -205,8 +205,8 @@ const supabaseService = {
           id, vehicle_id, route_name, start_location_name, start_address, start_lat, start_lng,
           end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
           overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
-          trip_date, start_trip_time, end_trip_time, is_active
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+          trip_date, start_trip_time, end_trip_time, is_active, end_trip_date
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
         ON CONFLICT (id) DO UPDATE SET
           route_name = EXCLUDED.route_name,
           vehicle_id = EXCLUDED.vehicle_id,
@@ -216,11 +216,12 @@ const supabaseService = {
           estimated_travel_time_min = EXCLUDED.estimated_travel_time_min,
           overview_polyline = EXCLUDED.overview_polyline,
           toll_gates_json = EXCLUDED.toll_gates_json,
+          end_trip_date = EXCLUDED.end_trip_date,
           updated_at = CURRENT_TIMESTAMP
       `, [r.id, r.vehicle_id || null, r.route_name, r.start_location_name, r.start_address || '', r.start_lat, r.start_lng,
       r.end_location_name, r.end_address || '', r.end_lat, r.end_lng, r.total_distance_km, r.estimated_travel_time_min,
       r.overview_polyline || '', r.route_color || '#E60012', r.waypoints_json || '[]', r.toll_gates_json || '[]',
-      r.alternative_routes_json || '[]', r.trip_date || null, r.start_trip_time || null, r.end_trip_time || null, r.is_active !== undefined ? r.is_active : 1]);
+      r.alternative_routes_json || '[]', r.trip_date || null, r.start_trip_time || null, r.end_trip_time || null, r.is_active !== undefined ? r.is_active : 1, r.end_trip_date || null]);
       console.log(`[Supabase] Synced route: ${r.route_name}`);
     } catch (err) {
       console.error('[Supabase syncRoute Error]:', err.message);

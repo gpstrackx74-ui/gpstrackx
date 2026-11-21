@@ -40,7 +40,8 @@ import {
   Search,
   Loader2,
   X,
-  ArrowLeftRight
+  ArrowLeftRight,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ParkingPoint {
@@ -83,10 +84,19 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   const [showSavedCorridorSearch, setShowSavedCorridorSearch] = useState<boolean>(false);
   const [savedCorridorSearchTerm, setSavedCorridorSearchTerm] = useState<string>('');
 
-  // Trip Schedule Excel Import State (Start/End Date, Start/End Time, Duration, Distance, Stoppages)
+  // Trip Schedule Excel Import State
   const [scheduleExcelRows, setScheduleExcelRows] = useState<any[]>([]);
   const [selectedScheduleRowIdx, setSelectedScheduleRowIdx] = useState<number>(0);
   const [scheduleImportSuccessMsg, setScheduleImportSuccessMsg] = useState<string>('');
+  const [isImportingTripExcel, setIsImportingTripExcel] = useState<boolean>(false);
+  const [batchImportResult, setBatchImportResult] = useState<{
+    totalRows: number;
+    createdCount: number;
+    restrictedCount: number;
+    createdTrips: any[];
+    restrictedTrips: any[];
+    message?: string;
+  } | null>(null);
 
   // 100% Immortal & Deduplicated Saved Corridors List (1 Entry Per Route)
   const uniqueSavedCorridors = useMemo(() => {
@@ -691,13 +701,29 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     );
   };
 
-  // Import Trip Schedule Excel (.xlsx, .xls, .csv)
+  // Import Trip Schedule Excel (.xlsx, .xls, .csv) and Batch Create Trip Histories
   const handleImportTripScheduleExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // 1. Validation: Vehicle must be selected
+    if (!selectedVehicleId) {
+      alert('कृपया पहले एक Target Vehicle सेलेक्ट करें (Please select a target vehicle from the dropdown first before importing trip Excel).');
+      e.target.value = '';
+      return;
+    }
+
+    // 2. Validation: Route must be present
+    const currentRoute = routes.find(r => r.id === selectedRouteId) || routes[0];
+    if (!currentRoute || !startPoint || !endPoint) {
+      alert('कृपया पहले एक Route सेलेक्ट या प्लान करें (Please select or plan a valid route first before importing trip Excel).');
+      e.target.value = '';
+      return;
+    }
+
+    setIsImportingTripExcel(true);
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const bstr = evt.target?.result;
         // Do not force cellDates: true to avoid timezone shift on time-only cells
@@ -708,20 +734,111 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         const dataFormatted: any[] = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
         const dataRaw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true });
 
-        const data = dataFormatted.map((rowF, idx) => {
+        const rawData = dataFormatted.map((rowF, idx) => {
           const rowR = dataRaw[idx] || {};
           return { ...rowR, ...rowF, _raw: rowR };
         });
 
-        if (!data || data.length === 0) {
-          alert('Excel file is empty. Please upload an Excel sheet with trip schedule details.');
+        if (!rawData || rawData.length === 0) {
+          alert('Excel file is empty. Please upload an Excel sheet with trip schedule rows.');
+          setIsImportingTripExcel(false);
           return;
         }
 
-        setScheduleExcelRows(data);
-        applyTripScheduleRow(data[0], 0);
+        // Parse each row matching exact columns from user image:
+        // Column A: Date of loading
+        // Column B: Date of unloading
+        // Column C: Loading time
+        // Column D: Unloading time
+        // Column E: Stoppage
+        const parsedTrips: any[] = [];
+        for (let i = 0; i < rawData.length; i++) {
+          const row = rawData[i];
+          const sDate = findExcelProp(row, ['dateofloading', 'loadingdate', 'startdate', 'fromdate', 'tripdate', 'date']);
+          const eDate = findExcelProp(row, ['dateofunloading', 'unloadingdate', 'enddate', 'todate', 'endtripdate']);
+          const sTime = findExcelProp(row, ['loadingtime', 'starttime', 'dispatchtime', 'fromtime', 'time']);
+          const eTime = findExcelProp(row, ['unloadingtime', 'endtime', 'arrivaltime', 'totime']);
+          const stoppage = findExcelProp(row, ['stoppage', 'stoppages', 'stops', 'halt']);
+
+          // Also support positional values if headers don't match (col 0, 1, 2, 3, 4)
+          const vals = Object.values(row).filter(v => v !== row._raw);
+          const rawColA = sDate !== undefined ? sDate : vals[0];
+          const rawColB = eDate !== undefined ? eDate : vals[1];
+          const rawColC = sTime !== undefined ? sTime : vals[2];
+          const rawColD = eTime !== undefined ? eTime : vals[3];
+          const rawColE = stoppage !== undefined ? stoppage : vals[4];
+
+          const pStartD = parseExcelDateToYMD(rawColA);
+          const pEndD = parseExcelDateToYMD(rawColB) || pStartD;
+          const pStartT = parseExcelTimeToHHMM(rawColC) || '08:00';
+          const pEndT = parseExcelTimeToHHMM(rawColD) || '18:00';
+          const pStops = parseInt(String(rawColE || '').replace(/[^0-9]/g, ''), 10) || 0;
+
+          if (pStartD) {
+            parsedTrips.push({
+              loading_date: pStartD,
+              unloading_date: pEndD || pStartD,
+              loading_time: pStartT,
+              unloading_time: pEndT,
+              stoppage_count: pStops
+            });
+          }
+        }
+
+        if (parsedTrips.length === 0) {
+          alert('No valid trip rows found. Please ensure Column A has Loading Date and Column B has Unloading Date.');
+          setIsImportingTripExcel(false);
+          return;
+        }
+
+        const effectiveDistance = customDistanceKm !== null ? customDistanceKm : (currentRoute.distanceKm || 0);
+        const sanitizedAltRoutes = routes.map(r => ({
+          id: r.id,
+          name: r.name,
+          distanceKm: r.distanceKm,
+          timeMinutes: r.timeMinutes,
+          tollGatesCount: r.tollGatesCount,
+          stopsCount: r.stopsCount,
+          summary: r.summary,
+          color: r.color,
+          tollGates: r.tollGates
+        }));
+
+        // Call backend API to batch create all trips with collision restriction
+        // Note: Default / manual form start/end dates & times are completely ignored as requested!
+        const res = await api.batchImportTrips({
+          vehicle_id: parseInt(selectedVehicleId),
+          assigned_user_id: allotUserId ? parseInt(allotUserId) : undefined,
+          route_name: corridorNameInput.trim() || `${startPoint.name} to ${endPoint.name}`,
+          start_location_name: startPoint.name,
+          start_address: startPoint.address,
+          start_lat: startPoint.lat,
+          start_lng: startPoint.lng,
+          end_location_name: endPoint.name,
+          end_address: endPoint.address,
+          end_lat: endPoint.lat,
+          end_lng: endPoint.lng,
+          total_distance_km: effectiveDistance,
+          overview_polyline: currentRoute.coordinates,
+          route_color: currentRoute.color,
+          toll_gates: currentTolls,
+          alternative_routes: sanitizedAltRoutes,
+          trips: parsedTrips
+        });
+
+        setBatchImportResult(res);
+
+        if (res.createdCount > 0) {
+          setScheduleImportSuccessMsg(
+            `✓ ${res.createdCount} ट्रिप सफलतापूर्वक क्रिएट हो गए! (${targetVehicle?.registration_no || selectedVehicleId} के लिए ट्रिप हिस्ट्री जोड़ दी गई है)`
+          );
+        } else if (res.restrictedCount > 0) {
+          alert(`⚠️ इस व्हीकल का टाइम मिसमैच हो रहा है! सभी ${res.restrictedCount} ट्रिप्स का टाइम ओवरलैप हो रहा था, इसलिए उन्हें क्रिएट नहीं किया गया।`);
+        }
       } catch (err: any) {
-        alert('Failed to read Excel file: ' + err.message);
+        alert('Failed to import Excel trips: ' + (err.message || err));
+      } finally {
+        setIsImportingTripExcel(false);
       }
     };
     reader.readAsBinaryString(file);
@@ -733,28 +850,52 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     try {
       const sampleRows = [
         {
-          'Start Date': '1/1/2026',
-          'End Date': '1/1/2026',
-          'Start time': '1:00',
-          'End time': '22:00',
-          'Stoppage': 15,
-          'Trip Duration': '3,45',
-          'Trip Distance': 456
+          'Date of loading': '1/1/2026',
+          'Date of unloading': '1/1/2026',
+          'Loading time': '1:00',
+          'Unloading time': '22:00',
+          'Stoppage': 15
+        },
+        {
+          'Date of loading': '1/3/2026',
+          'Date of unloading': '1/4/2026',
+          'Loading time': '14:02',
+          'Unloading time': '3:00',
+          'Stoppage': 20
+        },
+        {
+          'Date of loading': '1/6/2026',
+          'Date of unloading': '1/6/2026',
+          'Loading time': '3:00',
+          'Unloading time': '16:59',
+          'Stoppage': 19
+        },
+        {
+          'Date of loading': '1/8/2026',
+          'Date of unloading': '1/9/2026',
+          'Loading time': '19:00',
+          'Unloading time': '2:00',
+          'Stoppage': 5
+        },
+        {
+          'Date of loading': '2/10/2026',
+          'Date of unloading': '2/10/2026',
+          'Loading time': '5:00',
+          'Unloading time': '14:00',
+          'Stoppage': 9
         }
       ];
       const ws = XLSX.utils.json_to_sheet(sampleRows);
       ws['!cols'] = [
+        { wch: 18 },
+        { wch: 18 },
         { wch: 14 },
-        { wch: 14 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 15 },
-        { wch: 15 }
+        { wch: 16 },
+        { wch: 12 }
       ];
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-      XLSX.writeFile(wb, 'Trip_Schedule_Sample.xlsx');
+      XLSX.utils.book_append_sheet(wb, ws, 'Trip_Schedule');
+      XLSX.writeFile(wb, 'Trip_Schedule_Template.xlsx');
     } catch (err: any) {
       alert('Failed to download template: ' + err.message);
     }
@@ -2351,12 +2492,19 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {/* Excel Import Option beside Scheduled Trip Date & Timings */}
-              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer transition">
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Import Trip Excel</span>
+              <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer transition ${
+                isImportingTripExcel ? 'opacity-70 pointer-events-none' : ''
+              }`}>
+                {isImportingTripExcel ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                )}
+                <span>{isImportingTripExcel ? 'Creating Trips...' : 'Import Trip Excel'}</span>
                 <input
                   type="file"
                   accept=".xlsx, .xls, .csv"
+                  disabled={isImportingTripExcel}
                   onChange={handleImportTripScheduleExcel}
                   className="hidden"
                 />
@@ -2367,7 +2515,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 type="button"
                 onClick={handleDownloadTripScheduleTemplate}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs cursor-pointer transition"
-                title="Download Sample Format Excel"
+                title="Download Sample Format Excel (Date of loading, Date of unloading, Loading time, Unloading time, Stoppage)"
               >
                 <Download className="w-3.5 h-3.5 text-slate-500" />
                 <span>Sample Excel</span>
@@ -2389,7 +2537,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               </div>
               <button
                 type="button"
-                onClick={() => setScheduleImportSuccessMsg(null)}
+                onClick={() => setScheduleImportSuccessMsg('')}
                 className="text-emerald-600 hover:text-emerald-800 font-bold text-xs px-1.5 cursor-pointer"
               >
                 ✕
@@ -2397,56 +2545,102 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
             </div>
           )}
 
-          {/* Multi-Row Trip Selector (when multiple rows uploaded from Excel) */}
-          {scheduleExcelRows.length > 0 && (
-            <div className="p-2.5 px-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                  Excel Imported Trips ({scheduleExcelRows.length} Trips Available):
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScheduleExcelRows([]);
-                    setSelectedScheduleRowIdx(null);
-                    setScheduleImportSuccessMsg(null);
-                  }}
-                  className="text-[11px] font-bold text-red-600 hover:underline cursor-pointer"
-                >
-                  Clear Excel
-                </button>
+          {/* Batch Import Trips Result Card / Notification */}
+          {batchImportResult && (
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
+                    <Check className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                      Trip History Created from Excel ({batchImportResult.createdCount} Trips Created)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Vehicle: <span className="font-mono font-bold text-slate-800">{targetVehicle?.registration_no || selectedVehicleId}</span> • 
+                      Route: <span className="font-semibold text-slate-800">{startPoint?.name} → {endPoint?.name}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => onSavedRouteSuccess(parseInt(selectedVehicleId))}
+                    className="px-3 py-1.5 rounded-xl bg-[#E60012] hover:bg-[#CC0010] text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                    title="Inspect Vehicle Live View & All Trips"
+                  >
+                    <span>View on Live Map / Trip History →</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBatchImportResult(null)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                    title="Dismiss"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {scheduleExcelRows.map((r, idx) => {
-                  const sD = findExcelProp(r, ['startdate', 'fromdate', 'tripdate', 'date']);
-                  const formattedD = parseExcelDateToYMD(sD);
-                  const dist = findExcelProp(r, ['tripdistance', 'distance', 'totalkm', 'km']);
-                  const isSelected = selectedScheduleRowIdx === idx;
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => applyTripScheduleRow(r, idx)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span>Trip {idx + 1}</span>
-                      <span className="opacity-80 text-[10px] font-mono">
-                        {formattedD ? formatToDMY(formattedD) : ''}
-                      </span>
-                      {dist && (
-                        <span className="text-[10px] opacity-75 font-mono">
-                          • {dist} KM
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+
+              {/* Time Mismatch / Overlap Restrictions Warning if any */}
+              {batchImportResult.restrictedCount > 0 && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 space-y-1.5">
+                  <div className="flex items-center gap-2 text-amber-800 text-xs font-bold">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>⚠️ इस व्हीकल का टाइम मिसमैच हो रहा है ({batchImportResult.restrictedCount} Trip Overlap Restricted)</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    नीचे दिए गए ट्रिप का समय पहले से मौजूद ट्रिप या फाइल के दूसरे ट्रिप के साथ टकरा रहा था, इसलिए इन्हें ट्रिप हिस्ट्री में नहीं बनाया गया:
+                  </p>
+                  <div className="space-y-1 pt-1">
+                    {batchImportResult.restrictedTrips.map((rt: any, idx: number) => (
+                      <div key={idx} className="text-[11px] font-mono text-amber-900 bg-amber-100/60 px-2.5 py-1.5 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span>Row {rt.row}: {rt.loading_date} [{rt.loading_time}] → {rt.unloading_date} [{rt.unloading_time}]</span>
+                        <span className="font-sans text-[10px] text-amber-800 font-bold">{rt.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Created Trips Table */}
+              {batchImportResult.createdCount > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border border-slate-100 rounded-xl overflow-hidden">
+                    <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">Trip</th>
+                        <th className="p-2.5">Date of Loading</th>
+                        <th className="p-2.5">Loading Time</th>
+                        <th className="p-2.5">Date of Unloading</th>
+                        <th className="p-2.5">Unloading Time</th>
+                        <th className="p-2.5">Stoppages</th>
+                        <th className="p-2.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono">
+                      {batchImportResult.createdTrips.map((ct: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50/60 transition">
+                          <td className="p-2.5 font-sans font-bold text-slate-900">Trip {idx + 1}</td>
+                          <td className="p-2.5 text-slate-700">{formatToDMY(ct.trip_date)}</td>
+                          <td className="p-2.5 text-emerald-700 font-bold">{formatTimeTo12Hour(ct.start_trip_time) || ct.start_trip_time}</td>
+                          <td className="p-2.5 text-slate-700">{formatToDMY(ct.end_trip_date || ct.trip_date)}</td>
+                          <td className="p-2.5 text-red-700 font-bold">{formatTimeTo12Hour(ct.end_trip_time) || ct.end_trip_time}</td>
+                          <td className="p-2.5 font-sans text-slate-600">{ct.stoppages_count} Stops</td>
+                          <td className="p-2.5 font-sans">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              ct.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {ct.is_active ? '● Current Active' : '✓ Recorded History'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

@@ -2226,6 +2226,461 @@ app.post('/api/routes/calculate', authenticateToken, requireAdmin, async (req, r
   }
 });
 
+// ---------------- BATCH IMPORT MULTI-ROW TRIPS FROM EXCEL ---------------- //
+// Admin imports Excel with multiple loading/unloading dates, times, and stoppages.
+// Creates a distinct trip history for each row with time collision restriction.
+app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, async (req, res) => {
+  const {
+    vehicle_id,
+    assigned_user_id,
+    route_name,
+    start_location_name,
+    start_address,
+    start_lat,
+    start_lng,
+    end_location_name,
+    end_address,
+    end_lat,
+    end_lng,
+    total_distance_km,
+    overview_polyline,
+    route_color,
+    toll_gates = [],
+    alternative_routes = [],
+    trips = []
+  } = req.body;
+
+  if (!vehicle_id) {
+    return res.status(400).json({ error: 'Target vehicle ID is required.' });
+  }
+  if (!start_location_name || !end_location_name) {
+    return res.status(400).json({ error: 'Origin and destination route points are required.' });
+  }
+  if (!Array.isArray(trips) || trips.length === 0) {
+    return res.status(400).json({ error: 'No trip records found in the uploaded Excel data.' });
+  }
+
+  const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
+  if (!vehicle) {
+    return res.status(404).json({ error: 'Target vehicle not found.' });
+  }
+
+  const vehicleRegNo = vehicle.registration_no || `TRUCK-${vehicle_id}`;
+
+  // If assigned_user_id is provided, update vehicle assignment
+  if (assigned_user_id) {
+    db.prepare('UPDATE vehicles SET assigned_user_id = ? WHERE id = ?').run(parseInt(assigned_user_id), vehicle_id);
+  }
+
+  // Parse polyline coordinates for generating stoppages if needed
+  let polylineCoords = [];
+  try {
+    if (typeof overview_polyline === 'string') {
+      if (overview_polyline.startsWith('[')) {
+        polylineCoords = JSON.parse(overview_polyline);
+      }
+    } else if (Array.isArray(overview_polyline)) {
+      polylineCoords = overview_polyline;
+    }
+  } catch (_) { }
+
+  const polylineStr = typeof overview_polyline === 'string' ? overview_polyline : JSON.stringify(overview_polyline || []);
+  const tollGatesJson = JSON.stringify(toll_gates || []);
+  const altRoutesJson = JSON.stringify(alternative_routes || []);
+
+  // Fetch all existing trips for this vehicle to check time collisions
+  const existingRoutes = db.prepare(`
+    SELECT id, trip_date, end_trip_date, start_trip_time, end_trip_time 
+    FROM routes 
+    WHERE vehicle_id = ?
+  `).all(vehicle_id);
+
+  // Helper to parse interval in milliseconds
+  function parseInterval(tripDate, endTripDate, startTime, endTime) {
+    const sDate = String(tripDate || '').trim();
+    const eDate = String(endTripDate || sDate).trim();
+    const sTime = String(startTime || '00:00').trim().slice(0, 5);
+    const eTime = String(endTime || '23:59').trim().slice(0, 5);
+
+    let startMs = new Date(`${sDate}T${sTime.padStart(5, '0')}:00`).getTime();
+    let endMs = new Date(`${eDate}T${eTime.padStart(5, '0')}:00`).getTime();
+
+    if (isNaN(startMs)) startMs = 0;
+    if (isNaN(endMs)) endMs = startMs + 3600000;
+
+    if (endMs <= startMs && sDate === eDate) {
+      endMs += 24 * 60 * 60 * 1000;
+    }
+
+    return { startMs, endMs, sDate, eDate, sTime, eTime };
+  }
+
+  const existingIntervals = existingRoutes.map(r => parseInterval(r.trip_date, r.end_trip_date, r.start_trip_time, r.end_trip_time));
+
+  const acceptedTrips = [];
+  const restrictedTrips = [];
+
+  // Check each incoming trip row
+  trips.forEach((t, idx) => {
+    const rowNum = idx + 1;
+    const sD = String(t.loading_date || t.trip_date || '').trim();
+    const eD = String(t.unloading_date || t.end_trip_date || sD).trim();
+    const sT = String(t.loading_time || t.start_trip_time || '08:00').trim();
+    const eT = String(t.unloading_time || t.end_trip_time || '18:00').trim();
+
+    if (!sD) {
+      restrictedTrips.push({
+        row: rowNum,
+        loading_date: sD,
+        loading_time: sT,
+        unloading_date: eD,
+        unloading_time: eT,
+        reason: 'Loading Date is missing'
+      });
+      return;
+    }
+
+    const currentInterval = parseInterval(sD, eD, sT, eT);
+
+    // 1. Check against existing trips in DB for this vehicle
+    const dbConflict = existingIntervals.find(e => {
+      return currentInterval.startMs < e.endMs && currentInterval.endMs > e.startMs;
+    });
+
+    if (dbConflict) {
+      restrictedTrips.push({
+        row: rowNum,
+        loading_date: sD,
+        loading_time: sT,
+        unloading_date: eD,
+        unloading_time: eT,
+        reason: `इस व्हीकल का टाइम मिसमैच / ओवरलैप हो रहा है: Existing Trip on ${dbConflict.sDate} (${dbConflict.sTime} - ${dbConflict.eTime}) के साथ समय टकरा रहा है`
+      });
+      return;
+    }
+
+    // 2. Check against already accepted incoming trips in this batch
+    const batchConflict = acceptedTrips.find(a => {
+      return currentInterval.startMs < a.interval.endMs && currentInterval.endMs > a.interval.startMs;
+    });
+
+    if (batchConflict) {
+      restrictedTrips.push({
+        row: rowNum,
+        loading_date: sD,
+        loading_time: sT,
+        unloading_date: eD,
+        unloading_time: eT,
+        reason: `इस व्हीकल का टाइम मिसमैच / ओवरलैप हो रहा है: Row ${batchConflict.row} (${batchConflict.sD} ${batchConflict.sT} - ${batchConflict.eT}) के साथ समय टकरा रहा है`
+      });
+      return;
+    }
+
+    // Valid and no time overlap
+    acceptedTrips.push({
+      row: rowNum,
+      sD,
+      eD,
+      sT,
+      eT,
+      stoppages_count: parseInt(t.stoppages_count || t.stoppage || 0, 10) || 0,
+      interval: currentInterval
+    });
+  });
+
+  if (acceptedTrips.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'सभी ट्रिप्स का टाइम मिसमैच / ओवरलैप हो रहा है, कोई ट्रिप क्रिएट नहीं की जा सकी।',
+      totalRows: trips.length,
+      createdCount: 0,
+      restrictedCount: restrictedTrips.length,
+      restrictedTrips
+    });
+  }
+
+  // Sort accepted trips chronologically
+  acceptedTrips.sort((a, b) => a.interval.startMs - b.interval.startMs);
+
+  const createdRoutes = [];
+
+  const batchTx = db.transaction(() => {
+    // Deactivate previous active routes for this vehicle
+    db.prepare('UPDATE routes SET is_active = 0 WHERE vehicle_id = ?').run(vehicle_id);
+
+    const insertRouteStmt = db.prepare(`
+      INSERT INTO routes (
+        vehicle_id, route_name, start_location_name, start_address, start_lat, start_lng,
+        end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
+        overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
+        trip_date, end_trip_date, start_trip_time, end_trip_time, total_toll_fee, stoppages_count, toll_gates_count, is_active,
+        vehicle_registration_no
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    acceptedTrips.forEach((tripItem, index) => {
+      // The latest trip gets is_active = 1, older ones get is_active = 0
+      const isActive = index === acceptedTrips.length - 1 ? 1 : 0;
+      const durationMin = Math.max(15, Math.round((tripItem.interval.endMs - tripItem.interval.startMs) / (60 * 1000)));
+
+      // Generate stoppages if stoppage count given
+      const tripStops = [];
+      if (tripItem.stoppages_count > 0 && polylineCoords.length > 1) {
+        for (let sIdx = 0; sIdx < tripItem.stoppages_count; sIdx++) {
+          const ratio = (sIdx + 1) / (tripItem.stoppages_count + 1);
+          const pIdx = Math.min(polylineCoords.length - 1, Math.max(0, Math.floor(polylineCoords.length * ratio)));
+          const pt = polylineCoords[pIdx];
+          tripStops.push({
+            id: sIdx + 1,
+            sequence_order: sIdx + 1,
+            name: `Transit Halt #${sIdx + 1}`,
+            address: `Highway Stoppage at ${pt[0].toFixed(4)}, ${pt[1].toFixed(4)}`,
+            lat: pt[0],
+            lng: pt[1],
+            duration: 15,
+            stop_duration_mins: 15
+          });
+        }
+      }
+
+      // Compute total tolls
+      let totalTollAmt = 0;
+      if (Array.isArray(toll_gates)) {
+        toll_gates.forEach(tg => {
+          totalTollAmt += Number(tg.charges || tg.truck_rate || 0);
+        });
+      }
+
+      const resInsert = insertRouteStmt.run(
+        vehicle_id,
+        route_name || `${start_location_name} to ${end_location_name}`,
+        start_location_name,
+        start_address || '',
+        start_lat,
+        start_lng,
+        end_location_name,
+        end_address || '',
+        end_lat,
+        end_lng,
+        total_distance_km || 0,
+        durationMin,
+        polylineStr,
+        route_color || '#EF4444',
+        JSON.stringify(tripStops),
+        tollGatesJson,
+        altRoutesJson,
+        tripItem.sD,
+        tripItem.eD,
+        tripItem.sT,
+        tripItem.eT,
+        totalTollAmt,
+        tripItem.stoppages_count,
+        toll_gates.length,
+        isActive,
+        vehicleRegNo
+      );
+
+      const routeId = resInsert.lastInsertRowid;
+
+      // Insert stoppages into stoppages table
+      if (tripStops.length > 0) {
+        const stopStmt = db.prepare(`
+          INSERT INTO stoppages (route_id, sequence_order, name, address, lat, lng, stop_duration_mins)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        tripStops.forEach((w, sIdx) => {
+          stopStmt.run(routeId, sIdx + 1, w.name, w.address || '', w.lat, w.lng, w.duration || 15);
+        });
+      }
+
+      // Insert manual tolls
+      if (toll_gates && Array.isArray(toll_gates)) {
+        const manualStmt = db.prepare(`
+          INSERT INTO manual_toll_gates (route_id, name, lat, lng, charges, toll_type)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        toll_gates.forEach(t => {
+          manualStmt.run(routeId, t.name, t.lat, t.lng, t.charges || 0, t.toll_type || 'FASTag ETC');
+        });
+      }
+
+      // Generate FASTag transactions for this trip
+      if (toll_gates && Array.isArray(toll_gates) && toll_gates.length > 0) {
+        const fastagInsert = db.prepare(`
+          INSERT INTO fastag_transactions (
+            transaction_id, netc_reference_no, tag_id, vehicle_id, vehicle_registration_no,
+            vehicle_class, route_id, toll_plaza_name, highway_name, lat, lng,
+            amount, base_toll_fee, gst_amount, concessionaire_name, gstin,
+            lane_direction, payment_status, crossing_time, wallet_balance_before, wallet_balance_after
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        let currentWalletBal = 25000.0;
+        const tagId = fastagService.generateTagId(vehicleRegNo);
+
+        toll_gates.forEach((tg, tIdx) => {
+          const tariff = fastagService.getTruckTollTariff(tg.lat, tg.lng, tg.name);
+          const amount = tg.charges && tg.charges > 0 ? tg.charges : tariff.truckRate;
+          const offsetMins = (tIdx + 1) * 45;
+          const crossingTime = fastagService.formatCrossingTimestamp(tripItem.sD, tripItem.sT, offsetMins);
+          const txnId = fastagService.generateTransactionId(crossingTime);
+          const netcRef = fastagService.generateNetcReference(crossingTime);
+          const balBefore = currentWalletBal;
+          currentWalletBal = Math.max(0, currentWalletBal - amount);
+
+          fastagInsert.run(
+            txnId,
+            netcRef,
+            tagId,
+            vehicle_id,
+            vehicleRegNo,
+            'Commercial Truck (HCV / 3-Axle Truck)',
+            routeId,
+            tariff.officialName,
+            tariff.highway,
+            Number(tg.lat || 0),
+            Number(tg.lng || 0),
+            amount,
+            amount,
+            0,
+            tariff.concessionaire,
+            tariff.gstin,
+            `Lane 0${(tIdx % 4) + 1} - Dedicated FASTag ETC`,
+            'SUCCESS',
+            crossingTime,
+            balBefore,
+            currentWalletBal
+          );
+        });
+      }
+
+      createdRoutes.push({
+        id: routeId,
+        row: tripItem.row,
+        trip_date: tripItem.sD,
+        end_trip_date: tripItem.eD,
+        start_trip_time: tripItem.sT,
+        end_trip_time: tripItem.eT,
+        stoppages_count: tripItem.stoppages_count,
+        total_distance_km,
+        is_active: isActive
+      });
+    });
+
+    // Update vehicle coordinates, status, and times from the latest trip
+    const latestTrip = acceptedTrips[acceptedTrips.length - 1];
+    db.prepare(`
+      UPDATE vehicles SET 
+        current_lat = ?, 
+        current_lng = ?, 
+        status = 'moving',
+        current_speed = 62.0,
+        start_trip_time = ?,
+        end_trip_time = ?,
+        stoppages_count = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      start_lat,
+      start_lng,
+      latestTrip.sT,
+      latestTrip.eT,
+      latestTrip.stoppages_count,
+      vehicle_id
+    );
+
+    // Save Corridor
+    try {
+      const cleanCorridorName = (route_name || `${start_location_name} to ${end_location_name}`)
+        .replace(/^[A-Z0-9]{8,12}:\s*/i, '')
+        .replace(/\r?\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const sLoc = (start_location_name || '').replace(/\r?\n/g, ' ').trim();
+      const eLoc = (end_location_name || '').replace(/\r?\n/g, ' ').trim();
+
+      const existingCorridor = db.prepare(`
+        SELECT id FROM saved_corridors 
+        WHERE LOWER(TRIM(route_name)) = LOWER(TRIM(?))
+           OR (LOWER(TRIM(start_location_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(end_location_name)) = LOWER(TRIM(?)))
+      `).get(cleanCorridorName, sLoc, eLoc);
+
+      let savedCorridorRow;
+      if (existingCorridor) {
+        db.prepare(`
+          UPDATE saved_corridors SET
+            route_name = ?,
+            start_location_name = ?, start_address = ?, start_lat = ?, start_lng = ?,
+            end_location_name = ?, end_address = ?, end_lat = ?, end_lng = ?,
+            total_distance_km = ?, estimated_travel_time_min = ?,
+            overview_polyline = ?, waypoints_json = ?, toll_gates_json = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          cleanCorridorName,
+          sLoc, start_address || '', start_lat, start_lng,
+          eLoc, end_address || '', end_lat, end_lng,
+          total_distance_km || 0, 120,
+          polylineStr, '[]', tollGatesJson,
+          existingCorridor.id
+        );
+        savedCorridorRow = db.prepare('SELECT * FROM saved_corridors WHERE id = ?').get(existingCorridor.id);
+      } else {
+        const cInfo = db.prepare(`
+          INSERT INTO saved_corridors (
+            route_name, start_location_name, start_address, start_lat, start_lng,
+            end_location_name, end_address, end_lat, end_lng,
+            total_distance_km, estimated_travel_time_min,
+            overview_polyline, waypoints_json, toll_gates_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          cleanCorridorName,
+          sLoc, start_address || '', start_lat, start_lng,
+          eLoc, end_address || '', end_lat, end_lng,
+          total_distance_km || 0, 120,
+          polylineStr, '[]', tollGatesJson
+        );
+        savedCorridorRow = db.prepare('SELECT * FROM saved_corridors WHERE id = ?').get(cInfo.lastInsertRowid);
+      }
+      if (savedCorridorRow) {
+        supabaseService.syncCorridor(savedCorridorRow);
+      }
+    } catch (_) { }
+  });
+
+  try {
+    batchTx();
+
+    // Async sync created routes and vehicle to Supabase
+    (async () => {
+      try {
+        await supabaseService.query('UPDATE routes SET is_active = 0 WHERE vehicle_id = $1', [vehicle_id]);
+        for (const cr of createdRoutes) {
+          const fullRoute = db.prepare('SELECT * FROM routes WHERE id = ?').get(cr.id);
+          if (fullRoute) await supabaseService.syncRoute(fullRoute);
+        }
+        const updatedVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
+        if (updatedVehicle) await supabaseService.syncVehicle(updatedVehicle);
+      } catch (err) {
+        console.error('[Batch Import Supabase Sync Error]:', err.message);
+      }
+    })();
+
+    res.json({
+      success: true,
+      totalRows: trips.length,
+      createdCount: createdRoutes.length,
+      restrictedCount: restrictedTrips.length,
+      createdTrips: createdRoutes,
+      restrictedTrips,
+      message: `${createdRoutes.length} ट्रिप सफलतापूर्वक क्रिएट हो गए।${restrictedTrips.length > 0 ? ` (${restrictedTrips.length} ट्रिप टाइम मिसमैच / ओवरलैप की वजह से छोड़ दिए गए)` : ''}`
+    });
+  } catch (err) {
+    console.error('[Batch Import Error]', err);
+    res.status(500).json({ error: 'Failed to batch import trips: ' + err.message });
+  }
+});
+
 // Save or Update Vehicle Route (Admin Only)
 app.post('/api/routes', authenticateToken, requireAdmin, async (req, res) => {
   const {
