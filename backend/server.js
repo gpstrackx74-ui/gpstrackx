@@ -2298,34 +2298,116 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
   const tollGatesJson = JSON.stringify(toll_gates || []);
   const altRoutesJson = JSON.stringify(alternative_routes || []);
 
-  // Fetch all existing trips for this vehicle to check time collisions
+  // Fetch all existing trips for this vehicle to check time collisions (if needed)
   const existingRoutes = db.prepare(`
     SELECT id, trip_date, end_trip_date, start_trip_time, end_trip_time 
     FROM routes 
     WHERE vehicle_id = ?
   `).all(vehicle_id);
 
-  // Helper to parse interval in milliseconds
+  // Helper to normalize any date input (YYYY-MM-DD, M/D/YYYY, D/M/YYYY, Excel serial, etc.) to strict YYYY-MM-DD
+  function normalizeToYMD(val) {
+    if (!val && val !== 0) return '';
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      const y = val.getFullYear();
+      const m = String(val.getMonth() + 1).padStart(2, '0');
+      const d = String(val.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    if (typeof val === 'number') {
+      if (val > 25569) {
+        const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+        if (!isNaN(d.getTime())) {
+          const y = d.getUTCFullYear();
+          const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        }
+      }
+    }
+    let s = String(val).trim();
+    if (!s) return '';
+    if (s.includes('T')) s = s.split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    const sep = s.includes('/') ? '/' : (s.includes('-') ? '-' : (s.includes('.') ? '.' : null));
+    if (sep) {
+      const parts = s.split(sep).map(p => p.trim());
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          const m = String(parseInt(parts[1], 10)).padStart(2, '0');
+          const d = String(parseInt(parts[2], 10)).padStart(2, '0');
+          return `${parts[0]}-${m}-${d}`;
+        }
+        let yr = parts[2];
+        if (yr.length === 2) yr = '20' + yr;
+        if (yr.length === 4) {
+          let p0 = parseInt(parts[0], 10);
+          let p1 = parseInt(parts[1], 10);
+          let month = p0;
+          let day = p1;
+          if (p0 > 12) {
+            day = p0;
+            month = p1;
+          }
+          return `${yr}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+    }
+    return s;
+  }
+
+  // Helper to normalize any time input (HH:mm, H:mm, 12hr AM/PM, fraction) to strict HH:mm
+  function parseTimeToHHMM(val) {
+    if (!val && val !== 0) return '00:00';
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      return `${String(val.getHours()).padStart(2, '0')}:${String(val.getMinutes()).padStart(2, '0')}`;
+    }
+    if (typeof val === 'number') {
+      let frac = val;
+      if (frac > 1) frac = frac - Math.floor(frac);
+      if (frac >= 0 && frac <= 1) {
+        const sec = Math.round(frac * 86400);
+        return `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}`;
+      }
+    }
+    const s = String(val).trim();
+    const match = s.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/i);
+    if (match) {
+      let h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      const ampm = match[3] ? match[3].toLowerCase() : null;
+      if (ampm === 'pm' && h < 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+      return `${String(Math.min(23, Math.max(0, h))).padStart(2, '0')}:${String(Math.min(59, Math.max(0, m))).padStart(2, '0')}`;
+    }
+    return '00:00';
+  }
+
+  // Helper to parse interval in milliseconds using absolute UTC timestamps
   function parseInterval(tripDate, endTripDate, startTime, endTime) {
-    const sDate = String(tripDate || '').trim();
-    const eDate = String(endTripDate || sDate).trim();
-    const sTime = String(startTime || '00:00').trim().slice(0, 5);
-    const eTime = String(endTime || '23:59').trim().slice(0, 5);
+    const sDate = normalizeToYMD(tripDate);
+    const eDate = normalizeToYMD(endTripDate || tripDate) || sDate;
+    const sTime = parseTimeToHHMM(startTime || '00:00');
+    const eTime = parseTimeToHHMM(endTime || '23:59');
 
-    let startMs = new Date(`${sDate}T${sTime.padStart(5, '0')}:00`).getTime();
-    let endMs = new Date(`${eDate}T${eTime.padStart(5, '0')}:00`).getTime();
+    const [sY, sM, sD] = (sDate || '2026-01-01').split('-').map(Number);
+    const [sH, sMin] = (sTime || '00:00').split(':').map(Number);
+    let startMs = Date.UTC(sY || 2026, (sM || 1) - 1, sD || 1, sH || 0, sMin || 0, 0);
 
-    if (isNaN(startMs)) startMs = 0;
-    if (isNaN(endMs)) endMs = startMs + 3600000;
+    const [eY, eM, eD] = (eDate || sDate || '2026-01-01').split('-').map(Number);
+    const [eH, eMin] = (eTime || '23:59').split(':').map(Number);
+    let endMs = Date.UTC(eY || 2026, (eM || 1) - 1, eD || 1, eH || 0, eMin || 0, 0);
 
+    // If start date and end date are identical, but end time <= start time (e.g. 19:00 to 02:00 overnight trip)
     if (endMs <= startMs && sDate === eDate) {
       endMs += 24 * 60 * 60 * 1000;
+    } else if (endMs <= startMs) {
+      endMs = startMs + 3600000;
     }
 
     return { startMs, endMs, sDate, eDate, sTime, eTime };
   }
-
-  const existingIntervals = existingRoutes.map(r => parseInterval(r.trip_date, r.end_trip_date, r.start_trip_time, r.end_trip_time));
 
   const acceptedTrips = [];
   const restrictedTrips = [];
@@ -2333,26 +2415,31 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
   // Check each incoming trip row
   trips.forEach((t, idx) => {
     const rowNum = idx + 1;
-    const sD = String(t.loading_date || t.trip_date || '').trim();
-    const eD = String(t.unloading_date || t.end_trip_date || sD).trim();
-    const sT = String(t.loading_time || t.start_trip_time || '08:00').trim();
-    const eT = String(t.unloading_time || t.end_trip_time || '18:00').trim();
+    const rawSD = t.loading_date || t.trip_date || '';
+    const rawED = t.unloading_date || t.end_trip_date || rawSD;
+    const rawST = t.loading_time || t.start_trip_time || '08:00';
+    const rawET = t.unloading_time || t.end_trip_time || '18:00';
+
+    const currentInterval = parseInterval(rawSD, rawED, rawST, rawET);
+    const sD = currentInterval.sDate;
+    const eD = currentInterval.eDate;
+    const sT = currentInterval.sTime;
+    const eT = currentInterval.eTime;
 
     if (!sD) {
       restrictedTrips.push({
         row: rowNum,
-        loading_date: sD,
-        loading_time: sT,
-        unloading_date: eD,
-        unloading_time: eT,
+        loading_date: rawSD,
+        loading_time: rawST,
+        unloading_date: rawED,
+        unloading_time: rawET,
         reason: 'Loading Date is missing'
       });
       return;
     }
 
-    const currentInterval = parseInterval(sD, eD, sT, eT);
-
     // Check against already accepted incoming trips in this batch (overlap / collision detection)
+    // Only restricts when trips are within the same 24-hr / calendar window and their exact datetime intervals collide
     const batchConflict = acceptedTrips.find(a => {
       return currentInterval.startMs < a.interval.endMs && currentInterval.endMs > a.interval.startMs;
     });

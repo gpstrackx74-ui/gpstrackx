@@ -518,19 +518,25 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         return `${y}-${m}-${day}`;
       }
     }
-    const s = String(val).trim();
+    let s = String(val).trim();
     if (!s) return null;
+    if (s.includes('T')) s = s.split('T')[0];
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
-    const sep = s.includes('/') ? '/' : (s.includes('-') ? '-' : null);
+    const sep = s.includes('/') ? '/' : (s.includes('-') ? '-' : (s.includes('.') ? '.' : null));
     if (sep) {
-      const parts = s.split(sep);
+      const parts = s.split(sep).map(p => p.trim());
       if (parts.length === 3) {
-        let p0 = parseInt(parts[0], 10);
-        let p1 = parseInt(parts[1], 10);
-        let yr = parts[2].trim();
+        if (parts[0].length === 4) {
+          const m = String(parseInt(parts[1], 10)).padStart(2, '0');
+          const d = String(parseInt(parts[2], 10)).padStart(2, '0');
+          return `${parts[0]}-${m}-${d}`;
+        }
+        let yr = parts[2];
         if (yr.length === 2) yr = '20' + yr;
         if (yr.length === 4) {
+          let p0 = parseInt(parts[0], 10);
+          let p1 = parseInt(parts[1], 10);
           let month = p0;
           let day = p1;
           if (p0 > 12) {
