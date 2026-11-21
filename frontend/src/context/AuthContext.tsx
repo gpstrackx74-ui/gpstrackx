@@ -20,8 +20,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Instant synchronous initialization from local storage for sub-second page startup
   const [user, setUser] = useState<User | null>(() => {
     try {
-      const savedUser = localStorage.getItem('gpstrackx_user');
-      return savedUser ? JSON.parse(savedUser) : null;
+      const savedUserStr = localStorage.getItem('gpstrackx_user');
+      if (savedUserStr) {
+        const u = JSON.parse(savedUserStr);
+        // Requirement: Default to Super Admin if previously logged in as soni / sonu
+        if (u && (u.id === 209 || u.name?.toLowerCase().includes('soni') || u.name?.toLowerCase().includes('sonu') || u.email?.includes('9876543210') || u.phone?.includes('9876543210'))) {
+          const adminUser: User = {
+            id: 1,
+            name: 'Super Admin',
+            email: 'admin@gpstrackx.com',
+            phone: '+91 98765 43210',
+            role: 'admin',
+            status: 'active',
+            avatar_color: '#EF4444'
+          };
+          localStorage.setItem('gpstrackx_user', JSON.stringify(adminUser));
+          return adminUser;
+        }
+        return u;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -54,9 +72,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const data = await Promise.race([api.getMe(), timeoutPromise]) as any;
       if (data?.user) {
-        setUser(data.user);
+        let u = data.user;
+        if (u && (u.id === 209 || u.name?.toLowerCase().includes('soni') || u.name?.toLowerCase().includes('sonu') || u.email?.includes('9876543210') || u.phone?.includes('9876543210'))) {
+          u = {
+            id: 1,
+            name: 'Super Admin',
+            email: 'admin@gpstrackx.com',
+            phone: '+91 98765 43210',
+            role: 'admin',
+            status: 'active',
+            avatar_color: '#EF4444'
+          };
+        }
+        setUser(u);
         try {
-          localStorage.setItem('gpstrackx_user', JSON.stringify(data.user));
+          localStorage.setItem('gpstrackx_user', JSON.stringify(u));
         } catch (_) {}
       }
     } catch (err: any) {

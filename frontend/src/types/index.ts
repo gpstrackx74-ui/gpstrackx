@@ -114,6 +114,9 @@ export interface RouteDetail {
   end_trip_time?: string;
   is_active: number;
   operational_status?: string;
+  stoppages_count?: number;
+  toll_gates_count?: number;
+  total_toll_fee?: number;
   created_at: string;
 }
 

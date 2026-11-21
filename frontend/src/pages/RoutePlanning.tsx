@@ -477,10 +477,22 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
   // Helper to safely find property from Excel row with flexible casing/spacing
   const findExcelProp = (row: any, keys: string[]) => {
     if (!row || typeof row !== 'object') return undefined;
-    for (const k of Object.keys(row)) {
+    const cleanKeys = Object.keys(row).filter(k => k !== '_raw');
+    // 1. Exact clean match
+    for (const k of cleanKeys) {
       const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
       for (const target of keys) {
         if (cleanK === target.toLowerCase().replace(/[^a-z0-9]/g, '')) {
+          return row[k];
+        }
+      }
+    }
+    // 2. Substring match (e.g. "Stoppage (Hours)", "Total Kilometer")
+    for (const k of cleanKeys) {
+      const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const target of keys) {
+        const cleanT = target.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanK.includes(cleanT) || cleanT.includes(cleanK)) {
           return row[k];
         }
       }
@@ -731,6 +743,11 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         const wsName = wb.SheetNames[0];
         const ws = wb.Sheets[wsName];
 
+        // 1. Read sheet as 2D array grid: [ [row0Col0, row0Col1, ...], [row1Col0, row1Col1, ...] ]
+        const grid: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+        const gridRaw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+
+        // 2. Read sheet as object JSON
         const dataFormatted: any[] = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
         const dataRaw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true });
 
@@ -739,40 +756,90 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           return { ...rowR, ...rowF, _raw: rowR };
         });
 
-        if (!rawData || rawData.length === 0) {
+        if ((!rawData || rawData.length === 0) && (!grid || grid.length <= 1)) {
           alert('Excel file is empty. Please upload an Excel sheet with trip schedule rows.');
           setIsImportingTripExcel(false);
           return;
         }
 
-        // Parse each row matching exact columns from user image:
-        // Column A: Date of loading
-        // Column B: Date of unloading
-        // Column C: Loading time
-        // Column D: Unloading time
-        // Column E: Stoppage
-        const parsedTrips: any[] = [];
-        for (let i = 0; i < rawData.length; i++) {
-          const row = rawData[i];
-          const sDate = findExcelProp(row, ['dateofloading', 'loadingdate', 'startdate', 'fromdate', 'tripdate', 'date']);
-          const eDate = findExcelProp(row, ['dateofunloading', 'unloadingdate', 'enddate', 'todate', 'endtripdate']);
-          const sTime = findExcelProp(row, ['loadingtime', 'starttime', 'dispatchtime', 'fromtime', 'time']);
-          const eTime = findExcelProp(row, ['unloadingtime', 'endtime', 'arrivaltime', 'totime']);
-          const stoppage = findExcelProp(row, ['stoppage', 'stoppages', 'stops', 'halt']);
+        // Determine column indexes from header row in grid if available
+        let headerRowIdx = 0;
+        let colIdxLoadingDate = -1;
+        let colIdxUnloadingDate = -1;
+        let colIdxLoadingTime = -1;
+        let colIdxUnloadingTime = -1;
+        let colIdxStoppage = -1;
+        let colIdxKilometer = -1;
 
-          // Also support positional values if headers don't match (col 0, 1, 2, 3, 4)
-          const vals = Object.values(row).filter(v => v !== row._raw);
-          const rawColA = sDate !== undefined ? sDate : vals[0];
-          const rawColB = eDate !== undefined ? eDate : vals[1];
-          const rawColC = sTime !== undefined ? sTime : vals[2];
-          const rawColD = eTime !== undefined ? eTime : vals[3];
-          const rawColE = stoppage !== undefined ? stoppage : vals[4];
+        for (let r = 0; r < Math.min(5, grid.length); r++) {
+          const rowVals = (grid[r] || []).map((c: any) => String(c || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+          const hasDateHeader = rowVals.some(v => v.includes('loading') || v.includes('date') || v.includes('stop'));
+          if (hasDateHeader) {
+            headerRowIdx = r;
+            rowVals.forEach((v, cIdx) => {
+              if (colIdxLoadingDate === -1 && (v.includes('loadingdate') || (v.includes('loading') && v.includes('date')) || v === 'startdate' || v === 'fromdate')) colIdxLoadingDate = cIdx;
+              if (colIdxUnloadingDate === -1 && (v.includes('unloadingdate') || (v.includes('unloading') && v.includes('date')) || v === 'enddate' || v === 'todate')) colIdxUnloadingDate = cIdx;
+              if (colIdxLoadingTime === -1 && (v.includes('loadingtime') || (v.includes('loading') && v.includes('time')) || v === 'starttime' || v === 'fromtime')) colIdxLoadingTime = cIdx;
+              if (colIdxUnloadingTime === -1 && (v.includes('unloadingtime') || (v.includes('unloading') && v.includes('time')) || v === 'endtime' || v === 'totime')) colIdxUnloadingTime = cIdx;
+              if (colIdxStoppage === -1 && (v.includes('stop') || v.includes('halt'))) colIdxStoppage = cIdx;
+              if (colIdxKilometer === -1 && (v.includes('km') || v.includes('kilo') || v.includes('dist'))) colIdxKilometer = cIdx;
+            });
+            break;
+          }
+        }
+
+        // Fallbacks to standard positions from user Excel image (Col 0: Date of loading, Col 1: Date of unloading, Col 2: Loading time, Col 3: Unloading time, Col 4: Stoppage, Col 5: Kilometer)
+        if (colIdxLoadingDate === -1) colIdxLoadingDate = 0;
+        if (colIdxUnloadingDate === -1) colIdxUnloadingDate = 1;
+        if (colIdxLoadingTime === -1) colIdxLoadingTime = 2;
+        if (colIdxUnloadingTime === -1) colIdxUnloadingTime = 3;
+        if (colIdxStoppage === -1) colIdxStoppage = 4;
+        if (colIdxKilometer === -1) colIdxKilometer = 5;
+
+        const parsedTrips: any[] = [];
+
+        // Parse each data row from grid starting right after header row
+        const dataRows = grid.slice(headerRowIdx + 1);
+        for (let i = 0; i < dataRows.length; i++) {
+          const gRow = dataRows[i] || [];
+          const gRowRaw = (gridRaw[headerRowIdx + 1 + i]) || [];
+          const objRow = rawData[i] || {};
+
+          // Skip completely empty rows
+          const hasAnyVal = gRow.some((c: any) => String(c).trim() !== '') || Object.values(objRow).filter(v => v !== objRow._raw).some((v: any) => String(v).trim() !== '');
+          if (!hasAnyVal) continue;
+
+          // 1. Loading Date
+          let rawColA = gRow[colIdxLoadingDate] !== undefined && String(gRow[colIdxLoadingDate]).trim() !== '' ? (gRowRaw[colIdxLoadingDate] !== undefined ? gRowRaw[colIdxLoadingDate] : gRow[colIdxLoadingDate]) : undefined;
+          if (rawColA === undefined) rawColA = findExcelProp(objRow, ['dateofloading', 'loadingdate', 'startdate', 'fromdate', 'tripdate', 'date']);
+
+          // 2. Unloading Date
+          let rawColB = gRow[colIdxUnloadingDate] !== undefined && String(gRow[colIdxUnloadingDate]).trim() !== '' ? (gRowRaw[colIdxUnloadingDate] !== undefined ? gRowRaw[colIdxUnloadingDate] : gRow[colIdxUnloadingDate]) : undefined;
+          if (rawColB === undefined) rawColB = findExcelProp(objRow, ['dateofunloading', 'unloadingdate', 'enddate', 'todate', 'endtripdate']);
+
+          // 3. Loading Time
+          let rawColC = gRow[colIdxLoadingTime] !== undefined && String(gRow[colIdxLoadingTime]).trim() !== '' ? (gRowRaw[colIdxLoadingTime] !== undefined ? gRowRaw[colIdxLoadingTime] : gRow[colIdxLoadingTime]) : undefined;
+          if (rawColC === undefined) rawColC = findExcelProp(objRow, ['loadingtime', 'starttime', 'dispatchtime', 'fromtime', 'time']);
+
+          // 4. Unloading Time
+          let rawColD = gRow[colIdxUnloadingTime] !== undefined && String(gRow[colIdxUnloadingTime]).trim() !== '' ? (gRowRaw[colIdxUnloadingTime] !== undefined ? gRowRaw[colIdxUnloadingTime] : gRow[colIdxUnloadingTime]) : undefined;
+          if (rawColD === undefined) rawColD = findExcelProp(objRow, ['unloadingtime', 'endtime', 'arrivaltime', 'totime']);
+
+          // 5. Stoppage
+          let rawColE = gRow[colIdxStoppage] !== undefined && String(gRow[colIdxStoppage]).trim() !== '' ? (gRowRaw[colIdxStoppage] !== undefined ? gRowRaw[colIdxStoppage] : gRow[colIdxStoppage]) : undefined;
+          if (rawColE === undefined) rawColE = findExcelProp(objRow, ['stoppage', 'stoppages', 'stops', 'stop', 'halt', 'halts', 'stoppagescount']);
+
+          // 6. Kilometer (new column added by user)
+          let rawColF = gRow[colIdxKilometer] !== undefined && String(gRow[colIdxKilometer]).trim() !== '' ? (gRowRaw[colIdxKilometer] !== undefined ? gRowRaw[colIdxKilometer] : gRow[colIdxKilometer]) : undefined;
+          if (rawColF === undefined) rawColF = findExcelProp(objRow, ['kilometer', 'kilometers', 'km', 'kms', 'distance', 'totalkm', 'distancekm', 'totaldistance', 'distanceinkm']);
 
           const pStartD = parseExcelDateToYMD(rawColA);
           const pEndD = parseExcelDateToYMD(rawColB) || pStartD;
           const pStartT = parseExcelTimeToHHMM(rawColC) || '08:00';
           const pEndT = parseExcelTimeToHHMM(rawColD) || '18:00';
-          const pStops = parseInt(String(rawColE || '').replace(/[^0-9]/g, ''), 10) || 0;
+          const pStops = parseInt(String(rawColE !== undefined ? rawColE : '').replace(/[^0-9]/g, ''), 10) || 0;
+          const pKmNum = parseFloat(String(rawColF !== undefined ? rawColF : '').replace(/[^0-9.]/g, ''));
+          const pKm = !isNaN(pKmNum) && pKmNum > 0 ? pKmNum : null;
 
           if (pStartD) {
             parsedTrips.push({
@@ -780,7 +847,13 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               unloading_date: pEndD || pStartD,
               loading_time: pStartT,
               unloading_time: pEndT,
-              stoppage_count: pStops
+              stoppages_count: pStops,
+              stoppage_count: pStops,
+              stoppage: pStops,
+              stops: pStops,
+              distance_km: pKm,
+              km: pKm,
+              total_distance_km: pKm
             });
           }
         }
@@ -854,35 +927,40 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Date of unloading': '1/1/2026',
           'Loading time': '1:00',
           'Unloading time': '22:00',
-          'Stoppage': 15
+          'Stoppage': 15,
+          'Kilometer': 456
         },
         {
           'Date of loading': '1/3/2026',
           'Date of unloading': '1/4/2026',
           'Loading time': '14:02',
           'Unloading time': '3:00',
-          'Stoppage': 20
+          'Stoppage': 20,
+          'Kilometer': 512
         },
         {
           'Date of loading': '1/6/2026',
           'Date of unloading': '1/6/2026',
           'Loading time': '3:00',
           'Unloading time': '16:59',
-          'Stoppage': 19
+          'Stoppage': 19,
+          'Kilometer': 380
         },
         {
           'Date of loading': '1/8/2026',
           'Date of unloading': '1/9/2026',
           'Loading time': '19:00',
           'Unloading time': '2:00',
-          'Stoppage': 5
+          'Stoppage': 5,
+          'Kilometer': 490
         },
         {
           'Date of loading': '2/10/2026',
           'Date of unloading': '2/10/2026',
           'Loading time': '5:00',
           'Unloading time': '14:00',
-          'Stoppage': 9
+          'Stoppage': 9,
+          'Kilometer': 620
         }
       ];
       const ws = XLSX.utils.json_to_sheet(sampleRows);
@@ -891,7 +969,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         { wch: 18 },
         { wch: 14 },
         { wch: 16 },
-        { wch: 12 }
+        { wch: 12 },
+        { wch: 14 }
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Trip_Schedule');
@@ -2616,6 +2695,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                         <th className="p-2.5">Date of Unloading</th>
                         <th className="p-2.5">Unloading Time</th>
                         <th className="p-2.5">Stoppages</th>
+                        <th className="p-2.5">Kilometer</th>
                         <th className="p-2.5">Status</th>
                       </tr>
                     </thead>
@@ -2627,7 +2707,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                           <td className="p-2.5 text-emerald-700 font-bold">{formatTimeTo12Hour(ct.start_trip_time) || ct.start_trip_time}</td>
                           <td className="p-2.5 text-slate-700">{formatToDMY(ct.end_trip_date || ct.trip_date)}</td>
                           <td className="p-2.5 text-red-700 font-bold">{formatTimeTo12Hour(ct.end_trip_time) || ct.end_trip_time}</td>
-                          <td className="p-2.5 font-sans text-slate-600">{ct.stoppages_count} Stops</td>
+                          <td className="p-2.5 font-sans font-bold text-amber-700">{ct.stoppages_count != null ? ct.stoppages_count : 0} Stops</td>
+                          <td className="p-2.5 font-mono font-bold text-blue-700">{ct.total_distance_km ? `${ct.total_distance_km} KM` : '-'}</td>
                           <td className="p-2.5 font-sans">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               ct.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'

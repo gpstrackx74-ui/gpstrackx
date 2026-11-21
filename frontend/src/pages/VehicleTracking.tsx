@@ -175,7 +175,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
           setToDate(rDate);
         }
         try {
-          if (historicalTrip.waypoints_json) {
+          if (Array.isArray(historicalTrip.waypoints) && historicalTrip.waypoints.length > 0) {
+            setStoppages(historicalTrip.waypoints);
+          } else if (historicalTrip.waypoints_json) {
             const wp = typeof historicalTrip.waypoints_json === 'string' ? JSON.parse(historicalTrip.waypoints_json) : historicalTrip.waypoints_json;
             if (Array.isArray(wp)) setStoppages(wp);
           }
@@ -210,7 +212,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
         if (matchingTrip) {
           setActiveRoute(matchingTrip);
           try {
-            if (matchingTrip.waypoints_json) {
+            if (Array.isArray(matchingTrip.waypoints) && matchingTrip.waypoints.length > 0) {
+              setStoppages(matchingTrip.waypoints);
+            } else if (matchingTrip.waypoints_json) {
               const wp = typeof matchingTrip.waypoints_json === 'string' ? JSON.parse(matchingTrip.waypoints_json) : matchingTrip.waypoints_json;
               if (Array.isArray(wp)) setStoppages(wp);
             }
@@ -257,7 +261,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     if (found) {
       setActiveRoute(found);
       try {
-        if (found.waypoints_json) {
+        if (Array.isArray(found.waypoints) && found.waypoints.length > 0) {
+          setStoppages(found.waypoints);
+        } else if (found.waypoints_json) {
           const wp = typeof found.waypoints_json === 'string' ? JSON.parse(found.waypoints_json) : found.waypoints_json;
           if (Array.isArray(wp)) setStoppages(wp);
         }
@@ -512,7 +518,42 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
 
   // Stoppages with calculated arrival and departure times based on route duration
   const stoppagesWithTimings = React.useMemo(() => {
-    if (!stoppages || stoppages.length === 0) return [];
+    let sourceStops: Stoppage[] = stoppages;
+    if ((!sourceStops || sourceStops.length === 0) && activeRoute?.stoppages_count && Number(activeRoute.stoppages_count) > 0) {
+      const sCount = Number(activeRoute.stoppages_count);
+      const coords = parsedCoordinates.length > 2 ? parsedCoordinates : (
+        (activeRoute.start_lat && activeRoute.end_lat) ? [
+          [Number(activeRoute.start_lat), Number(activeRoute.start_lng)],
+          [Number(activeRoute.end_lat), Number(activeRoute.end_lng)]
+        ] : []
+      );
+      sourceStops = [];
+      for (let sIdx = 0; sIdx < sCount; sIdx++) {
+        const ratio = (sIdx + 1) / (sCount + 1);
+        let ptLat = Number(activeRoute.start_lat || 21.25);
+        let ptLng = Number(activeRoute.start_lng || 81.56);
+        if (coords.length > 2) {
+          const pIdx = Math.min(coords.length - 1, Math.max(0, Math.floor(coords.length * ratio)));
+          ptLat = coords[pIdx][0];
+          ptLng = coords[pIdx][1];
+        } else if (activeRoute.start_lat && activeRoute.end_lat) {
+          ptLat = Number(activeRoute.start_lat) + ratio * (Number(activeRoute.end_lat) - Number(activeRoute.start_lat));
+          ptLng = Number(activeRoute.start_lng) + ratio * (Number(activeRoute.end_lng) - Number(activeRoute.start_lng));
+        }
+        sourceStops.push({
+          id: sIdx + 1,
+          sequence_order: sIdx + 1,
+          name: `Transit Halt #${sIdx + 1}`,
+          address: `Highway Stoppage at ${ptLat.toFixed(4)}, ${ptLng.toFixed(4)}`,
+          lat: Number(ptLat.toFixed(5)),
+          lng: Number(ptLng.toFixed(5)),
+          duration: 15,
+          stop_duration_mins: 15
+        });
+      }
+    }
+
+    if (!sourceStops || sourceStops.length === 0) return [];
 
     const parseTimeToMins = (tStr?: string, defaultMin = 8 * 60): number => {
       if (!tStr) return defaultMin;
@@ -554,8 +595,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       return `${String(hr).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
     };
 
-    const nStops = stoppages.length;
-    return stoppages.map((s, idx) => {
+    const nStops = sourceStops.length;
+    return sourceStops.map((s, idx) => {
       const fraction = (idx + 1) / (nStops + 1);
       const arrTotal = Math.round(routeStartMins + fraction * routeDurationMins);
       const durationMins = s.stop_duration_mins || s.duration || Math.min(25, Math.max(10, Math.round(routeDurationMins / (nStops * 4))));
@@ -569,7 +610,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
         departure_time: formatTime(depTotal)
       };
     });
-  }, [stoppages, activeRoute?.start_trip_time, activeRoute?.end_trip_time, activeRoute?.estimated_travel_time_min, activeRoute?.total_distance_km]);
+  }, [stoppages, activeRoute?.stoppages_count, activeRoute?.start_lat, activeRoute?.end_lat, activeRoute?.start_trip_time, activeRoute?.end_trip_time, activeRoute?.estimated_travel_time_min, activeRoute?.total_distance_km, parsedCoordinates]);
 
   // Safe early returns AFTER all hooks are registered
   if (loading && !vehicle) {
@@ -982,7 +1023,18 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 </div>
               </div>
 
-              {/* 8. Address */}
+              {/* 8. Stoppages */}
+              <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stoppages</span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="font-mono font-black text-amber-600 text-sm">
+                    {stoppages.length || activeRoute?.stoppages_count || 0}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">STOPS</span>
+                </div>
+              </div>
+
+              {/* 9. Address */}
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Address</span>
                 <span className="font-medium text-slate-700 text-xs block truncate mt-1" title={activeRoute?.start_location_name || vehicle.location || 'Raipur, Chhattisgarh'}>
@@ -1154,7 +1206,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                   vehiclePosition={simulatedVehiclePosition}
                   startPoint={hideRouteLine ? null : memoizedStart}
                   endPoint={hideRouteLine ? null : memoizedEnd}
-                  stoppages={hideRouteLine ? [] : stoppagesWithTimings}
+                  stoppages={stoppagesWithTimings}
                   tollGates={hideRouteLine ? [] : routeTolls}
                   hideEditTools={true}
                   hideBreadcrumbs={true}
