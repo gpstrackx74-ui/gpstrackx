@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 let pool = null;
 let isConnected = false;
 
-const connectionString = process.env.DATABASE_URL || 
+const connectionString = process.env.DATABASE_URL ||
   'postgresql://postgres.ydvicefnlyoeedisaruz:UTuzXysEehCGFWUi@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres';
 
 if (connectionString) {
@@ -103,7 +103,7 @@ const supabaseService = {
           try {
             fullUser = localDb.prepare('SELECT * FROM users WHERE id = ?').get(v.assigned_user_id);
             if (fullUser) { userEmail = fullUser.email; userPhone = fullUser.phone; }
-          } catch (e) {}
+          } catch (e) { }
         }
         if (userEmail || userPhone) {
           const uRes = await pool.query('SELECT id FROM users WHERE email = $1 OR (phone IS NOT NULL AND phone = $2)', [userEmail, userPhone]);
@@ -218,9 +218,9 @@ const supabaseService = {
           toll_gates_json = EXCLUDED.toll_gates_json,
           updated_at = CURRENT_TIMESTAMP
       `, [r.id, r.vehicle_id || null, r.route_name, r.start_location_name, r.start_address || '', r.start_lat, r.start_lng,
-          r.end_location_name, r.end_address || '', r.end_lat, r.end_lng, r.total_distance_km, r.estimated_travel_time_min,
-          r.overview_polyline || '', r.route_color || '#E60012', r.waypoints_json || '[]', r.toll_gates_json || '[]',
-          r.alternative_routes_json || '[]', r.trip_date || null, r.start_trip_time || null, r.end_trip_time || null, r.is_active !== undefined ? r.is_active : 1]);
+      r.end_location_name, r.end_address || '', r.end_lat, r.end_lng, r.total_distance_km, r.estimated_travel_time_min,
+      r.overview_polyline || '', r.route_color || '#E60012', r.waypoints_json || '[]', r.toll_gates_json || '[]',
+      r.alternative_routes_json || '[]', r.trip_date || null, r.start_trip_time || null, r.end_trip_time || null, r.is_active !== undefined ? r.is_active : 1]);
       console.log(`[Supabase] Synced route: ${r.route_name}`);
     } catch (err) {
       console.error('[Supabase syncRoute Error]:', err.message);
@@ -386,7 +386,7 @@ const supabaseService = {
         try {
           const vRow = await pool.query('SELECT id FROM vehicles WHERE registration_no = $1', [reg]);
           if (vRow && vRow.rows.length > 0) regMap.set(reg, vRow.rows[0].id);
-        } catch (e) {}
+        } catch (e) { }
       }
 
       const CHUNK_SIZE = 40;
@@ -535,7 +535,7 @@ const supabaseService = {
     try {
       console.log('>>> [Supabase -> SQLite] Hydrating live cloud data into local database...');
       // Temporarily disable foreign keys during hydration so differing IDs across tables don't block restore
-      try { localDb.pragma('foreign_keys = OFF'); } catch (e) {}
+      try { localDb.pragma('foreign_keys = OFF'); } catch (e) { }
 
       await this.ensureCorridorsTable();
 
@@ -667,7 +667,7 @@ const supabaseService = {
           FROM vehicles
           WHERE assigned_user_id IS NOT NULL;
         `);
-      } catch (e) {}
+      } catch (e) { }
 
       // 5. Sync FASTag Transactions (Single SQLite transaction, instantaneous)
       if (fastagRes && fastagRes.rows.length > 0) {
@@ -736,7 +736,7 @@ const supabaseService = {
                 cr.overview_polyline || '', cr.waypoints_json || '[]', cr.toll_gates_json || '[]'
               );
               existingLocalCorrs.add(normName);
-            } catch (_) {}
+            } catch (_) { }
           }
         }
       }
@@ -751,7 +751,7 @@ const supabaseService = {
             await this.syncCorridor(lc);
           }
         }
-      } catch (_) {}
+      } catch (_) { }
 
       // 7. Re-enable foreign keys & flush WAL
       localDb.pragma('foreign_keys = ON');

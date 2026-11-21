@@ -419,5 +419,6 @@ function seedFastagTransactions() {
 }
 
 initializeDatabase();
+seedData();
 
 module.exports = db;
