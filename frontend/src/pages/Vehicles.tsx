@@ -293,9 +293,12 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
     start_location_name: '',
     end_location_name: '',
     trip_date: '',
+    end_trip_date: '',
     start_trip_time: '08:00 AM',
     end_trip_time: '06:00 PM',
     total_distance_km: '',
+    stoppages_count: '0',
+    total_toll_fee: '0',
     operational_status: 'moving'
   });
   const [savingEditingTrip, setSavingEditingTrip] = useState<boolean>(false);
@@ -855,9 +858,12 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
       start_location_name: trip.start_location_name || '',
       end_location_name: trip.end_location_name || '',
       trip_date: trip.trip_date || new Date().toISOString().split('T')[0],
+      end_trip_date: trip.end_trip_date || trip.trip_date || new Date().toISOString().split('T')[0],
       start_trip_time: trip.start_trip_time || '08:00 AM',
       end_trip_time: trip.end_trip_time || '06:00 PM',
-      total_distance_km: String(trip.total_distance_km || ''),
+      total_distance_km: trip.total_distance_km != null ? String(trip.total_distance_km) : '',
+      stoppages_count: trip.stoppages_count != null ? String(trip.stoppages_count) : '0',
+      total_toll_fee: trip.total_toll_fee != null ? String(trip.total_toll_fee) : '0',
       operational_status: trip.operational_status || (trip.is_active ? (historyModalVehicle?.status || 'moving') : 'stop')
     });
   };
@@ -871,16 +877,21 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
         start_location_name: editingTripForm.start_location_name,
         end_location_name: editingTripForm.end_location_name,
         trip_date: editingTripForm.trip_date,
+        end_trip_date: editingTripForm.end_trip_date || editingTripForm.trip_date,
         start_trip_time: editingTripForm.start_trip_time,
         end_trip_time: editingTripForm.end_trip_time,
         total_distance_km: editingTripForm.total_distance_km ? Number(editingTripForm.total_distance_km) : undefined,
+        stoppages_count: editingTripForm.stoppages_count ? Number(editingTripForm.stoppages_count) : 0,
+        total_toll_fee: editingTripForm.total_toll_fee ? Number(editingTripForm.total_toll_fee) : 0,
         operational_status: editingTripForm.operational_status
       });
 
       setVehicleHistoryTrips(prev => prev.map(t => t.id === editingTrip.id ? {
         ...t,
         ...editingTripForm,
-        total_distance_km: editingTripForm.total_distance_km ? Number(editingTripForm.total_distance_km) : t.total_distance_km
+        total_distance_km: editingTripForm.total_distance_km ? Number(editingTripForm.total_distance_km) : t.total_distance_km,
+        stoppages_count: editingTripForm.stoppages_count ? Number(editingTripForm.stoppages_count) : t.stoppages_count,
+        total_toll_fee: editingTripForm.total_toll_fee ? Number(editingTripForm.total_toll_fee) : t.total_toll_fee
       } : t));
 
       if (historyModalVehicle) {
@@ -2462,15 +2473,26 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Trip Date</label>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Start Date</label>
                   <DMYDateInput
                     value={editingTripForm.trip_date}
                     onChange={(val) => setEditingTripForm(prev => ({ ...prev, trip_date: val }))}
                     className="w-full"
                   />
                 </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">End Date</label>
+                  <DMYDateInput
+                    value={editingTripForm.end_trip_date}
+                    onChange={(val) => setEditingTripForm(prev => ({ ...prev, end_trip_date: val }))}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">Start Time</label>
                   <input
@@ -2493,7 +2515,7 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">Distance (KM)</label>
                   <input
@@ -2505,17 +2527,38 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Operational Status</label>
-                  <select
-                    value={editingTripForm.operational_status}
-                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, operational_status: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-bold focus:outline-none focus:border-amber-500 focus:bg-white cursor-pointer"
-                  >
-                    <option value="moving">Moving</option>
-                    <option value="stop">Stop</option>
-                    <option value="parking">Parking</option>
-                  </select>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Stoppages</label>
+                  <input
+                    type="number"
+                    value={editingTripForm.stoppages_count}
+                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, stoppages_count: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:bg-white font-mono"
+                    placeholder="0"
+                  />
                 </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Toll Fee (₹)</label>
+                  <input
+                    type="number"
+                    value={editingTripForm.total_toll_fee}
+                    onChange={(e) => setEditingTripForm(prev => ({ ...prev, total_toll_fee: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:bg-white font-mono"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Operational Status</label>
+                <select
+                  value={editingTripForm.operational_status}
+                  onChange={(e) => setEditingTripForm(prev => ({ ...prev, operational_status: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-bold focus:outline-none focus:border-amber-500 focus:bg-white cursor-pointer"
+                >
+                  <option value="moving">Moving</option>
+                  <option value="stop">Stop</option>
+                  <option value="parking">Parking</option>
+                </select>
               </div>
             </div>
 

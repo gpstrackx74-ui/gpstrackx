@@ -933,6 +933,11 @@ app.put('/api/routes/:id/operational-status', authenticateToken, (req, res) => {
       route.vehicle_id
     );
 
+    const updatedRoute = db.prepare('SELECT * FROM routes WHERE id = ?').get(routeId);
+    if (updatedRoute) supabaseService.syncRoute(updatedRoute);
+    const updatedVeh = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(route.vehicle_id);
+    if (updatedVeh) supabaseService.syncVehicle(updatedVeh);
+
     res.json({ success: true, operational_status, vehicle_id: route.vehicle_id, current_speed: newSpeed });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update operational status: ' + err.message });
@@ -3125,9 +3130,13 @@ app.put('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) => 
     end_location_name,
     end_address,
     trip_date,
+    end_trip_date,
     start_trip_time,
     end_trip_time,
     total_distance_km,
+    estimated_travel_time_min,
+    stoppages_count,
+    total_toll_fee,
     operational_status
   } = req.body;
 
@@ -3143,9 +3152,13 @@ app.put('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) => 
     const updatedEnd = end_location_name !== undefined ? end_location_name.replace(/\r?\n/g, ' ').trim() : route.end_location_name;
     const updatedEndAddr = end_address !== undefined ? end_address : route.end_address;
     const updatedDate = trip_date !== undefined ? trip_date : route.trip_date;
+    const updatedEndDate = end_trip_date !== undefined ? end_trip_date : (trip_date !== undefined ? trip_date : route.end_trip_date);
     const updatedStartTime = start_trip_time !== undefined ? start_trip_time : route.start_trip_time;
     const updatedEndTime = end_trip_time !== undefined ? end_trip_time : route.end_trip_time;
     const updatedDist = total_distance_km !== undefined ? Number(total_distance_km) : route.total_distance_km;
+    const updatedTravelTime = estimated_travel_time_min !== undefined ? Number(estimated_travel_time_min) : route.estimated_travel_time_min;
+    const updatedStops = stoppages_count !== undefined ? Number(stoppages_count) : route.stoppages_count;
+    const updatedTollFee = total_toll_fee !== undefined ? Number(total_toll_fee) : route.total_toll_fee;
     const updatedStatus = operational_status !== undefined ? operational_status : (route.operational_status || 'stop');
 
     db.prepare(`
@@ -3156,29 +3169,40 @@ app.put('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) => 
         end_location_name = ?,
         end_address = ?,
         trip_date = ?,
+        end_trip_date = ?,
         start_trip_time = ?,
         end_trip_time = ?,
         total_distance_km = ?,
+        estimated_travel_time_min = ?,
+        stoppages_count = ?,
+        total_toll_fee = ?,
         operational_status = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
       updatedName, updatedStart, updatedStartAddr,
       updatedEnd, updatedEndAddr,
-      updatedDate, updatedStartTime, updatedEndTime,
-      updatedDist, updatedStatus, routeId
+      updatedDate, updatedEndDate, updatedStartTime, updatedEndTime,
+      updatedDist, updatedTravelTime, updatedStops, updatedTollFee,
+      updatedStatus, routeId
     );
 
     const updatedRoute = db.prepare('SELECT * FROM routes WHERE id = ?').get(routeId);
 
-    // If this route is active, update vehicle status and route name
+    // If this route is active, update vehicle status and route telemetry
     if (updatedRoute.vehicle_id && (updatedRoute.is_active === 1 || updatedRoute.is_active === true)) {
       db.prepare(`
         UPDATE vehicles SET
           status = ?,
+          start_trip_time = ?,
+          end_trip_time = ?,
+          total_toll_fee = ?,
+          stoppages_count = ?,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(updatedStatus, updatedRoute.vehicle_id);
+      `).run(updatedStatus, updatedStartTime, updatedEndTime, updatedTollFee, updatedStops, updatedRoute.vehicle_id);
+      const updatedVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(updatedRoute.vehicle_id);
+      if (updatedVehicle) supabaseService.syncVehicle(updatedVehicle);
     }
 
     // Mirror update into saved_corridors if exists

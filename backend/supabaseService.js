@@ -222,8 +222,8 @@ const supabaseService = {
           end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
           overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
           trip_date, start_trip_time, end_trip_time, is_active, end_trip_date,
-          total_toll_fee, stoppages_count, toll_gates_count, vehicle_registration_no
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+          total_toll_fee, stoppages_count, toll_gates_count, vehicle_registration_no, operational_status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
         ON CONFLICT (id) DO UPDATE SET
           route_name = EXCLUDED.route_name,
           vehicle_id = EXCLUDED.vehicle_id,
@@ -251,6 +251,7 @@ const supabaseService = {
           stoppages_count = EXCLUDED.stoppages_count,
           toll_gates_count = EXCLUDED.toll_gates_count,
           vehicle_registration_no = EXCLUDED.vehicle_registration_no,
+          operational_status = EXCLUDED.operational_status,
           updated_at = CURRENT_TIMESTAMP
       `, [
         r.id, r.vehicle_id || null, r.route_name, r.start_location_name, r.start_address || '', r.start_lat, r.start_lng,
@@ -258,7 +259,8 @@ const supabaseService = {
         r.overview_polyline || '', r.route_color || '#E60012', r.waypoints_json || '[]', r.toll_gates_json || '[]',
         r.alternative_routes_json || '[]', r.trip_date || null, r.start_trip_time || null, r.end_trip_time || null,
         r.is_active !== undefined ? r.is_active : 1, r.end_trip_date || null,
-        Number(r.total_toll_fee) || 0, Number(r.stoppages_count) || 0, Number(r.toll_gates_count) || 0, r.vehicle_registration_no || null
+        Number(r.total_toll_fee) || 0, Number(r.stoppages_count) || 0, Number(r.toll_gates_count) || 0, r.vehicle_registration_no || null,
+        r.operational_status || 'stop'
       ]);
       console.log(`[Supabase] Synced route ID ${r.id}: ${r.route_name}`);
     } catch (err) {
@@ -667,8 +669,8 @@ const supabaseService = {
             end_location_name, end_address, end_lat, end_lng, total_distance_km, estimated_travel_time_min,
             overview_polyline, route_color, waypoints_json, toll_gates_json, alternative_routes_json,
             trip_date, end_trip_date, start_trip_time, end_trip_time, is_active,
-            total_toll_fee, stoppages_count, toll_gates_count, vehicle_registration_no
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            total_toll_fee, stoppages_count, toll_gates_count, vehicle_registration_no, operational_status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const syncRoutesTx = localDb.transaction((routes) => {
           for (const r of routes) {
@@ -678,7 +680,8 @@ const supabaseService = {
               r.overview_polyline || '', r.route_color || '#E60012', r.waypoints_json || '[]', r.toll_gates_json || '[]',
               r.alternative_routes_json || '[]', r.trip_date || null, r.end_trip_date || r.trip_date || null, r.start_trip_time || null, r.end_trip_time || null,
               r.is_active !== undefined ? r.is_active : 1,
-              Number(r.total_toll_fee) || 0, Number(r.stoppages_count) || 0, Number(r.toll_gates_count) || 0, r.vehicle_registration_no || null
+              Number(r.total_toll_fee) || 0, Number(r.stoppages_count) || 0, Number(r.toll_gates_count) || 0, r.vehicle_registration_no || null,
+              r.operational_status || 'stop'
             );
           }
         });
