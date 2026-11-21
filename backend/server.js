@@ -512,27 +512,14 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 });
 
 // Update Profile Information
-app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+app.put('/api/auth/profile', authenticateToken, (req, res) => {
   const { name, phone } = req.body;
   if (!name || name.trim() === '') {
     return res.status(400).json({ error: 'Name cannot be empty' });
   }
   try {
-    const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-    const cleanPhone = cleanPhoneNumber(phone || '');
-    const formattedPhone = cleanPhone
-      ? (phone && phone.trim().startsWith('+') ? phone.trim() : `+91 ${cleanPhone}`)
-      : (phone ? phone.trim() : '');
-
-    db.prepare('UPDATE users SET name = ?, phone = ? WHERE id = ?').run(name.trim(), formattedPhone, req.user.id);
-    const updated = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(req.user.id);
-
-    try {
-      await supabaseService.syncUser(updated, existing);
-    } catch (e) {
-      console.error('[Supabase syncUser Error on Profile Update]:', e.message);
-    }
-
+    db.prepare('UPDATE users SET name = ?, phone = ? WHERE id = ?').run(name.trim(), phone || '', req.user.id);
+    const updated = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, created_at FROM users WHERE id = ?').get(req.user.id);
     res.json({
       message: 'Profile updated successfully',
       user: {
@@ -552,7 +539,7 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
 });
 
 // Change Password
-app.put('/api/auth/change-password', authenticateToken, async (req, res) => {
+app.put('/api/auth/change-password', authenticateToken, (req, res) => {
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'Current password and new password are required' });
@@ -571,14 +558,6 @@ app.put('/api/auth/change-password', authenticateToken, async (req, res) => {
 
   const hash = bcrypt.hashSync(newPassword, 10);
   db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, req.user.id);
-
-  try {
-    const updatedWithHash = { ...user, password: hash };
-    await supabaseService.syncUser(updatedWithHash, user);
-  } catch (e) {
-    console.error('[Supabase syncUser Error on Change Password]:', e.message);
-  }
-
   res.json({ message: 'Password changed successfully' });
 });
 
@@ -1378,7 +1357,7 @@ app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
   res.json(users);
 });
 
-app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
   const { name, email, password, phone, role, status, company_name } = req.body;
 
   if (!name || !name.trim()) {
@@ -1422,10 +1401,8 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 
     const newUser = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
     try {
-      await supabaseService.syncUser({ ...newUser, password: hash });
-    } catch (e) {
-      console.error('[Supabase syncUser Error on Create]:', e.message);
-    }
+      supabaseService.syncUser({ ...newUser, password: hash });
+    } catch (e) { }
     return res.status(201).json(newUser);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to create user: ' + err.message });
@@ -1916,12 +1893,12 @@ app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, async (re
   }
 });
 
-app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/users/:id', authenticateToken, requireAdmin, (req, res) => {
   const userId = req.params.id;
-  const { name, email, phone, role, status, password, company_name } = req.body;
+  const { name, email, phone, role, status, password } = req.body;
 
-  const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-  if (!existingUser) return res.status(404).json({ error: 'User not found' });
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
   const cleanPhone = cleanPhoneNumber(phone || '');
   if (phone && phone.trim() && cleanPhone.length !== 10) {
@@ -1938,46 +1915,19 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
   }
 
-  const formattedPhone = cleanPhone
-    ? (phone && phone.trim().startsWith('+') ? phone.trim() : `+91 ${cleanPhone}`)
-    : (phone ? phone.trim() : '');
-
-  const hasValidEmail = email && email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const userEmail = hasValidEmail
-    ? email.trim().toLowerCase()
-    : (cleanPhone ? `${cleanPhone}@gpstrackx.in` : existingUser.email);
-
-  const cleanCompanyName = company_name !== undefined ? (company_name ? company_name.trim() : null) : existingUser.company_name;
-
   try {
-    let hash = null;
     if (password && password.trim() !== '') {
-      hash = bcrypt.hashSync(password, 10);
+      const hash = bcrypt.hashSync(password, 10);
       db.prepare(`
-        UPDATE users 
-        SET name = ?, email = ?, phone = ?, role = ?, status = ?, password = ?, company_name = ?
-        WHERE id = ?
-      `).run(name.trim(), userEmail, formattedPhone, role || 'user', status || 'active', hash, cleanCompanyName, userId);
+        UPDATE users SET name = ?, email = ?, phone = ?, role = ?, status = ?, password = ? WHERE id = ?
+      `).run(name.trim(), email.toLowerCase().trim(), phone || '', role || 'user', status || 'active', hash, userId);
     } else {
       db.prepare(`
-        UPDATE users 
-        SET name = ?, email = ?, phone = ?, role = ?, status = ?, company_name = ?
-        WHERE id = ?
-      `).run(name.trim(), userEmail, formattedPhone, role || 'user', status || 'active', cleanCompanyName, userId);
+        UPDATE users SET name = ?, email = ?, phone = ?, role = ?, status = ? WHERE id = ?
+      `).run(name.trim(), email.toLowerCase().trim(), phone || '', role || 'user', status || 'active', userId);
     }
 
-    const updated = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(userId);
-
-    // Sync to Cloud Supabase immediately and permanently
-    try {
-      const syncPayload = { ...updated };
-      if (hash) syncPayload.password = hash;
-      await supabaseService.syncUser(syncPayload, existingUser);
-      console.log(`[Permanent User Sync] User ID ${userId} (${updated.name}) successfully saved to Cloud Supabase. Phone: ${updated.phone}`);
-    } catch (sErr) {
-      console.error('[Supabase syncUser Error on User Update]:', sErr.message);
-    }
-
+    const updated = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, created_at FROM users WHERE id = ?').get(userId);
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update user: ' + err.message });
