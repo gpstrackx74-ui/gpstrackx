@@ -865,15 +865,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       <MapPin className="w-3 h-3" />
                                       <span>View on Map</span>
                                     </button>
-                                    {isAdmin && !isActive && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleActivateHistoricalTrip(trip.id)}
-                                        className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition cursor-pointer border border-slate-200 shrink-0"
-                                      >
-                                        Set Active
-                                      </button>
-                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -992,16 +983,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 <MapPin className="w-3.5 h-3.5" />
                                 <span>View on Map</span>
                               </button>
-
-                              {isAdmin && !isActive && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleActivateHistoricalTrip(trip.id)}
-                                  className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200"
-                                >
-                                  Set Active
-                                </button>
-                              )}
                             </div>
                           </div>
 
