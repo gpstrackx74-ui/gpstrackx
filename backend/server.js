@@ -2409,16 +2409,39 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
     return { startMs, endMs, sDate, eDate, sTime, eTime };
   }
 
+  // Helper to check if two trips on the EXACT SAME DATE overlap in time
+  function isSameDateOverlap(dateA, startA, endA, dateB, startB, endB) {
+    if (!dateA || !dateB) return false;
+    // Overlap restriction ONLY applies if the calendar date is the EXACT SAME
+    if (dateA !== dateB) return false;
+
+    const toMins = (t) => {
+      const parts = String(t || '00:00').split(':').map(Number);
+      return (parts[0] || 0) * 60 + (parts[1] || 0);
+    };
+
+    const sA = toMins(startA);
+    let eA = toMins(endA);
+    if (eA <= sA) eA += 1440; // overnight trip
+
+    const sB = toMins(startB);
+    let eB = toMins(endB);
+    if (eB <= sB) eB += 1440;
+
+    return sA < eB && eA > sB;
+  }
+
   const acceptedTrips = [];
   const restrictedTrips = [];
 
-  // Check each incoming trip row
+  // Check each incoming trip row:
+  // User Requirement: "bs ye check krne h ki agr same date k start aur end time k bich me already bn chuka h trip to us time k bich me repeat same vehicle ka trip create nhi krna h other wise baaki case me create kr dena erro nhi show krna h bs itna hi check krna h"
   trips.forEach((t, idx) => {
     const rowNum = idx + 1;
-    const rawSD = t.loading_date || t.trip_date || '';
-    const rawED = t.unloading_date || t.end_trip_date || rawSD;
-    const rawST = t.loading_time || t.start_trip_time || '08:00';
-    const rawET = t.unloading_time || t.end_trip_time || '18:00';
+    const rawSD = t.start_date || t.startDate || t.loading_date || t.trip_date || t.date || '';
+    const rawED = t.end_date || t.endDate || t.unloading_date || t.end_trip_date || rawSD;
+    const rawST = t.start_time || t.startTime || t.start_trip_time || t.loading_time || '08:00';
+    const rawET = t.end_time || t.endTime || t.end_trip_time || t.unloading_time || '18:00';
 
     const currentInterval = parseInterval(rawSD, rawED, rawST, rawET);
     const sD = currentInterval.sDate;
@@ -2433,30 +2456,24 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
         loading_time: rawST,
         unloading_date: rawED,
         unloading_time: rawET,
-        reason: 'Loading Date is missing'
+        reason: 'Date is missing'
       });
       return;
     }
 
-    // Check against already accepted incoming trips in this batch (overlap / collision detection)
-    // Only restricts when trips are within the same 24-hr / calendar window and their exact datetime intervals collide
-    const batchConflict = acceptedTrips.find(a => {
-      return currentInterval.startMs < a.interval.endMs && currentInterval.endMs > a.interval.startMs;
-    });
+    // Only skip if on the EXACT SAME DATE, a trip with overlapping start-to-end time already exists for this vehicle
+    const sameDateConflict = acceptedTrips.find(a => isSameDateOverlap(sD, sT, eT, a.sD, a.sT, a.eT));
 
-    if (batchConflict) {
+    if (sameDateConflict) {
       restrictedTrips.push({
         row: rowNum,
-        loading_date: sD,
-        loading_time: sT,
-        unloading_date: eD,
-        unloading_time: eT,
-        reason: `इस व्हीकल का टाइम मिसमैच / ओवरलैप हो रहा है: Row ${batchConflict.row} (${batchConflict.sD} ${batchConflict.sT} - ${batchConflict.eT}) के साथ समय टकरा रहा है`
+        sD, sT, eD, eT,
+        reason: `समान तारीख (${sD}) पर Row ${sameDateConflict.row} (${sameDateConflict.sT} - ${sameDateConflict.eT}) के बीच ट्रिप पहले से मौजूद है`
       });
       return;
     }
 
-    // Valid and no time overlap
+    // Valid: create trip
     acceptedTrips.push({
       row: rowNum,
       sD,
@@ -2471,14 +2488,16 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
     });
   });
 
+  // Never throw 400 error even if all rows were repeats
   if (acceptedTrips.length === 0) {
-    return res.status(400).json({
-      success: false,
-      error: 'सभी ट्रिप्स का टाइम मिसमैच / ओवरलैप हो रहा है, कोई ट्रिप क्रिएट नहीं की जा सकी।',
+    return res.json({
+      success: true,
+      message: 'इस वाहन के लिए सभी पंक्तियाँ पहले से मौजूद समय स्लॉट में थीं।',
       totalRows: trips.length,
       createdCount: 0,
       restrictedCount: restrictedTrips.length,
-      restrictedTrips
+      restrictedTrips,
+      createdRoutes: []
     });
   }
 

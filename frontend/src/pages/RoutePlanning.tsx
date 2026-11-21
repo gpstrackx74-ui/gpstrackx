@@ -788,17 +788,17 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
         for (let r = 0; r < Math.min(5, grid.length); r++) {
           const rowVals = (grid[r] || []).map((c: any) => String(c || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
-          const hasDateHeader = rowVals.some(v => v.includes('loading') || v.includes('date') || v.includes('stop'));
+          const hasDateHeader = rowVals.some(v => v.includes('loading') || v.includes('date') || v.includes('stop') || v.includes('start'));
           if (hasDateHeader) {
             headerRowIdx = r;
             rowVals.forEach((v, cIdx) => {
-              if (colIdxLoadingDate === -1 && (v.includes('loadingdate') || (v.includes('loading') && v.includes('date')) || v === 'startdate' || v === 'fromdate')) colIdxLoadingDate = cIdx;
-              if (colIdxUnloadingDate === -1 && (v.includes('unloadingdate') || (v.includes('unloading') && v.includes('date')) || v === 'enddate' || v === 'todate')) colIdxUnloadingDate = cIdx;
-              if (colIdxLoadingTime === -1 && (v.includes('loadingtime') || (v.includes('loading') && v.includes('time')) || v === 'starttime' || v === 'fromtime')) colIdxLoadingTime = cIdx;
-              if (colIdxUnloadingTime === -1 && (v.includes('unloadingtime') || (v.includes('unloading') && v.includes('time')) || v === 'endtime' || v === 'totime')) colIdxUnloadingTime = cIdx;
+              if (colIdxLoadingDate === -1 && (v === 'startdate' || v === 'loadingdate' || v === 'dateofloading' || v === 'fromdate' || v === 'tripdate' || (v.includes('start') && v.includes('date')) || (v.includes('loading') && v.includes('date')))) colIdxLoadingDate = cIdx;
+              if (colIdxUnloadingDate === -1 && (v === 'enddate' || v === 'unloadingdate' || v === 'dateofunloading' || v === 'todate' || v === 'endtripdate' || (v.includes('end') && v.includes('date')) || (v.includes('unloading') && v.includes('date')))) colIdxUnloadingDate = cIdx;
+              if (colIdxLoadingTime === -1 && (v === 'starttime' || v === 'loadingtime' || v === 'fromtime' || v === 'dispatchtime' || (v.includes('start') && v.includes('time')) || (v.includes('loading') && v.includes('time')))) colIdxLoadingTime = cIdx;
+              if (colIdxUnloadingTime === -1 && (v === 'endtime' || v === 'unloadingtime' || v === 'totime' || v === 'arrivaltime' || (v.includes('end') && v.includes('time')) || (v.includes('unloading') && v.includes('time')))) colIdxUnloadingTime = cIdx;
               if (colIdxStoppage === -1 && (v.includes('stop') || v.includes('halt'))) colIdxStoppage = cIdx;
               if (colIdxDistance === -1 && (v.includes('tripdistance') || v.includes('distance') || v.includes('totalkm') || v.includes('km') || v.includes('kilo'))) colIdxDistance = cIdx;
-              if (colIdxDuration === -1 && (v.includes('tripduration') || v.includes('duration') || v.includes('traveltime') || v.includes('travelduration') || v.includes('totaltime'))) colIdxDuration = cIdx;
+              if (colIdxDuration === -1 && (v.includes('tripduration') || v.includes('duration') || v.includes('traveltime') || v.includes('totaltime'))) colIdxDuration = cIdx;
             });
             break;
           }
@@ -868,10 +868,18 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
           if (pStartD) {
             parsedTrips.push({
+              start_date: pStartD,
               loading_date: pStartD,
+              trip_date: pStartD,
+              end_date: pEndD || pStartD,
               unloading_date: pEndD || pStartD,
+              end_trip_date: pEndD || pStartD,
+              start_time: pStartT,
               loading_time: pStartT,
+              start_trip_time: pStartT,
+              end_time: pEndT,
               unloading_time: pEndT,
+              end_trip_time: pEndT,
               stoppages_count: pStops,
               stoppage_count: pStops,
               stoppage: pStops,
@@ -887,7 +895,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         }
 
         if (parsedTrips.length === 0) {
-          alert('No valid trip rows found. Please ensure Column A has Loading Date and Column B has Unloading Date.');
+          alert('No valid trip rows found. Please ensure Column A has Start Date and Column B has End Date.');
           setIsImportingTripExcel(false);
           return;
         }
@@ -933,8 +941,10 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           setScheduleImportSuccessMsg(
             `✓ ${res.createdCount} ट्रिप सफलतापूर्वक क्रिएट हो गए! (${targetVehicle?.registration_no || selectedVehicleId} के लिए ट्रिप हिस्ट्री जोड़ दी गई है)`
           );
-        } else if (res.restrictedCount > 0) {
-          alert(`⚠️ इस व्हीकल का टाइम मिसमैच हो रहा है! सभी ${res.restrictedCount} ट्रिप्स का टाइम ओवरलैप हो रहा था, इसलिए उन्हें क्रिएट नहीं किया गया।`);
+        } else {
+          setScheduleImportSuccessMsg(
+            `समान तारीख व समय स्लॉट में ट्रिप पहले से मौजूद है।`
+          );
         }
       } catch (err: any) {
         alert('Failed to import Excel trips: ' + (err.message || err));
@@ -951,46 +961,46 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     try {
       const sampleRows = [
         {
-          'Date of loading': '1/1/2026',
-          'Date of unloading': '1/1/2026',
-          'Loading time': '1:00',
-          'Unloading time': '22:00',
+          'Start Date': '1/1/2026',
+          'End Date': '1/1/2026',
+          'Start time': '1:00',
+          'End time': '22:00',
           'Stoppage': 15,
           'Trip Distance': 334,
           'Trip Duration': '3,55'
         },
         {
-          'Date of loading': '1/3/2026',
-          'Date of unloading': '1/4/2026',
-          'Loading time': '14:02',
-          'Unloading time': '3:00',
+          'Start Date': '1/3/2026',
+          'End Date': '1/4/2026',
+          'Start time': '14:02',
+          'End time': '3:00',
           'Stoppage': 20,
           'Trip Distance': 654,
           'Trip Duration': '4,15'
         },
         {
-          'Date of loading': '1/6/2026',
-          'Date of unloading': '1/6/2026',
-          'Loading time': '3:00',
-          'Unloading time': '16:59',
+          'Start Date': '1/6/2026',
+          'End Date': '1/6/2026',
+          'Start time': '3:00',
+          'End time': '16:59',
           'Stoppage': 19,
           'Trip Distance': 876,
           'Trip Duration': '7,33'
         },
         {
-          'Date of loading': '1/8/2026',
-          'Date of unloading': '1/9/2026',
-          'Loading time': '19:00',
-          'Unloading time': '2:00',
+          'Start Date': '1/8/2026',
+          'End Date': '1/9/2026',
+          'Start time': '19:00',
+          'End time': '2:00',
           'Stoppage': 5,
           'Trip Distance': 566,
           'Trip Duration': '5,33'
         },
         {
-          'Date of loading': '2/10/2026',
-          'Date of unloading': '2/10/2026',
-          'Loading time': '5:00',
-          'Unloading time': '14:00',
+          'Start Date': '2/10/2026',
+          'End Date': '2/10/2026',
+          'Start time': '5:00',
+          'End time': '14:00',
           'Stoppage': 9,
           'Trip Distance': 787,
           'Trip Duration': '5,45'
@@ -2696,21 +2706,18 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 </div>
               </div>
 
-              {/* Time Mismatch / Overlap Restrictions Warning if any */}
+              {/* Repeated Same-Date Slots Skipped if any */}
               {batchImportResult.restrictedCount > 0 && (
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 space-y-1.5">
-                  <div className="flex items-center gap-2 text-amber-800 text-xs font-bold">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>⚠️ इस व्हीकल का टाइम मिसमैच हो रहा है ({batchImportResult.restrictedCount} Trip Overlap Restricted)</span>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="flex items-center gap-2 text-slate-700 text-xs font-bold">
+                    <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span>ℹ️ {batchImportResult.restrictedCount} रिपीटेड ट्रिप स्किप कर दी गई (समान तारीख व समय स्लॉट)</span>
                   </div>
-                  <p className="text-[11px] text-amber-700 font-medium">
-                    नीचे दिए गए ट्रिप का समय पहले से मौजूद ट्रिप या फाइल के दूसरे ट्रिप के साथ टकरा रहा था, इसलिए इन्हें ट्रिप हिस्ट्री में नहीं बनाया गया:
-                  </p>
-                  <div className="space-y-1 pt-1">
+                  <div className="space-y-1 pt-0.5">
                     {batchImportResult.restrictedTrips.map((rt: any, idx: number) => (
-                      <div key={idx} className="text-[11px] font-mono text-amber-900 bg-amber-100/60 px-2.5 py-1.5 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span>Row {rt.row}: {rt.loading_date} [{rt.loading_time}] → {rt.unloading_date} [{rt.unloading_time}]</span>
-                        <span className="font-sans text-[10px] text-amber-800 font-bold">{rt.reason}</span>
+                      <div key={idx} className="text-[11px] font-mono text-slate-600 bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span>Row {rt.row}: {rt.sD || rt.loading_date} [{rt.sT || rt.loading_time}] → {rt.eD || rt.unloading_date} [{rt.eT || rt.unloading_time}]</span>
+                        <span className="font-sans text-[10px] text-slate-500 font-semibold">{rt.reason}</span>
                       </div>
                     ))}
                   </div>
