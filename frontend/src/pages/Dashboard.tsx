@@ -821,11 +821,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     </span>
                                   </div>
 
-                                  <p className="text-[11px] text-slate-600 truncate">
-                                    <span className="font-semibold text-slate-800">
-                                      {trip.start_location_name || 'Origin'} → {trip.end_location_name || 'Destination'}
-                                    </span>
-                                  </p>
+                                  {trip.start_location_name && !trip.start_location_name.toLowerCase().startsWith('point #') && !trip.end_location_name?.toLowerCase().startsWith('point #') ? (
+                                    <p className="text-[11px] text-slate-600 truncate">
+                                      <span className="font-semibold text-slate-800">
+                                        {trip.start_location_name} → {trip.end_location_name}
+                                      </span>
+                                    </p>
+                                  ) : (trip.start_trip_time || trip.end_trip_time) ? (
+                                    <p className="text-[11px] font-mono text-slate-500 truncate">
+                                      <span>Timing: {trip.start_trip_time || '08:00 AM'} - {trip.end_trip_time || '06:00 PM'}</span>
+                                    </p>
+                                  ) : null}
                                 </div>
 
                                 {/* Right: Metrics & Action Buttons */}
@@ -987,10 +993,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           </div>
 
                           <p className="text-xs text-slate-600 font-medium mb-3">
-                            <span className="font-bold text-slate-800">
-                              {trip.start_location_name || 'Origin'} → {trip.end_location_name || 'Destination'}
-                            </span>
-                            <span className="text-slate-300 mx-2">•</span>
+                            {trip.start_location_name && !trip.start_location_name.toLowerCase().startsWith('point #') && !trip.end_location_name?.toLowerCase().startsWith('point #') ? (
+                              <>
+                                <span className="font-bold text-slate-800">
+                                  {trip.start_location_name} → {trip.end_location_name}
+                                </span>
+                                <span className="text-slate-300 mx-2">•</span>
+                              </>
+                            ) : null}
                             <span className="font-mono text-slate-500">
                               Timing: {trip.start_trip_time || '08:00 AM'} - {trip.end_trip_time || '06:00 PM'}
                             </span>

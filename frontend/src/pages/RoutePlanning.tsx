@@ -2712,7 +2712,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     </h4>
                     <p className="text-[11px] text-slate-500 font-medium">
                       Vehicle: <span className="font-mono font-bold text-slate-800">{targetVehicle?.registration_no || selectedVehicleId}</span> • 
-                      Route: <span className="font-semibold text-slate-800">{startPoint?.name} → {endPoint?.name}</span>
+                      Route: <span className="font-semibold text-slate-800">{startPoint?.name && !startPoint.name.toLowerCase().startsWith('point #') ? `${startPoint.name} → ${endPoint?.name}` : (corridorNameInput || 'Corridor Route')}</span>
                     </p>
                   </div>
                 </div>

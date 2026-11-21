@@ -384,9 +384,11 @@ export const Header: React.FC<HeaderProps> = ({
                           <p className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition truncate">
                             {r.route_name}
                           </p>
-                          <p className="text-[10px] text-slate-400 truncate">
-                            {r.start_location_name} → {r.end_location_name}
-                          </p>
+                          {!r.start_location_name?.toLowerCase().startsWith('point #') && !r.end_location_name?.toLowerCase().startsWith('point #') && (
+                            <p className="text-[10px] text-slate-400 truncate">
+                              {r.start_location_name} → {r.end_location_name}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="text-right shrink-0">

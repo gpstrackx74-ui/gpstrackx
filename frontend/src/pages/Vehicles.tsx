@@ -2365,10 +2365,14 @@ export const Vehicles: React.FC<VehiclesProps> = ({ onViewVehicle, onPlanRouteFo
                           {/* Corridor leg & inline compact metrics */}
                           <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                             <p className="text-[11px] text-slate-600 truncate">
-                              <span className="font-bold text-slate-800">
-                                {trip.start_location_name || 'Origin'} → {trip.end_location_name || 'Destination'}
-                              </span>
-                              <span className="text-slate-300 mx-1.5">•</span>
+                              {trip.start_location_name && !trip.start_location_name.toLowerCase().startsWith('point #') && !trip.end_location_name?.toLowerCase().startsWith('point #') ? (
+                                <>
+                                  <span className="font-bold text-slate-800">
+                                    {trip.start_location_name} → {trip.end_location_name}
+                                  </span>
+                                  <span className="text-slate-300 mx-1.5">•</span>
+                                </>
+                              ) : null}
                               <span className="font-mono text-slate-500">
                                 {trip.trip_date || dateStr} ({trip.start_trip_time || '08:00 AM'} - {trip.end_trip_time || '06:00 PM'})
                               </span>
