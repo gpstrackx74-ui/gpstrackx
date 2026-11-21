@@ -43,23 +43,140 @@ const supabaseService = {
     }
   },
 
-  // Sync new/updated user to Supabase
-  async syncUser(user) {
+  // Sync new/updated user to Supabase (100% Permanent Cloud Database Update)
+  async syncUser(user, previousUser) {
     if (!pool) return;
     try {
-      const res = await pool.query(`
-        INSERT INTO users (name, email, password, phone, role, status, avatar_color, company_name)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (email) DO UPDATE SET
-          name = EXCLUDED.name,
-          password = COALESCE(EXCLUDED.password, users.password),
-          phone = COALESCE(EXCLUDED.phone, users.phone),
-          role = EXCLUDED.role,
-          status = EXCLUDED.status,
-          company_name = COALESCE(EXCLUDED.company_name, users.company_name)
-        RETURNING id
-      `, [user.name, user.email, user.password, user.phone || null, user.role || 'user', user.status || 'active', user.avatar_color || '#E60012', user.company_name || null]);
-      console.log(`[Supabase] Synced user: ${user.email} (ID: ${res.rows[0]?.id})`);
+      const email = (user.email || '').toLowerCase().trim();
+      const phone = user.phone ? String(user.phone).trim() : null;
+      const cleanPhone = phone ? phone.replace(/[^0-9]/g, '').slice(-10) : null;
+      const name = (user.name || '').trim();
+      const role = user.role || 'user';
+      const status = user.status || 'active';
+      const avatarColor = user.avatar_color || '#E60012';
+      const companyName = user.company_name !== undefined ? (user.company_name ? String(user.company_name).trim() : null) : null;
+      const password = user.password || '$2b$10$wN1kFomqj7uX8lM7fH5f6eJ98XgO6M2n8o9p0q1r2s3t4u5v6w7x8';
+
+      // 1. Try finding existing user in Supabase by:
+      // - user.id (if present in Supabase)
+      // - previousUser.id
+      // - email (new email)
+      // - previousUser.email (old email before update)
+      // - cleanPhone
+      let existingId = null;
+
+      if (user.id) {
+        const idCheck = await pool.query('SELECT id FROM users WHERE id = $1', [user.id]);
+        if (idCheck.rows.length > 0) existingId = idCheck.rows[0].id;
+      }
+
+      if (!existingId && previousUser && previousUser.id) {
+        const idCheck = await pool.query('SELECT id FROM users WHERE id = $1', [previousUser.id]);
+        if (idCheck.rows.length > 0) existingId = idCheck.rows[0].id;
+      }
+
+      if (!existingId && email) {
+        const emailCheck = await pool.query('SELECT id FROM users WHERE LOWER(TRIM(email)) = $1', [email]);
+        if (emailCheck.rows.length > 0) existingId = emailCheck.rows[0].id;
+      }
+
+      if (!existingId && previousUser && previousUser.email) {
+        const prevEmailCheck = await pool.query('SELECT id FROM users WHERE LOWER(TRIM(email)) = $1', [previousUser.email.toLowerCase().trim()]);
+        if (prevEmailCheck.rows.length > 0) existingId = prevEmailCheck.rows[0].id;
+      }
+
+      if (!existingId && cleanPhone && cleanPhone.length === 10) {
+        const phoneCheck = await pool.query(`
+          SELECT id FROM users 
+          WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        `, [cleanPhone]);
+        if (phoneCheck.rows.length > 0) existingId = phoneCheck.rows[0].id;
+      }
+
+      // If user exists in Supabase, update immediately and permanently
+      if (existingId) {
+        let updateRes;
+        if (user.password) {
+          updateRes = await pool.query(`
+            UPDATE users SET
+              name = $1,
+              email = $2,
+              phone = $3,
+              role = $4,
+              status = $5,
+              password = $6,
+              avatar_color = $7,
+              company_name = COALESCE($8, company_name)
+            WHERE id = $9
+            RETURNING id
+          `, [name, email, phone, role, status, user.password, avatarColor, companyName, existingId]);
+        } else {
+          updateRes = await pool.query(`
+            UPDATE users SET
+              name = $1,
+              email = $2,
+              phone = $3,
+              role = $4,
+              status = $5,
+              avatar_color = $6,
+              company_name = COALESCE($7, company_name)
+            WHERE id = $8
+            RETURNING id
+          `, [name, email, phone, role, status, avatarColor, companyName, existingId]);
+        }
+        console.log(`[Supabase] Permanently updated User in Supabase ID ${existingId} (${name}) -> Phone: ${phone}, Email: ${email}`);
+        return updateRes.rows[0]?.id;
+      }
+
+      // 2. Otherwise insert new user in Supabase
+      let res;
+      if (user.id) {
+        try {
+          res = await pool.query(`
+            INSERT INTO users (id, name, email, password, phone, role, status, avatar_color, company_name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (email) DO UPDATE SET
+              name = EXCLUDED.name,
+              password = COALESCE(EXCLUDED.password, users.password),
+              phone = EXCLUDED.phone,
+              role = EXCLUDED.role,
+              status = EXCLUDED.status,
+              avatar_color = EXCLUDED.avatar_color,
+              company_name = COALESCE(EXCLUDED.company_name, users.company_name)
+            RETURNING id
+          `, [user.id, name, email, password, phone, role, status, avatarColor, companyName]);
+        } catch (idErr) {
+          res = await pool.query(`
+            INSERT INTO users (name, email, password, phone, role, status, avatar_color, company_name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (email) DO UPDATE SET
+              name = EXCLUDED.name,
+              password = COALESCE(EXCLUDED.password, users.password),
+              phone = EXCLUDED.phone,
+              role = EXCLUDED.role,
+              status = EXCLUDED.status,
+              avatar_color = EXCLUDED.avatar_color,
+              company_name = COALESCE(EXCLUDED.company_name, users.company_name)
+            RETURNING id
+          `, [name, email, password, phone, role, status, avatarColor, companyName]);
+        }
+      } else {
+        res = await pool.query(`
+          INSERT INTO users (name, email, password, phone, role, status, avatar_color, company_name)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT (email) DO UPDATE SET
+            name = EXCLUDED.name,
+            password = COALESCE(EXCLUDED.password, users.password),
+            phone = EXCLUDED.phone,
+            role = EXCLUDED.role,
+            status = EXCLUDED.status,
+            avatar_color = EXCLUDED.avatar_color,
+            company_name = COALESCE(EXCLUDED.company_name, users.company_name)
+          RETURNING id
+        `, [name, email, password, phone, role, status, avatarColor, companyName]);
+      }
+
+      console.log(`[Supabase] Synced user: ${email} -> Phone: ${phone} (ID: ${res.rows[0]?.id})`);
       return res.rows[0]?.id;
     } catch (err) {
       console.error('[Supabase syncUser Error]:', err.message);

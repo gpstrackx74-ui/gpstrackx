@@ -40,13 +40,13 @@ interface VehicleTrackingProps {
   onSwitchVehicle?: (vehicleId: number) => void;
 }
 
-export const VehicleTracking: React.FC<VehicleTrackingProps> = ({ 
-  vehicleId, 
+export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
+  vehicleId,
   historicalTrip,
   viewSource,
-  onBack, 
-  onPlanRoute, 
-  onSwitchVehicle 
+  onBack,
+  onPlanRoute,
+  onSwitchVehicle
 }) => {
   const { isAdmin } = useAuth();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
@@ -179,13 +179,13 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
             const wp = typeof historicalTrip.waypoints_json === 'string' ? JSON.parse(historicalTrip.waypoints_json) : historicalTrip.waypoints_json;
             if (Array.isArray(wp)) setStoppages(wp);
           }
-        } catch (_) {}
+        } catch (_) { }
         try {
           if (historicalTrip.toll_gates_json) {
             const tg = typeof historicalTrip.toll_gates_json === 'string' ? JSON.parse(historicalTrip.toll_gates_json) : historicalTrip.toll_gates_json;
             if (Array.isArray(tg)) setManualTolls(tg);
           }
-        } catch (_) {}
+        } catch (_) { }
       } else if (isInitial || !selectedDate) {
         if (data.activeRoute) {
           setActiveRoute(data.activeRoute);
@@ -214,13 +214,13 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
               const wp = typeof matchingTrip.waypoints_json === 'string' ? JSON.parse(matchingTrip.waypoints_json) : matchingTrip.waypoints_json;
               if (Array.isArray(wp)) setStoppages(wp);
             }
-          } catch (_) {}
+          } catch (_) { }
           try {
             if (matchingTrip.toll_gates_json) {
               const tg = typeof matchingTrip.toll_gates_json === 'string' ? JSON.parse(matchingTrip.toll_gates_json) : matchingTrip.toll_gates_json;
               if (Array.isArray(tg)) setManualTolls(tg);
             }
-          } catch (_) {}
+          } catch (_) { }
         } else {
           setActiveRoute(null);
           setStoppages([]);
@@ -261,13 +261,13 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
           const wp = typeof found.waypoints_json === 'string' ? JSON.parse(found.waypoints_json) : found.waypoints_json;
           if (Array.isArray(wp)) setStoppages(wp);
         }
-      } catch (_) {}
+      } catch (_) { }
       try {
         if (found.toll_gates_json) {
           const tg = typeof found.toll_gates_json === 'string' ? JSON.parse(found.toll_gates_json) : found.toll_gates_json;
           if (Array.isArray(tg)) setManualTolls(tg);
         }
-      } catch (_) {}
+      } catch (_) { }
     } else {
       // Clear route, stoppages and tolls so map is completely empty/blank and details reset to zero
       setActiveRoute(null);
@@ -695,12 +695,12 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isMoving
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                   : isStopped
-                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                  : isParking
-                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                  : vehicle.status === 'active'
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                    : isParking
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : vehicle.status === 'active'
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'bg-slate-100 text-slate-600 border border-slate-200'
                   }`}>
                   {isMoving && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>}
                   {vehicle.status?.toUpperCase()}
@@ -717,7 +717,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                         try {
                           await api.updateVehicleStatus(vehicle.id, newStatus);
                           if (activeRoute?.id) {
-                            api.updateRouteOperationalStatus(activeRoute.id, newStatus).catch(() => {});
+                            api.updateRouteOperationalStatus(activeRoute.id, newStatus).catch(() => { });
                           }
                           setVehicle(prev => prev ? { ...prev, status: newStatus as any, current_speed: newStatus === 'moving' ? 48 : 0 } : prev);
                           if (activeRoute) {
@@ -727,15 +727,14 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                           console.error('Failed to update status:', err);
                         }
                       }}
-                      className={`text-[11px] font-black px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition ${
-                        vehicle.status === 'moving'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : (vehicle.status === 'stop' || vehicle.status === 'stopped')
+                      className={`text-[11px] font-black px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition ${vehicle.status === 'moving'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : (vehicle.status === 'stop' || vehicle.status === 'stopped')
                           ? 'bg-rose-50 text-rose-700 border border-rose-200'
                           : vehicle.status === 'parking'
-                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                          : 'bg-white text-slate-700 border-slate-200'
-                      }`}
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-white text-slate-700 border-slate-200'
+                        }`}
                     >
                       <option value="moving">Moving</option>
                       <option value="stop">Stop</option>

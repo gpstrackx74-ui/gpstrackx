@@ -207,7 +207,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
     try {
       const allUsers = db.prepare('SELECT * FROM users').all();
       targetUser = allUsers.find(u => u.phone && cleanPhoneNumber(u.phone) === targetPhone);
-    } catch (_) {}
+    } catch (_) { }
   } else if (input.includes('@')) {
     // Input is an email address: look up registered user phone
     try {
@@ -215,7 +215,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
       if (targetUser && targetUser.phone) {
         targetPhone = cleanPhoneNumber(targetUser.phone);
       }
-    } catch (_) {}
+    } catch (_) { }
   } else {
     // Input is a username: look up registered user phone
     try {
@@ -223,7 +223,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
       if (targetUser && targetUser.phone) {
         targetPhone = cleanPhoneNumber(targetUser.phone);
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   const cleanTargetPhone = cleanPhoneNumber(targetPhone);
@@ -315,7 +315,7 @@ app.post('/api/auth/login-otp', (req, res) => {
     user = db.prepare('SELECT * FROM users WHERE id = ?').get(newRes.lastInsertRowid);
     try {
       supabaseService.syncUser(user);
-    } catch (_) {}
+    } catch (_) { }
   }
 
   if (user.status !== 'active') {
@@ -512,14 +512,27 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 });
 
 // Update Profile Information
-app.put('/api/auth/profile', authenticateToken, (req, res) => {
+app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   const { name, phone } = req.body;
   if (!name || name.trim() === '') {
     return res.status(400).json({ error: 'Name cannot be empty' });
   }
   try {
-    db.prepare('UPDATE users SET name = ?, phone = ? WHERE id = ?').run(name.trim(), phone || '', req.user.id);
-    const updated = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, created_at FROM users WHERE id = ?').get(req.user.id);
+    const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    const cleanPhone = cleanPhoneNumber(phone || '');
+    const formattedPhone = cleanPhone
+      ? (phone && phone.trim().startsWith('+') ? phone.trim() : `+91 ${cleanPhone}`)
+      : (phone ? phone.trim() : '');
+
+    db.prepare('UPDATE users SET name = ?, phone = ? WHERE id = ?').run(name.trim(), formattedPhone, req.user.id);
+    const updated = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(req.user.id);
+
+    try {
+      await supabaseService.syncUser(updated, existing);
+    } catch (e) {
+      console.error('[Supabase syncUser Error on Profile Update]:', e.message);
+    }
+
     res.json({
       message: 'Profile updated successfully',
       user: {
@@ -539,7 +552,7 @@ app.put('/api/auth/profile', authenticateToken, (req, res) => {
 });
 
 // Change Password
-app.put('/api/auth/change-password', authenticateToken, (req, res) => {
+app.put('/api/auth/change-password', authenticateToken, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'Current password and new password are required' });
@@ -558,6 +571,14 @@ app.put('/api/auth/change-password', authenticateToken, (req, res) => {
 
   const hash = bcrypt.hashSync(newPassword, 10);
   db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, req.user.id);
+
+  try {
+    const updatedWithHash = { ...user, password: hash };
+    await supabaseService.syncUser(updatedWithHash, user);
+  } catch (e) {
+    console.error('[Supabase syncUser Error on Change Password]:', e.message);
+  }
+
   res.json({ message: 'Password changed successfully' });
 });
 
@@ -1357,7 +1378,7 @@ app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
   res.json(users);
 });
 
-app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
+app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
   const { name, email, password, phone, role, status, company_name } = req.body;
 
   if (!name || !name.trim()) {
@@ -1401,8 +1422,10 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
 
     const newUser = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
     try {
-      supabaseService.syncUser({ ...newUser, password: hash });
-    } catch (e) { }
+      await supabaseService.syncUser({ ...newUser, password: hash });
+    } catch (e) {
+      console.error('[Supabase syncUser Error on Create]:', e.message);
+    }
     return res.status(201).json(newUser);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to create user: ' + err.message });
@@ -1885,7 +1908,7 @@ app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, async (re
     const saved = db.prepare('SELECT * FROM saved_corridors WHERE id = ?').get(corridorId);
     try {
       await supabaseService.syncCorridor(saved);
-    } catch (_) {}
+    } catch (_) { }
 
     res.status(201).json({ success: true, corridor: saved });
   } catch (err) {
@@ -1893,12 +1916,12 @@ app.post('/api/routes/save-corridor', authenticateToken, requireAdmin, async (re
   }
 });
 
-app.put('/api/users/:id', authenticateToken, requireAdmin, (req, res) => {
+app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const userId = req.params.id;
-  const { name, email, phone, role, status, password } = req.body;
+  const { name, email, phone, role, status, password, company_name } = req.body;
 
-  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!existingUser) return res.status(404).json({ error: 'User not found' });
 
   const cleanPhone = cleanPhoneNumber(phone || '');
   if (phone && phone.trim() && cleanPhone.length !== 10) {
@@ -1915,19 +1938,46 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, (req, res) => {
     }
   }
 
+  const formattedPhone = cleanPhone
+    ? (phone && phone.trim().startsWith('+') ? phone.trim() : `+91 ${cleanPhone}`)
+    : (phone ? phone.trim() : '');
+
+  const hasValidEmail = email && email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const userEmail = hasValidEmail
+    ? email.trim().toLowerCase()
+    : (cleanPhone ? `${cleanPhone}@gpstrackx.in` : existingUser.email);
+
+  const cleanCompanyName = company_name !== undefined ? (company_name ? company_name.trim() : null) : existingUser.company_name;
+
   try {
+    let hash = null;
     if (password && password.trim() !== '') {
-      const hash = bcrypt.hashSync(password, 10);
+      hash = bcrypt.hashSync(password, 10);
       db.prepare(`
-        UPDATE users SET name = ?, email = ?, phone = ?, role = ?, status = ?, password = ? WHERE id = ?
-      `).run(name.trim(), email.toLowerCase().trim(), phone || '', role || 'user', status || 'active', hash, userId);
+        UPDATE users 
+        SET name = ?, email = ?, phone = ?, role = ?, status = ?, password = ?, company_name = ?
+        WHERE id = ?
+      `).run(name.trim(), userEmail, formattedPhone, role || 'user', status || 'active', hash, cleanCompanyName, userId);
     } else {
       db.prepare(`
-        UPDATE users SET name = ?, email = ?, phone = ?, role = ?, status = ? WHERE id = ?
-      `).run(name.trim(), email.toLowerCase().trim(), phone || '', role || 'user', status || 'active', userId);
+        UPDATE users 
+        SET name = ?, email = ?, phone = ?, role = ?, status = ?, company_name = ?
+        WHERE id = ?
+      `).run(name.trim(), userEmail, formattedPhone, role || 'user', status || 'active', cleanCompanyName, userId);
     }
 
-    const updated = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, created_at FROM users WHERE id = ?').get(userId);
+    const updated = db.prepare('SELECT id, name, email, phone, role, status, avatar_color, company_name, created_at FROM users WHERE id = ?').get(userId);
+
+    // Sync to Cloud Supabase immediately and permanently
+    try {
+      const syncPayload = { ...updated };
+      if (hash) syncPayload.password = hash;
+      await supabaseService.syncUser(syncPayload, existingUser);
+      console.log(`[Permanent User Sync] User ID ${userId} (${updated.name}) successfully saved to Cloud Supabase. Phone: ${updated.phone}`);
+    } catch (sErr) {
+      console.error('[Supabase syncUser Error on User Update]:', sErr.message);
+    }
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update user: ' + err.message });
@@ -2598,7 +2648,7 @@ app.put('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) => 
           WHERE id = ?
         `).run(updatedStart, updatedEnd, updatedDist, existingCorridor.id);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     await supabaseService.syncRoute(updatedRoute);
 
@@ -2687,7 +2737,7 @@ app.get('/api/routes/saved-corridors', authenticateToken, async (req, res) => {
                   c.total_distance_km || 0, c.estimated_travel_time_min || 0,
                   c.overview_polyline || '', c.waypoints_json || '[]', c.toll_gates_json || '[]'
                 );
-              } catch (_) {}
+              } catch (_) { }
             }
           }
         }
