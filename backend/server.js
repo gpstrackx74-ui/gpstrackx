@@ -2788,7 +2788,11 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
     // Async sync created routes and vehicle to Supabase
     (async () => {
       try {
-        await supabaseService.query('UPDATE routes SET is_active = 0 WHERE vehicle_id = $1', [vehicle_id]);
+        await supabaseService.query('DELETE FROM stoppages WHERE route_id IN (SELECT id FROM routes WHERE vehicle_id = $1)', [vehicle_id]);
+        await supabaseService.query('DELETE FROM manual_toll_gates WHERE route_id IN (SELECT id FROM routes WHERE vehicle_id = $1)', [vehicle_id]);
+        await supabaseService.query('DELETE FROM fastag_transactions WHERE vehicle_id = $1', [vehicle_id]);
+        await supabaseService.query('DELETE FROM routes WHERE vehicle_id = $1', [vehicle_id]);
+
         for (const cr of createdRoutes) {
           const fullRoute = db.prepare('SELECT * FROM routes WHERE id = ?').get(cr.id);
           if (fullRoute) await supabaseService.syncRoute(fullRoute);
@@ -3202,6 +3206,7 @@ app.delete('/api/routes/:id', authenticateToken, requireAdmin, async (req, res) 
   const routeId = req.params.id;
   try {
     const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(routeId);
+    db.prepare('DELETE FROM fastag_transactions WHERE route_id = ?').run(routeId);
     db.prepare('DELETE FROM stoppages WHERE route_id = ?').run(routeId);
     db.prepare('DELETE FROM manual_toll_gates WHERE route_id = ?').run(routeId);
     db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);

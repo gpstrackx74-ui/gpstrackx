@@ -1870,6 +1870,8 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
   const handleSelectVehicle = (vId: string) => {
     setSelectedVehicleId(vId);
+    setBatchImportResult(null);
+    setScheduleImportSuccessMsg('');
     const match = vehicles.find((v: any) => String(v.id) === vId);
     if (match) {
       if (match.assigned_user_id) {
@@ -2541,6 +2543,17 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       alert('Please select a target vehicle from the dropdown first.');
       return;
     }
+
+    // If trips were imported from Excel for this vehicle, they are already saved to the database.
+    // Do not create an extra default single trip!
+    if (batchImportResult && batchImportResult.createdCount > 0) {
+      setSaveSuccess(true);
+      setTimeout(() => {
+        onSavedRouteSuccess(parseInt(selectedVehicleId));
+      }, 300);
+      return;
+    }
+
     const selectedRoute = routes.find(r => r.id === selectedRouteId) || routes[0];
     if (!selectedRoute || !startPoint || !endPoint) {
       alert('Please select a valid route first.');
@@ -3794,18 +3807,31 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               )}
             </div>
 
-            {/* Primary Action Button: Allocate Route */}
-            <button
-              type="button"
-              onClick={handleAllocateRoute}
-              disabled={saving || !selectedVehicleId || routes.length === 0}
-              className="w-full py-3 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-            >
-              <Check className="w-4 h-4 text-emerald-200" />
-              <span>
-                {saving ? 'Allocating Route...' : saveSuccess ? 'Route Allocated Successfully!' : `Confirm & Allocate Route to ${targetVehicle?.registration_no || 'Vehicle'}`}
-              </span>
-            </button>
+            {/* Primary Action Button: Allocate Route or View Excel Imported Trips */}
+            {batchImportResult && batchImportResult.createdCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => onSavedRouteSuccess(parseInt(selectedVehicleId))}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4 text-white" />
+                <span>
+                  View {batchImportResult.createdCount} Imported Trips on Live Map / Trip History →
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleAllocateRoute}
+                disabled={saving || !selectedVehicleId || routes.length === 0}
+                className="w-full py-3 bg-[#E60012] hover:bg-[#CC0010] text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                <Check className="w-4 h-4 text-emerald-200" />
+                <span>
+                  {saving ? 'Allocating Route...' : saveSuccess ? 'Route Allocated Successfully!' : `Confirm & Allocate Route to ${targetVehicle?.registration_no || 'Vehicle'}`}
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Right Column: Google Maps (Full View) + Route Summary Card Below Map (7 cols) */}
