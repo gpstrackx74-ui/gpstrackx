@@ -611,15 +611,15 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     return null;
   };
 
-  // Helper to parse Trip Duration where first number is hours and after comma/dot/colon is minutes (e.g. "3,55" -> 3h 55m)
+  // Helper to parse Trip Duration where first number is hours and after comma/dot/colon is minutes (e.g. "3,44" -> "3 hour 44 min", "5,34" -> "5 hour 34 min")
   const parseExcelDuration = (val: any): { hours: number; minutes: number; totalMinutes: number; text: string } => {
-    if (val === undefined || val === null || val === '') return { hours: 2, minutes: 15, totalMinutes: 135, text: '2h 15m' };
+    if (val === undefined || val === null || val === '') return { hours: 0, minutes: 0, totalMinutes: 0, text: '-' };
     const str = String(val).trim();
     let h = 0;
     let m = 0;
 
-    // Check delimiter: comma, colon, dot, or space (e.g. "3,55", "3:55", "3.55", "3 55", "3h 55m")
-    const match = str.match(/^(\d+)\s*[,.:hH\s]\s*(\d+)$/);
+    // Check delimiter: comma, colon, dot, or space (e.g. "3,44", "5,34", "3:44", "3.44", "3 44", "3h 44m")
+    const match = str.match(/^(\d+)\s*[,.:hH\s]\s*(\d+)/);
     if (match) {
       h = parseInt(match[1], 10) || 0;
       m = parseInt(match[2], 10) || 0;
@@ -643,7 +643,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
       }
     }
     const totalMinutes = h * 60 + m;
-    const text = `${h}h ${m}m`;
+    const text = m > 0 ? (h > 0 ? `${h} hour ${m} min` : `${m} min`) : (h > 0 ? `${h} hour` : '-');
     return { hours: h, minutes: m, totalMinutes, text };
   };
 
@@ -797,21 +797,26 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
               if (colIdxLoadingTime === -1 && (v === 'starttime' || v === 'loadingtime' || v === 'fromtime' || v === 'dispatchtime' || (v.includes('start') && v.includes('time')) || (v.includes('loading') && v.includes('time')))) colIdxLoadingTime = cIdx;
               if (colIdxUnloadingTime === -1 && (v === 'endtime' || v === 'unloadingtime' || v === 'totime' || v === 'arrivaltime' || (v.includes('end') && v.includes('time')) || (v.includes('unloading') && v.includes('time')))) colIdxUnloadingTime = cIdx;
               if (colIdxStoppage === -1 && (v.includes('stop') || v.includes('halt'))) colIdxStoppage = cIdx;
-              if (colIdxDistance === -1 && (v.includes('tripdistance') || v.includes('distance') || v.includes('totalkm') || v.includes('km') || v.includes('kilo'))) colIdxDistance = cIdx;
-              if (colIdxDuration === -1 && (v.includes('tripduration') || v.includes('duration') || v.includes('traveltime') || v.includes('totaltime'))) colIdxDuration = cIdx;
+              if (colIdxDistance === -1 && (v === 'tripdistance' || v === 'distance' || v === 'totalkm' || v === 'km' || v === 'kilo' || v === 'kilometer' || v === 'kilometers')) colIdxDistance = cIdx;
+              if (colIdxDuration === -1 && (v === 'tripduration' || v.includes('duration') || v.includes('traveltime') || v.includes('totaltime') || v.includes('hour') || v.includes('timehours'))) {
+                if (!v.includes('start') && !v.includes('end') && !v.includes('loading') && !v.includes('unloading')) {
+                  colIdxDuration = cIdx;
+                }
+              }
             });
             break;
           }
         }
 
-        // Positional fallbacks (Col 0: Date of loading, Col 1: Date of unloading, Col 2: Loading time, Col 3: Unloading time, Col 4: Stoppage, Col 5: Trip Distance, Col 6: Trip Duration)
+        // Positional fallbacks (Excel format has 6 columns: Col 0: Start Date, Col 1: End Date, Col 2: Start time, Col 3: End time, Col 4: Stoppage, Col 5: Trip Duration)
         if (colIdxLoadingDate === -1) colIdxLoadingDate = 0;
         if (colIdxUnloadingDate === -1) colIdxUnloadingDate = 1;
         if (colIdxLoadingTime === -1) colIdxLoadingTime = 2;
         if (colIdxUnloadingTime === -1) colIdxUnloadingTime = 3;
         if (colIdxStoppage === -1) colIdxStoppage = 4;
-        if (colIdxDistance === -1) colIdxDistance = 5;
-        if (colIdxDuration === -1) colIdxDuration = 6;
+        if (colIdxDuration === -1) {
+          colIdxDuration = colIdxDistance !== -1 ? 6 : 5;
+        }
 
         const parsedTrips: any[] = [];
 
@@ -826,45 +831,63 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           const hasAnyVal = gRow.some((c: any) => String(c).trim() !== '') || Object.values(objRow).filter(v => v !== objRow._raw).some((v: any) => String(v).trim() !== '');
           if (!hasAnyVal) continue;
 
-          // 1. Loading Date
+          // 1. Loading / Start Date
           let rawColA = gRow[colIdxLoadingDate] !== undefined && String(gRow[colIdxLoadingDate]).trim() !== '' ? (gRowRaw[colIdxLoadingDate] !== undefined ? gRowRaw[colIdxLoadingDate] : gRow[colIdxLoadingDate]) : undefined;
-          if (rawColA === undefined) rawColA = findExcelProp(objRow, ['dateofloading', 'loadingdate', 'startdate', 'fromdate', 'tripdate', 'date']);
+          if (rawColA === undefined) rawColA = findExcelProp(objRow, ['startdate', 'dateofloading', 'loadingdate', 'fromdate', 'tripdate', 'date']);
 
-          // 2. Unloading Date
+          // 2. Unloading / End Date
           let rawColB = gRow[colIdxUnloadingDate] !== undefined && String(gRow[colIdxUnloadingDate]).trim() !== '' ? (gRowRaw[colIdxUnloadingDate] !== undefined ? gRowRaw[colIdxUnloadingDate] : gRow[colIdxUnloadingDate]) : undefined;
-          if (rawColB === undefined) rawColB = findExcelProp(objRow, ['dateofunloading', 'unloadingdate', 'enddate', 'todate', 'endtripdate']);
+          if (rawColB === undefined) rawColB = findExcelProp(objRow, ['enddate', 'dateofunloading', 'unloadingdate', 'todate', 'endtripdate']);
 
-          // 3. Loading Time
+          // 3. Loading / Start Time
           let rawColC = gRow[colIdxLoadingTime] !== undefined && String(gRow[colIdxLoadingTime]).trim() !== '' ? (gRowRaw[colIdxLoadingTime] !== undefined ? gRowRaw[colIdxLoadingTime] : gRow[colIdxLoadingTime]) : undefined;
-          if (rawColC === undefined) rawColC = findExcelProp(objRow, ['loadingtime', 'starttime', 'dispatchtime', 'fromtime', 'time']);
+          if (rawColC === undefined) rawColC = findExcelProp(objRow, ['starttime', 'loadingtime', 'dispatchtime', 'fromtime', 'time']);
 
-          // 4. Unloading Time
+          // 4. Unloading / End Time
           let rawColD = gRow[colIdxUnloadingTime] !== undefined && String(gRow[colIdxUnloadingTime]).trim() !== '' ? (gRowRaw[colIdxUnloadingTime] !== undefined ? gRowRaw[colIdxUnloadingTime] : gRow[colIdxUnloadingTime]) : undefined;
-          if (rawColD === undefined) rawColD = findExcelProp(objRow, ['unloadingtime', 'endtime', 'arrivaltime', 'totime']);
+          if (rawColD === undefined) rawColD = findExcelProp(objRow, ['endtime', 'unloadingtime', 'arrivaltime', 'totime']);
 
           // 5. Stoppage
           let rawColE = gRow[colIdxStoppage] !== undefined && String(gRow[colIdxStoppage]).trim() !== '' ? (gRowRaw[colIdxStoppage] !== undefined ? gRowRaw[colIdxStoppage] : gRow[colIdxStoppage]) : undefined;
           if (rawColE === undefined) rawColE = findExcelProp(objRow, ['stoppage', 'stoppages', 'stops', 'stop', 'halt', 'halts', 'stoppagescount']);
 
-          // 6. Trip Distance (Col F)
-          let rawColF = gRow[colIdxDistance] !== undefined && String(gRow[colIdxDistance]).trim() !== '' ? (gRowRaw[colIdxDistance] !== undefined ? gRowRaw[colIdxDistance] : gRow[colIdxDistance]) : undefined;
-          if (rawColF === undefined) rawColF = findExcelProp(objRow, ['tripdistance', 'distance', 'totalkm', 'kilometer', 'kilometers', 'km', 'kms', 'distancekm', 'totaldistance', 'distanceinkm']);
+          // 6. Trip Duration (e.g. "3,44" or "5,34" -> "3 hour 44 min", "5 hour 34 min")
+          let rawColDuration = undefined;
+          if (colIdxDuration !== -1 && gRow[colIdxDuration] !== undefined && String(gRow[colIdxDuration]).trim() !== '') {
+            rawColDuration = gRowRaw[colIdxDuration] !== undefined ? gRowRaw[colIdxDuration] : gRow[colIdxDuration];
+          }
+          if (rawColDuration === undefined) {
+            rawColDuration = findExcelProp(objRow, ['tripduration', 'duration', 'traveltime', 'trip_duration', 'estimatedtime', 'durationhours', 'hours']);
+          }
+          // Positional fallback for 6-column sheet where col 5 is duration:
+          if (rawColDuration === undefined && gRow[5] !== undefined && String(gRow[5]).trim() !== '') {
+            rawColDuration = gRowRaw[5] !== undefined ? gRowRaw[5] : gRow[5];
+          }
+          // Positional fallback for 7-column sheet where col 6 is duration:
+          if (rawColDuration === undefined && gRow[6] !== undefined && String(gRow[6]).trim() !== '') {
+            rawColDuration = gRowRaw[6] !== undefined ? gRowRaw[6] : gRow[6];
+          }
 
-          // 7. Trip Duration (Col G - e.g. "3,55" -> 3h 55m)
-          let rawColG = gRow[colIdxDuration] !== undefined && String(gRow[colIdxDuration]).trim() !== '' ? (gRowRaw[colIdxDuration] !== undefined ? gRowRaw[colIdxDuration] : gRow[colIdxDuration]) : undefined;
-          if (rawColG === undefined) rawColG = findExcelProp(objRow, ['tripduration', 'duration', 'traveltime', 'trip_duration', 'estimatedtime', 'durationhours']);
+          // Optional Distance (if still present in old 7-column sheets)
+          let rawColDist = undefined;
+          if (colIdxDistance !== -1 && gRow[colIdxDistance] !== undefined && String(gRow[colIdxDistance]).trim() !== '') {
+            rawColDist = gRowRaw[colIdxDistance] !== undefined ? gRowRaw[colIdxDistance] : gRow[colIdxDistance];
+          }
+          if (rawColDist === undefined && colIdxDistance !== -1) {
+            rawColDist = findExcelProp(objRow, ['tripdistance', 'distance', 'totalkm', 'km']);
+          }
 
           const pStartD = parseExcelDateToYMD(rawColA);
           const pEndD = parseExcelDateToYMD(rawColB) || pStartD;
           const pStartT = parseExcelTimeToHHMM(rawColC) || '08:00';
           const pEndT = parseExcelTimeToHHMM(rawColD) || '18:00';
           const pStops = parseInt(String(rawColE !== undefined ? rawColE : '').replace(/[^0-9]/g, ''), 10) || 0;
-          const pDistNum = parseFloat(String(rawColF !== undefined ? rawColF : '').replace(/[^0-9.]/g, ''));
+          const pDistNum = parseFloat(String(rawColDist !== undefined ? rawColDist : '').replace(/[^0-9.]/g, ''));
           const pKm = !isNaN(pDistNum) && pDistNum > 0 ? pDistNum : null;
 
-          const durObj = parseExcelDuration(rawColG);
+          const durObj = parseExcelDuration(rawColDuration);
           const pDurMins = durObj.totalMinutes > 0 ? durObj.totalMinutes : null;
-          const pDurText = durObj.text;
+          const pDurText = durObj.text !== '-' ? durObj.text : '';
 
           if (pStartD) {
             parsedTrips.push({
@@ -939,11 +962,11 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
 
         if (res.createdCount > 0) {
           setScheduleImportSuccessMsg(
-            `✓ ${res.createdCount} ट्रिप सफलतापूर्वक क्रिएट हो गए! (${targetVehicle?.registration_no || selectedVehicleId} के लिए ट्रिप हिस्ट्री जोड़ दी गई है)`
+            `✓ ${res.createdCount} Trips successfully created! (Trip history added for ${targetVehicle?.registration_no || selectedVehicleId})`
           );
         } else {
           setScheduleImportSuccessMsg(
-            `समान तारीख व समय स्लॉट में ट्रिप पहले से मौजूद है।`
+            `Trips already exist for this vehicle in the selected time slots.`
           );
         }
       } catch (err: any) {
@@ -956,7 +979,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
     e.target.value = '';
   };
 
-  // Download Sample Trip Schedule Excel Template (.xlsx) matching exact format from user image
+  // Download Sample Trip Schedule Excel Template (.xlsx) matching exact format requested by user
   const handleDownloadTripScheduleTemplate = () => {
     try {
       const sampleRows = [
@@ -966,8 +989,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Start time': '1:00',
           'End time': '22:00',
           'Stoppage': 15,
-          'Trip Distance': 334,
-          'Trip Duration': '3,55'
+          'Trip Duration': '3,44'
         },
         {
           'Start Date': '1/3/2026',
@@ -975,7 +997,6 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Start time': '14:02',
           'End time': '3:00',
           'Stoppage': 20,
-          'Trip Distance': 654,
           'Trip Duration': '4,15'
         },
         {
@@ -984,7 +1005,6 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Start time': '3:00',
           'End time': '16:59',
           'Stoppage': 19,
-          'Trip Distance': 876,
           'Trip Duration': '7,33'
         },
         {
@@ -993,8 +1013,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Start time': '19:00',
           'End time': '2:00',
           'Stoppage': 5,
-          'Trip Distance': 566,
-          'Trip Duration': '5,33'
+          'Trip Duration': '5,34'
         },
         {
           'Start Date': '2/10/2026',
@@ -1002,7 +1021,6 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
           'Start time': '5:00',
           'End time': '14:00',
           'Stoppage': 9,
-          'Trip Distance': 787,
           'Trip Duration': '5,45'
         }
       ];
@@ -1013,8 +1031,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
         { wch: 14 },
         { wch: 16 },
         { wch: 12 },
-        { wch: 15 },
-        { wch: 15 }
+        { wch: 18 }
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Trip_Schedule');
@@ -2711,7 +2728,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
                   <div className="flex items-center gap-2 text-slate-700 text-xs font-bold">
                     <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                    <span>ℹ️ {batchImportResult.restrictedCount} रिपीटेड ट्रिप स्किप कर दी गई (समान तारीख व समय स्लॉट)</span>
+                    <span>ℹ️ {batchImportResult.restrictedCount} repeated trip(s) skipped (same date & time slot)</span>
                   </div>
                   <div className="space-y-1 pt-0.5">
                     {batchImportResult.restrictedTrips.map((rt: any, idx: number) => (
@@ -2743,7 +2760,7 @@ export const RoutePlanning: React.FC<RoutePlanningProps> = ({ initialVehicleId, 
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-mono">
                       {batchImportResult.createdTrips.map((ct: any, idx: number) => {
-                        const durText = ct.duration_text || (ct.estimated_travel_time_min ? `${Math.floor(ct.estimated_travel_time_min / 60)}h ${ct.estimated_travel_time_min % 60}m` : '-');
+                        const durText = ct.duration_text || (ct.estimated_travel_time_min ? `${Math.floor(ct.estimated_travel_time_min / 60)} hour ${ct.estimated_travel_time_min % 60} min` : '-');
                         return (
                           <tr key={idx} className="hover:bg-slate-50/60 transition">
                             <td className="p-2.5 font-sans font-bold text-slate-900">Trip {idx + 1}</td>

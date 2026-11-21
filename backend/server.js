@@ -2468,7 +2468,7 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
       restrictedTrips.push({
         row: rowNum,
         sD, sT, eD, eT,
-        reason: `समान तारीख (${sD}) पर Row ${sameDateConflict.row} (${sameDateConflict.sT} - ${sameDateConflict.eT}) के बीच ट्रिप पहले से मौजूद है`
+        reason: `Trip on same date (${sD}) overlaps with Row ${sameDateConflict.row} (${sameDateConflict.sT} - ${sameDateConflict.eT})`
       });
       return;
     }
@@ -2492,7 +2492,7 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
   if (acceptedTrips.length === 0) {
     return res.json({
       success: true,
-      message: 'इस वाहन के लिए सभी पंक्तियाँ पहले से मौजूद समय स्लॉट में थीं।',
+      message: 'All rows for this vehicle were in already existing time slots.',
       totalRows: trips.length,
       createdCount: 0,
       restrictedCount: restrictedTrips.length,
@@ -2694,7 +2694,7 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
         stoppages_count: tripItem.stoppages_count,
         total_distance_km: effectiveDistKm,
         estimated_travel_time_min: durationMin,
-        duration_text: tripItem.duration_text || `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`,
+        duration_text: tripItem.duration_text || (durationMin ? `${Math.floor(durationMin / 60)} hour ${durationMin % 60} min` : '-'),
         is_active: 0,
         operational_status: 'completed'
       });
@@ -2709,19 +2709,6 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
         current_lng = ?, 
         status = 'stop',
         current_speed = 0,
-        start_trip_time = ?,
-        end_trip_time = ?,
-        stoppages_count = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(
-      start_lat,
-      start_lng,
-      latestTrip.sT,
-      latestTrip.eT,
-      latestTrip.stoppages_count,
-      vehicle_id
-    );
         start_trip_time = ?,
         end_trip_time = ?,
         stoppages_count = ?,
@@ -2820,7 +2807,7 @@ app.post('/api/routes/batch-import-trips', authenticateToken, requireAdmin, asyn
       restrictedCount: restrictedTrips.length,
       createdTrips: createdRoutes,
       restrictedTrips,
-      message: `${createdRoutes.length} ट्रिप सफलतापूर्वक क्रिएट हो गए।${restrictedTrips.length > 0 ? ` (${restrictedTrips.length} ट्रिप टाइम मिसमैच / ओवरलैप की वजह से छोड़ दिए गए)` : ''}`
+      message: `${createdRoutes.length} Trips successfully created.${restrictedTrips.length > 0 ? ` (${restrictedTrips.length} repeated trips skipped)` : ''}`
     });
   } catch (err) {
     console.error('[Batch Import Error]', err);
