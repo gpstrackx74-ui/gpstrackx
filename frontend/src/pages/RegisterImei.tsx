@@ -8,8 +8,6 @@ import {
   Trash2,
   RefreshCw,
   AlertCircle,
-  Server,
-  Info,
   Play,
   Square,
   ShieldCheck,
@@ -19,7 +17,6 @@ import {
 export const RegisterImeiPage: React.FC = () => {
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [serverInfo, setServerInfo] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Form State
@@ -59,18 +56,8 @@ export const RegisterImeiPage: React.FC = () => {
     }
   };
 
-  const fetchServerInfo = async () => {
-    try {
-      const data = await api.getHardwareServerInfo();
-      setServerInfo(data);
-    } catch (err) {
-      console.warn('Could not fetch server info:', err);
-    }
-  };
-
   useEffect(() => {
     fetchDevices();
-    fetchServerInfo();
   }, []);
 
   // Clean up simulator on unmount
@@ -478,58 +465,6 @@ export const RegisterImeiPage: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Section 4: Hardware Connection & IP Configuration Guide */}
-        <div className="p-5 sm:p-6 bg-slate-900 text-slate-100 space-y-3.5 border-t border-slate-800">
-          <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-              <Server className="w-4 h-4 text-emerald-400" />
-              <h3 className="font-black text-xs uppercase tracking-wider text-white">
-                Physical GPS Hardware Configuration Guide (IP & Port)
-              </h3>
-            </div>
-            <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950/80 px-2.5 py-0.5 rounded-lg border border-emerald-800">
-              TCP PORT: {serverInfo?.tcpPort || 5023}
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-300 leading-relaxed">
-            Configure your physical GPS tracker (Concox GT06N, V5, PT06, G206, etc.) using SMS commands sent to the tracker's SIM card:
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
-            <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-1">
-              <span className="text-slate-400 text-[10px] font-bold block uppercase">
-                1. Server IP & Port SMS Command:
-              </span>
-              <p className="text-emerald-400 font-bold text-xs">
-                SERVER,1,34.93.96.170,{serverInfo?.tcpPort || 5023},0#
-              </p>
-              <span className="text-slate-500 text-[10px] block">
-                Points tracker directly to your Google Cloud live server.
-              </span>
-            </div>
-
-            <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-1">
-              <span className="text-slate-400 text-[10px] font-bold block uppercase">
-                2. Upload Interval (Every 10 Seconds):
-              </span>
-              <p className="text-emerald-400 font-bold text-xs">
-                TIMER,10#
-              </p>
-              <span className="text-slate-500 text-[10px] block">
-                Tracker sends real-time GPS packet every 10 seconds.
-              </span>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700 text-xs text-slate-300 flex items-center gap-2">
-            <Info className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>
-              <strong>Testing in Live Environment:</strong> You can click the <strong>"Test Sim"</strong> button next to any registered IMEI to instantly simulate live moving vehicle GPS updates on the map without needing physical hardware!
-            </span>
-          </div>
         </div>
       </div>
     </div>
