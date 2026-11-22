@@ -118,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'routes', label: 'Route Planner', icon: Route },
     { id: 'fastag', label: 'FASTag Toll', icon: Receipt },
     { id: 'settings', label: 'Settings', icon: Settings },
-    { id: 'register-imei', label: 'Register IMEI', icon: Radio },
+    { id: 'register-imei', label: '+IMEI', icon: Radio },
   ];
 
   const userNavItems = [
