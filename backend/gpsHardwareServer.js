@@ -112,7 +112,9 @@ function parseLocationPacket(buf, offset, imei, mainFleetDb) {
       if (mainFleetDb) {
         try {
           const device = getDeviceByImei(imei);
-          if (device && device.assigned_vehicle_id) {
+          const targetVehId = device?.assigned_vehicle_id ||
+            mainFleetDb.prepare('SELECT id FROM vehicles WHERE imei_number = ?').get(imei)?.id;
+          if (targetVehId) {
             mainFleetDb.prepare(`
               UPDATE vehicles SET
                 current_lat = ?,
@@ -126,7 +128,7 @@ function parseLocationPacket(buf, offset, imei, mainFleetDb) {
               Number(lng.toFixed(6)),
               speed,
               speed > 3 ? 'moving' : 'stop',
-              device.assigned_vehicle_id
+              targetVehId
             );
           }
         } catch (e) {

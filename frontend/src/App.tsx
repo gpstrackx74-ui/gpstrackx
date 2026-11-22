@@ -138,6 +138,9 @@ const AppContent: React.FC = () => {
           if (tab === 'routes' && vehicleId) {
             handlePlanRouteForVehicle(vehicleId);
           } else if (tab === 'vehicle-tracking') {
+            if (vehicleId) {
+              setSelectedVehicleId(vehicleId);
+            }
             setAdminMapViewVehicleId(vehicleId || null);
             setCurrentTab('vehicle-tracking');
           } else if (vehicleId) {

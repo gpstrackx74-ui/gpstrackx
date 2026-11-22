@@ -121,19 +121,19 @@ function createHardwareGpsRouter(mainFleetDb, authenticateToken, requireAdmin) {
       const device = getDeviceByImei(cleanImei);
       if (!device) {
         return res.status(404).json({ 
-          error: `IMEI ${cleanImei} is not registered in the system. Please ask Admin to register this IMEI.` 
+          error: `IMEI "${cleanImei}" is not registered in the system. Please ask Admin to register this IMEI.` 
         });
       }
 
       if (device.pairing_code !== cleanCode) {
         return res.status(400).json({ 
-          error: '6-digit code mismatch! The code you entered does not match the Admin pairing code for this IMEI.' 
+          error: `Invalid 6-digit code! The code "${cleanCode}" does not match the Admin pairing code for this IMEI.` 
         });
       }
 
       if (device.status === 'LINKED') {
         return res.status(400).json({ 
-          error: `This device is already linked to vehicle ${device.vehicle_number || ''}.` 
+          error: `This device (IMEI ${cleanImei}) is already registered and linked to vehicle ${device.vehicle_number || ''}.` 
         });
       }
 
@@ -175,6 +175,11 @@ function createHardwareGpsRouter(mainFleetDb, authenticateToken, requireAdmin) {
           );
           vehicleId = info.lastInsertRowid;
         }
+
+        // Also ensure vehicle_allocations table has entry for this user
+        try {
+          mainFleetDb.prepare('INSERT OR IGNORE INTO vehicle_allocations (vehicle_id, user_id) VALUES (?, ?)').run(vehicleId, req.user.id);
+        } catch (_) {}
       } catch (dbErr) {
         console.error('[Vehicle Fleet Insert Warning]:', dbErr.message);
       }
@@ -250,8 +255,10 @@ function createHardwareGpsRouter(mainFleetDb, authenticateToken, requireAdmin) {
       });
 
       // Also sync to main fleet db vehicle if linked
-      if (updated && updated.assigned_vehicle_id) {
-        try {
+      try {
+        const targetVehId = updated?.assigned_vehicle_id || 
+          mainFleetDb.prepare('SELECT id FROM vehicles WHERE imei_number = ?').get(cleanImei)?.id;
+        if (targetVehId) {
           mainFleetDb.prepare(`
             UPDATE vehicles SET
               current_lat = ?,
@@ -260,9 +267,9 @@ function createHardwareGpsRouter(mainFleetDb, authenticateToken, requireAdmin) {
               status = ?,
               updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-          `).run(lat, lng, Number(speed) || 0, Number(speed) > 3 ? 'moving' : 'stop', updated.assigned_vehicle_id);
-        } catch (e) {}
-      }
+          `).run(lat, lng, Number(speed) || 0, Number(speed) > 3 ? 'moving' : 'stop', targetVehId);
+        }
+      } catch (e) {}
 
       res.json({
         success: true,

@@ -492,23 +492,26 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
           });
         }
       } catch (_) {}
-    }, 4000);
+    }, 2000);
     return () => clearInterval(interval);
   }, [vehicle?.imei_number]);
 
   // Determine current simulated position with rock-solid coordinates
   const currentPlaybackPoint: [number, number] | null = React.useMemo(() => {
-    if (smoothPlaybackCoordinates.length > 0) {
+    if (activeRoute && smoothPlaybackCoordinates.length > 0) {
       const idx = Math.max(0, Math.min(playbackIndex, smoothPlaybackCoordinates.length - 1));
       return smoothPlaybackCoordinates[idx];
     }
     if (vehicle?.current_lat && vehicle?.current_lng && Number(vehicle.current_lat) !== 0) {
       return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
     }
+    if (vehicle?.imei_number) {
+      return [21.2514, 81.6296];
+    }
     // If no active route (vehicle did not run on this selected date), return null so map is completely blank
     if (!activeRoute) return null;
     return null;
-  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng]);
+  }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng, vehicle?.imei_number]);
 
   const playbackProgressPercent = activeRoute && smoothPlaybackCoordinates.length > 1
     ? Math.min(100, Math.round((playbackIndex / (smoothPlaybackCoordinates.length - 1)) * 100))
@@ -533,7 +536,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
       lat: currentPlaybackPoint[0],
       lng: currentPlaybackPoint[1],
       speed: vSpeed,
-      status: (isMoving || isPlaying || vSpeed > 3) ? 'moving' : 'stop',
+      status: (isMoving || isPlaying || vSpeed > 3 || vehicle.status === 'moving') ? 'moving' : 'stop',
       plate: vehicle.registration_no,
       heading: currentHeading || 0
     };
@@ -993,10 +996,10 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Speed</span>
                 <div className="flex items-baseline gap-1 mt-1">
                   <span className="font-mono font-black text-slate-900 text-sm">
-                    {activeRoute && isLiveMovingMode ? liveSpeed : 0}
+                    {activeRoute && isLiveMovingMode ? liveSpeed : (Number(vehicle.current_speed) || 0)}
                   </span>
                   <span className="text-[10px] font-bold text-slate-400">KM/H</span>
-                  {isLiveMovingMode && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5"></span>}
+                  {(isLiveMovingMode || (Number(vehicle.current_speed) || 0) > 3) && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5"></span>}
                 </div>
               </div>
 
@@ -1012,9 +1015,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
               <div className="pt-2 sm:pt-0 sm:pl-3 first:pl-0 first:pt-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ignition Status</span>
                 <div className="mt-1 flex items-center gap-1.5">
-                  <span className={`inline-block w-2 h-2 rounded-full ${activeRoute && (isLiveMovingMode || isMoving) ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-                  <span className={`font-black text-xs ${activeRoute && (isLiveMovingMode || isMoving) ? 'text-emerald-700' : 'text-slate-500'}`}>
-                    {activeRoute && (isLiveMovingMode || isMoving) ? 'ON' : 'OFF'}
+                  <span className={`inline-block w-2 h-2 rounded-full ${(activeRoute && (isLiveMovingMode || isMoving)) || (Number(vehicle.current_speed) > 3) ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                  <span className={`font-black text-xs ${(activeRoute && (isLiveMovingMode || isMoving)) || (Number(vehicle.current_speed) > 3) ? 'text-emerald-700' : 'text-slate-500'}`}>
+                    {(activeRoute && (isLiveMovingMode || isMoving)) || (Number(vehicle.current_speed) > 3) ? 'ON' : 'OFF'}
                   </span>
                 </div>
               </div>
@@ -1092,7 +1095,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
           {/* Full-Width Route Map Section */}
           <div className="flex flex-col space-y-3">
             {/* No Active Route Banner (Admin Only) */}
-            {isAdmin && !activeRoute && (
+            {isAdmin && !activeRoute && !vehicle?.imei_number && (
               <div className="mb-4 p-4 rounded-2xl bg-amber-50/80 border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold shrink-0">
@@ -1120,7 +1123,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
             )}
 
             {/* Clean Neutral Banner for Regular Users */}
-            {!isAdmin && !activeRoute && (
+            {!isAdmin && !activeRoute && !vehicle?.imei_number && (
               <div className="mb-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-3 text-xs">
                 <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-bold shrink-0">
                   <Navigation className="w-4 h-4 text-slate-500" />
@@ -1130,6 +1133,34 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     No active trip recorded for this vehicle on the selected date.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Live Hardware GPS Active Banner for IoT Trackers */}
+            {!activeRoute && vehicle?.imei_number && (
+              <div className="mb-4 p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold shrink-0">
+                    <Radio className="w-5 h-5 text-emerald-700 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-emerald-950 text-xs flex items-center gap-2">
+                      <span>Live Hardware GPS Tracking Active</span>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        TCP Telemetry
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-emerald-700 mt-0.5">
+                      Transmitting real-time GPS coordinates for IMEI <strong className="font-mono">{vehicle.imei_number}</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto font-mono text-[11px]">
+                  <span className="px-3 py-1.5 rounded-xl bg-white border border-emerald-200 text-slate-800 font-bold shadow-2xs">
+                    Coordinates: {Number(vehicle.current_lat || 21.2514).toFixed(4)}, {Number(vehicle.current_lng || 81.6296).toFixed(4)}
+                  </span>
                 </div>
               </div>
             )}
@@ -1245,7 +1276,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 <InteractiveMap
                   height="520px"
                   center={currentPlaybackPoint || (vehicle.current_lat && Number(vehicle.current_lat) !== 0 ? [Number(vehicle.current_lat), Number(vehicle.current_lng)] : (activeRoute?.start_lat ? [Number(activeRoute.start_lat), Number(activeRoute.start_lng)] : (parsedCoordinates.length > 0 ? parsedCoordinates[0] : [21.8974, 82.8000])))}
-                  zoom={hideRouteLine ? 11 : 8}
+                  zoom={activeRoute ? (hideRouteLine ? 11 : 8) : 13}
                   routes={hideRouteLine ? [] : trackingRoutes}
                   selectedRouteId={hideRouteLine ? '' : (activeRoute ? `active-${activeRoute.id}` : '')}
                   vehiclePosition={simulatedVehiclePosition}
@@ -1259,7 +1290,7 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
               </ErrorBoundary>
 
               {/* Blank Map Notification Banner when no route is allotted on the selected date */}
-              {!activeRoute && (
+              {!activeRoute && !vehicle?.imei_number && (
                 <div className="absolute inset-0 bg-slate-900/10 backdrop-blur-[2px] rounded-2xl flex flex-col items-center justify-center p-6 text-center pointer-events-none">
                   <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/90 p-6 max-w-md space-y-3 pointer-events-auto">
                     <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto border border-slate-200">
