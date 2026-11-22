@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { 
@@ -18,7 +19,8 @@ import {
   LayoutDashboard,
   Settings,
   History,
-  ChevronUp
+  ChevronUp,
+  Radio
 } from 'lucide-react';
 import { 
   highlightInPage, 
@@ -43,6 +45,69 @@ export const Header: React.FC<HeaderProps> = ({
 
   const [demoUsers, setDemoUsers] = useState<any[]>([]);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+
+  // Add Device Modal State (User Login)
+  const [showAddDeviceModal, setShowAddDeviceModal] = useState<boolean>(false);
+  const [addDeviceLoading, setAddDeviceLoading] = useState<boolean>(false);
+  const [addDeviceError, setAddDeviceError] = useState<string | null>(null);
+  const [addDeviceSuccess, setAddDeviceSuccess] = useState<string | null>(null);
+  const [addDeviceForm, setAddDeviceForm] = useState({
+    vehicleName: '',
+    vehicleNumber: '',
+    imeiNumber: '',
+    deviceCode: ''
+  });
+
+  const handleAddDeviceSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const { vehicleName, vehicleNumber, imeiNumber, deviceCode } = addDeviceForm;
+    if (!vehicleName.trim() || !vehicleNumber.trim() || !imeiNumber.trim() || !deviceCode.trim()) {
+      setAddDeviceError('Please fill in all fields (Vehicle Name, Vehicle Number, IMEI Number, and 6-digit Code).');
+      return;
+    }
+    if (!/^\d{6}$/.test(deviceCode.trim())) {
+      setAddDeviceError('Security Code must be exactly 6 digits.');
+      return;
+    }
+
+    try {
+      setAddDeviceLoading(true);
+      setAddDeviceError(null);
+      setAddDeviceSuccess(null);
+
+      const res = await api.linkHardwareDevice({
+        vehicleName: vehicleName.trim(),
+        vehicleNumber: vehicleNumber.trim().toUpperCase(),
+        imeiNumber: imeiNumber.trim(),
+        deviceCode: deviceCode.trim()
+      });
+
+      setAddDeviceSuccess(`Device linked successfully! Redirecting to live tracking...`);
+      
+      // Clear form
+      setAddDeviceForm({
+        vehicleName: '',
+        vehicleNumber: '',
+        imeiNumber: '',
+        deviceCode: ''
+      });
+
+      // Notify vehicle updates
+      window.dispatchEvent(new CustomEvent('gpstrackx_vehicles_updated'));
+
+      setTimeout(() => {
+        setShowAddDeviceModal(false);
+        setAddDeviceSuccess(null);
+        if (onNavigateTab && res.vehicleId) {
+          onNavigateTab('vehicle-tracking', res.vehicleId);
+        }
+      }, 1000);
+    } catch (err: any) {
+      setAddDeviceError(err.message || 'Failed to link device. Please verify IMEI and 6-digit code with Admin.');
+    } finally {
+      setAddDeviceLoading(false);
+    }
+  };
 
   // Strictly reordered admin tabs per specification (No Dashboard tab for admin):
   // 1. Live User View, 2. Users, 3. Vehicles, 4. Route Planner, 5. FASTag Toll, 6. Settings
@@ -221,6 +286,18 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               );
             })}
+
+            {/* User Login only: Add Device button right next to FASTag Toll */}
+            {!isAdmin && (
+              <button
+                type="button"
+                onClick={() => setShowAddDeviceModal(true)}
+                className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer shrink-0 shadow-2xs"
+                title="Add Device"
+              >
+                <span className="whitespace-nowrap">Add Device</span>
+              </button>
+            )}
           </nav>
         </div>
 
@@ -588,6 +665,138 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
         </div>
       </div>
+
+      {/* Add Device Modal (User Login Only) - Rendered via createPortal to avoid clipping */}
+      {!isAdmin && showAddDeviceModal && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150 cursor-pointer"
+          onClick={() => setShowAddDeviceModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl sm:rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-100 relative animate-in zoom-in-95 duration-200 cursor-default my-auto max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+                  <Radio className="w-4.5 h-4.5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">Add Device</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Link a new GPS device to vehicle</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddDeviceModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition cursor-pointer text-xs font-bold"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Error & Success Alerts */}
+            {addDeviceError && (
+              <div className="mt-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700 flex items-center gap-2">
+                <X className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{addDeviceError}</span>
+              </div>
+            )}
+
+            {addDeviceSuccess && (
+              <div className="mt-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center gap-2">
+                <Radio className="w-4 h-4 text-emerald-600 shrink-0 animate-pulse" />
+                <span>{addDeviceSuccess}</span>
+              </div>
+            )}
+
+            {/* Form Fields */}
+            <form onSubmit={handleAddDeviceSubmit}>
+              <div className="py-4 space-y-3.5 text-xs overflow-y-auto">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Vehicle Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={addDeviceForm.vehicleName}
+                    onChange={(e) => setAddDeviceForm(prev => ({ ...prev, vehicleName: e.target.value }))}
+                    placeholder="e.g. Tata Signa 4825.TK"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-semibold focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Vehicle Number *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={addDeviceForm.vehicleNumber}
+                    onChange={(e) => setAddDeviceForm(prev => ({ ...prev, vehicleNumber: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. CG04MX1234"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-semibold uppercase tracking-wider focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    IMEI Number *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={addDeviceForm.imeiNumber}
+                    onChange={(e) => setAddDeviceForm(prev => ({ ...prev, imeiNumber: e.target.value.replace(/[^0-9]/g, '') }))}
+                    placeholder="e.g. 864201041234567"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-semibold font-mono focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Code (6 digit) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={addDeviceForm.deviceCode}
+                    onChange={(e) => setAddDeviceForm(prev => ({ ...prev, deviceCode: e.target.value.replace(/[^0-9]/g, '') }))}
+                    placeholder="e.g. 123456"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-bold font-mono tracking-widest focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 transition"
+                  />
+                </div>
+              </div>
+
+              {/* Bottom Action Buttons: Cancel and Add */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={addDeviceLoading}
+                  onClick={() => setShowAddDeviceModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addDeviceLoading}
+                  className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs transition shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {addDeviceLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{addDeviceLoading ? 'Verifying...' : 'Add'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
     </header>
   );
 };

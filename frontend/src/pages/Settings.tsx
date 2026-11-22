@@ -11,8 +11,10 @@ import {
   EyeOff,
   Phone,
   Mail,
-  ShieldCheck
+  ShieldCheck,
+  Radio
 } from 'lucide-react';
+import { RegisterImeiModal } from '../components/RegisterImeiModal';
 
 export const SettingsPage: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -33,6 +35,9 @@ export const SettingsPage: React.FC = () => {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
+
+  // Hardware GPS IMEI Registration Modal State (Admin)
+  const [showRegisterImeiModal, setShowRegisterImeiModal] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -124,6 +129,44 @@ export const SettingsPage: React.FC = () => {
 
         {/* Thin divider with light red 10% opacity */}
         <div className="border-t border-[#E60012]/10" />
+
+        {/* Section: Hardware GPS IMEI Registration (Admin Only) */}
+        {user?.role === 'admin' && (
+          <>
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-emerald-50/50 via-white to-slate-50/50">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs">
+                    <Radio className="w-5 h-5 text-emerald-600 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                        रजिस्टर IMEI (Hardware GPS Device Portal)
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Admin Only
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5 max-w-xl">
+                      Register physical GPS trackers by IMEI (Concox GT06N, V5, PT06, G206, etc.), generate secure 6-digit user pairing codes, and configure TCP/IP telemetry servers.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterImeiModal(true)}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition shadow-xs cursor-pointer flex items-center gap-2 shrink-0 self-start sm:self-auto"
+                >
+                  <Radio className="w-3.5 h-3.5" />
+                  <span>रजिस्टर IMEI</span>
+                </button>
+              </div>
+            </div>
+            <div className="border-t border-[#E60012]/10" />
+          </>
+        )}
 
         {/* Section 2: Profile Information */}
         <div className="p-5 sm:p-6 space-y-5">
@@ -354,6 +397,12 @@ export const SettingsPage: React.FC = () => {
           </form>
         </div>
       </div>
+
+      {/* Hardware GPS IMEI Registration Portal Modal */}
+      <RegisterImeiModal
+        isOpen={showRegisterImeiModal}
+        onClose={() => setShowRegisterImeiModal(false)}
+      />
     </div>
   );
 };

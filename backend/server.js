@@ -8,6 +8,8 @@ const { planAlternativeRoutes } = require('./routePlanner');
 const fastagService = require('./fastagService');
 const supabaseService = require('./supabaseService');
 const smsService = require('./smsService');
+const { createHardwareGpsRouter } = require('./hardwareGpsRouter');
+const { startGpsHardwareServer } = require('./gpsHardwareServer');
 
 const path = require('path');
 const app = express();
@@ -98,6 +100,10 @@ function requireAdmin(req, res, next) {
   }
   next();
 }
+
+// ---------------- DEDICATED HARDWARE GPS (IMEI REGISTRATION & LIVE TRACKING) ---------------- //
+app.use('/api/hardware-gps', createHardwareGpsRouter(db, authenticateToken, requireAdmin));
+startGpsHardwareServer(db);
 
 // ---------------- DEVICE DETECTION & VALIDATION HELPERS ---------------- //
 

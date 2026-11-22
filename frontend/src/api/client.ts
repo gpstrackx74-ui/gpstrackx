@@ -288,6 +288,37 @@ export const api = {
     apiRequest<any>('/routes', {
       method: 'POST',
       body: JSON.stringify({ ...data, vehicle_id: vehicleId })
-    })
+    }),
+
+  // Hardware GPS & IMEI Registration
+  getHardwareDevices: () => apiRequest<any[]>('/hardware-gps/devices'),
+  registerHardwareDevice: (data: { imei: string; deviceModel: string }) =>
+    apiRequest<{ success: boolean; message: string; device: any }>('/hardware-gps/register', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  deleteHardwareDevice: (imei: string) =>
+    apiRequest<{ success: boolean; message: string }>(`/hardware-gps/devices/${imei}`, {
+      method: 'DELETE'
+    }),
+  regenerateHardwareCode: (imei: string) =>
+    apiRequest<{ success: boolean; message: string; device: any }>('/hardware-gps/regenerate-code', {
+      method: 'POST',
+      body: JSON.stringify({ imei })
+    }),
+  linkHardwareDevice: (data: { vehicleName: string; vehicleNumber: string; imeiNumber: string; deviceCode: string }) =>
+    apiRequest<{ success: boolean; message: string; vehicleId: number; device: any }>('/hardware-gps/link-device', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  getHardwareDeviceLive: (imei: string) =>
+    apiRequest<{ device: any; trail: any[] }>(`/hardware-gps/device/${imei}/live`),
+  simulateHardwareTelemetry: (data: { imei: string; latitude: number; longitude: number; speed?: number; heading?: number; ignition?: number }) =>
+    apiRequest<{ success: boolean; message: string; device: any }>('/hardware-gps/simulate-telemetry', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  getHardwareServerInfo: () =>
+    apiRequest<{ tcpPort: number; addresses: any[]; preferredLocalIp: string; protocols: any[] }>('/hardware-gps/server-info')
 };
 

@@ -55,6 +55,24 @@ const AppContent: React.FC = () => {
     }
   }, [user]);
 
+  // Listen for instant fleet updates (e.g. newly linked hardware GPS device)
+  useEffect(() => {
+    const handleFleetRefresh = () => {
+      api.getVehicles()
+        .then((vehs) => {
+          if (vehs && Array.isArray(vehs)) {
+            setUserVehicles(vehs);
+            try {
+              localStorage.setItem('gpstrackx_cached_vehicles', JSON.stringify(vehs));
+            } catch (_) {}
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('gpstrackx_vehicles_updated', handleFleetRefresh);
+    return () => window.removeEventListener('gpstrackx_vehicles_updated', handleFleetRefresh);
+  }, []);
+
   // If admin is on dashboard tab, redirect directly to vehicle-tracking
   useEffect(() => {
     if (isAdmin && currentTab === 'dashboard') {

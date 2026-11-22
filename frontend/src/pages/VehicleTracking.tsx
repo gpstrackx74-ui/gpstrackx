@@ -473,11 +473,31 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     };
   }, [activeRoute?.end_lat, activeRoute?.end_lng, activeRoute?.end_location_name]);
 
+  // Real-time hardware GPS telemetry polling for IoT devices
+  useEffect(() => {
+    if (!vehicle?.imei_number) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.getHardwareDeviceLive(vehicle.imei_number);
+        if (res?.device && res.device.last_latitude && res.device.last_longitude) {
+          setVehicle(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              current_lat: res.device.last_latitude,
+              current_lng: res.device.last_longitude,
+              current_speed: res.device.last_speed,
+              status: res.device.last_speed > 3 ? 'moving' : 'stop'
+            };
+          });
+        }
+      } catch (_) {}
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [vehicle?.imei_number]);
+
   // Determine current simulated position with rock-solid coordinates
   const currentPlaybackPoint: [number, number] | null = React.useMemo(() => {
-    // If no active route (vehicle did not run on this selected date), return null so map is completely blank
-    if (!activeRoute) return null;
-
     if (smoothPlaybackCoordinates.length > 0) {
       const idx = Math.max(0, Math.min(playbackIndex, smoothPlaybackCoordinates.length - 1));
       return smoothPlaybackCoordinates[idx];
@@ -485,6 +505,8 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
     if (vehicle?.current_lat && vehicle?.current_lng && Number(vehicle.current_lat) !== 0) {
       return [Number(vehicle.current_lat), Number(vehicle.current_lng)];
     }
+    // If no active route (vehicle did not run on this selected date), return null so map is completely blank
+    if (!activeRoute) return null;
     return null;
   }, [activeRoute, smoothPlaybackCoordinates, playbackIndex, vehicle?.current_lat, vehicle?.current_lng]);
 
@@ -505,14 +527,15 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
   }, [smoothPlaybackCoordinates, playbackIndex]);
 
   const simulatedVehiclePosition = React.useMemo(() => {
-    if (!activeRoute || !currentPlaybackPoint || !vehicle) return null;
+    if (!currentPlaybackPoint || !vehicle) return null;
+    const vSpeed = isMoving ? (liveSpeed || Number(vehicle.current_speed) || 48) : (isPlaying ? simulatedSpeed : (Number(vehicle.current_speed) || 0));
     return {
       lat: currentPlaybackPoint[0],
       lng: currentPlaybackPoint[1],
-      speed: isMoving ? (liveSpeed || Number(vehicle.current_speed) || 48) : (isPlaying ? simulatedSpeed : 0),
-      status: (isMoving || isPlaying) ? 'moving' : 'stop',
+      speed: vSpeed,
+      status: (isMoving || isPlaying || vSpeed > 3) ? 'moving' : 'stop',
       plate: vehicle.registration_no,
-      heading: currentHeading
+      heading: currentHeading || 0
     };
   }, [activeRoute, currentPlaybackPoint, vehicle, isMoving, liveSpeed, isPlaying, simulatedSpeed, currentHeading]);
 
@@ -957,6 +980,12 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                 <span className="font-mono font-black text-slate-900 text-sm block truncate mt-1">
                   {vehicle.registration_no}
                 </span>
+                {vehicle.imei_number && (
+                  <span className="inline-flex items-center gap-1 mt-0.5 text-[9px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>IMEI: {vehicle.imei_number}</span>
+                  </span>
+                )}
               </div>
 
               {/* 2. Speed */}
