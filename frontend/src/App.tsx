@@ -10,6 +10,7 @@ import { RoutePlanning } from './pages/RoutePlanning';
 import { VehicleTracking } from './pages/VehicleTracking';
 import { UsersManagement } from './pages/Users';
 import { SettingsPage } from './pages/Settings';
+import { RegisterImeiPage } from './pages/RegisterImei';
 import { FastagBilling } from './pages/FastagBilling';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { checkAndApplyPendingSearch } from './utils/searchHighlighter';
@@ -238,6 +239,8 @@ const AppContent: React.FC = () => {
         {currentTab === 'fastag' && <FastagBilling />}
 
         {currentTab === 'settings' && isAdmin && <SettingsPage />}
+
+        {currentTab === 'register-imei' && isAdmin && <RegisterImeiPage />}
       </main>
     </div>
   );
