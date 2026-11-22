@@ -168,18 +168,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         <div className="p-6 pb-4 bg-white border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
-              src="/gpstrackx-icon.png" 
-              alt="GpsTrackX Icon" 
-              className="w-10 h-10 object-contain drop-shadow-xs" 
+              src="/gpstrackx-brand.png" 
+              alt="GpsTrackX" 
+              className="h-10 w-auto object-contain drop-shadow-xs" 
             />
-            <div>
-              <div className="flex items-center gap-1">
-                <span className="font-black text-lg tracking-tight text-slate-900">GpsTrack</span>
-                <span className="font-black text-lg tracking-tight text-[#E60012]">X</span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium">Enterprise Telematics & FASTag Fleet Platform</p>
-            </div>
           </div>
+          <span className="text-[10px] font-bold text-slate-400 font-mono">Enterprise</span>
         </div>
 
         <div className="p-6 space-y-4">
